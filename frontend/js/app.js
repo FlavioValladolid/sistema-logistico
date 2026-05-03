@@ -4,9 +4,16 @@
 const API = {
   base: '/api',
 
+  async _parseError(res) {
+    const text = await res.text();
+    try { return JSON.parse(text); } catch {
+      return { error: `Error ${res.status} del servidor. Verifica que el servidor esté corriendo.` };
+    }
+  },
+
   async get(path) {
     const res = await fetch(this.base + path);
-    if (!res.ok) throw await res.json();
+    if (!res.ok) throw await this._parseError(res);
     return res.json();
   },
 
@@ -16,7 +23,7 @@ const API = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    if (!res.ok) throw await res.json();
+    if (!res.ok) throw await this._parseError(res);
     return res.json();
   },
 
@@ -25,7 +32,7 @@ const API = {
       method: 'POST',
       body: formData
     });
-    if (!res.ok) throw await res.json();
+    if (!res.ok) throw await this._parseError(res);
     return res.json();
   },
 
@@ -35,13 +42,13 @@ const API = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data)
     });
-    if (!res.ok) throw await res.json();
+    if (!res.ok) throw await this._parseError(res);
     return res.json();
   },
 
   async del(path) {
     const res = await fetch(this.base + path, { method: 'DELETE' });
-    if (!res.ok) throw await res.json();
+    if (!res.ok) throw await this._parseError(res);
     return res.json();
   }
 };
