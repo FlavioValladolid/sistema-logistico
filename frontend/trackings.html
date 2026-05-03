@@ -70,6 +70,7 @@ function renderTabla(data) {
             <th>Tracking #</th>
             <th>Cliente</th>
             <th>Caja</th>
+            <th>Inspector</th>
             <th>Grado</th>
             <th>Declaradas</th>
             <th>Inspeccionadas</th>
@@ -87,6 +88,7 @@ function renderTabla(data) {
                 <td class="td-mono" style="color:var(--accent-cyan);font-weight:700">${t.tracking_number}</td>
                 <td>${t.cliente_nombre || '—'}</td>
                 <td class="td-mono">${t.caja_id}</td>
+                <td>${t.operador || '—'}</td>
                 <td>${gradoBadge(t.grado_confianza)}</td>
                 <td class="td-mono">${formatNum(t.cantidad_declarada)}</td>
                 <td>
@@ -125,7 +127,7 @@ function applyFilters() {
   const q = document.getElementById('search-tracking').value.toLowerCase();
   const estatus = document.getElementById('filtro-estatus').value;
   renderTabla(trackingsData.filter(t => {
-    const matchQ = !q || t.tracking_number.toLowerCase().includes(q) || (t.cliente_nombre||'').toLowerCase().includes(q);
+    const matchQ = !q || t.tracking_number.toLowerCase().includes(q) || (t.cliente_nombre||'').toLowerCase().includes(q) || (t.operador||'').toLowerCase().includes(q);
     const matchE = !estatus || t.estatus === estatus;
     return matchQ && matchE;
   }));
