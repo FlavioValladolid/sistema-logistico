@@ -235,7 +235,7 @@ async function renderInicio() {
           <label class="form-label">Cliente / Proveedor *</label>
           <select class="form-control" id="ini-cliente" onchange="onClienteChange(this)">
             <option value="">— Seleccionar cliente —</option>
-            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}">${c.nombre}</option>`).join('')}
+            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}" data-almacenamiento="${c.tipo_almacenamiento || 'caja'}">${c.nombre}</option>`).join('')}
           </select>
           <div id="cliente-config-preview" class="mt-8 hidden">
             <div style="display:flex;gap:8px;flex-wrap:wrap" id="cliente-badges"></div>
@@ -249,9 +249,9 @@ async function renderInicio() {
             <div class="form-hint">Identificador único del envío</div>
           </div>
           <div class="form-group">
-            <label class="form-label">Número de Caja *</label>
+            <label class="form-label" id="ini-caja-label">Número de Caja *</label>
             <input type="text" class="form-control form-control-mono" id="ini-caja" placeholder="CAJA-001">
-            <div class="form-hint">Se heredará a todos los SKUs de esta sesión</div>
+            <div class="form-hint" id="ini-caja-hint">Se heredará a todos los SKUs de esta sesión</div>
           </div>
         </div>
 
@@ -294,14 +294,24 @@ function onClienteChange(sel) {
   const calidad = opt.dataset.calidad === '1';
   const retrabajo = opt.dataset.retrabajo === '1';
   const pct = opt.dataset.pct;
+  const almacenamiento = opt.dataset.almacenamiento || 'caja';
+  const esPallet = almacenamiento === 'pallet';
 
   badges.innerHTML = `
     <span class="grado-badge ${info.class}">${info.label}</span>
     ${calidad ? '<span class="badge badge-blue">✓ Calidad</span>' : ''}
     ${retrabajo ? '<span class="badge badge-amber">✓ Retrabajos</span>' : ''}
     ${grado === 2 ? `<span class="badge badge-muted">Muestreo ${pct}%</span>` : ''}
+    <span class="badge badge-muted">${esPallet ? '⬛ Pallet' : '📦 Caja'}</span>
   `;
   preview.classList.remove('hidden');
+
+  // Adaptar campo de caja/pallet
+  document.getElementById('ini-caja-label').textContent = esPallet ? 'Número de Pallet *' : 'Número de Caja *';
+  document.getElementById('ini-caja').placeholder = esPallet ? 'PALLET-001' : 'CAJA-001';
+  document.getElementById('ini-caja-hint').textContent = esPallet
+    ? 'Número de pallet — se heredará a todos los SKUs de esta sesión'
+    : 'Número de caja — se heredará a todos los SKUs de esta sesión';
 }
 
 async function iniciarTracking() {
@@ -663,7 +673,7 @@ function renderInspeccion() {
           <span class="info-val" style="color:var(--accent-cyan)">${t.tracking_number}</span>
         </div>
         <div class="info-row">
-          <span class="info-key">Caja</span>
+          <span class="info-key">${parseInt(t.grado_confianza) && t.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja'}</span>
           <span class="info-val">${t.caja_id}</span>
         </div>
         <div class="info-row">

@@ -71,7 +71,28 @@ const modalHtml = `
           <div class="form-hint">Solo aplica para G2. Se calculará automáticamente sobre la cantidad ingresada.</div>
         </div>
 
-        <div class="section-title" style="margin-top:20px">Módulos Activos</div>
+        <div class="section-title" style="margin-top:20px">Tipo de Almacenamiento</div>
+
+        <div class="form-group">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <label id="btn-tipo-caja" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);border:2px solid var(--accent-green);background:rgba(0,230,118,0.08);cursor:pointer">
+              <input type="radio" name="tipo-almacenamiento" id="tipo-caja" value="caja" checked style="accent-color:var(--accent-green)">
+              <div>
+                <div style="font-weight:600;font-size:13px">Por Caja</div>
+                <div class="form-hint" style="margin:0">Número de caja por envío</div>
+              </div>
+            </label>
+            <label id="btn-tipo-pallet" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-elevated);cursor:pointer">
+              <input type="radio" name="tipo-almacenamiento" id="tipo-pallet" value="pallet" style="accent-color:var(--accent-green)">
+              <div>
+                <div style="font-weight:600;font-size:13px">Por Pallet</div>
+                <div class="form-hint" style="margin:0">Número de pallet por envío</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top:4px">Módulos Activos</div>
 
         <div style="display:flex;flex-direction:column;gap:14px">
           <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
@@ -110,6 +131,20 @@ const modalHtml = `
 document.body.insertAdjacentHTML('beforeend', modalHtml);
 
 let clientesData = [];
+
+function onTipoAlmacenamientoChange() {
+  const val = document.querySelector('input[name="tipo-almacenamiento"]:checked')?.value || 'caja';
+  const esCaja = val === 'caja';
+  document.getElementById('btn-tipo-caja').style.cssText =
+    `display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:${esCaja ? '2px solid var(--accent-green);background:rgba(0,230,118,0.08)' : '1px solid var(--border);background:var(--bg-elevated)'}`;
+  document.getElementById('btn-tipo-pallet').style.cssText =
+    `display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:${!esCaja ? '2px solid var(--accent-green);background:rgba(0,230,118,0.08)' : '1px solid var(--border);background:var(--bg-elevated)'}`;
+}
+
+// Bind radio change
+document.querySelectorAll('input[name="tipo-almacenamiento"]').forEach(r =>
+  r.addEventListener('change', onTipoAlmacenamientoChange)
+);
 
 function onGradoChange() {
   const g = parseInt(document.getElementById('cliente-grado').value);
@@ -152,6 +187,7 @@ function renderTabla(clientes) {
             <th>Nombre</th>
             <th>Grado de Confianza</th>
             <th>% Muestreo</th>
+            <th>Almacenamiento</th>
             <th>Calidad</th>
             <th>Retrabajos</th>
             <th>Registrado</th>
@@ -164,6 +200,11 @@ function renderTabla(clientes) {
               <td style="font-weight:600">${c.nombre}</td>
               <td>${gradoBadge(c.grado_confianza)}</td>
               <td class="td-mono">${c.grado_confianza === 2 ? c.porcentaje_muestreo + '%' : '—'}</td>
+              <td>
+                <span class="badge ${c.tipo_almacenamiento === 'pallet' ? 'badge-blue' : 'badge-muted'}">
+                  ${c.tipo_almacenamiento === 'pallet' ? '⬛ Pallet' : '📦 Caja'}
+                </span>
+              </td>
               <td>
                 <span class="badge ${c.modulo_calidad ? 'badge-green' : 'badge-muted'}">
                   ${c.modulo_calidad ? '✓ Activo' : 'Inactivo'}
@@ -196,8 +237,10 @@ function abrirNuevo() {
   document.getElementById('cliente-pct').value = '30';
   document.getElementById('cliente-calidad').checked = false;
   document.getElementById('cliente-retrabajo').checked = false;
+  document.getElementById('tipo-caja').checked = true;
   document.getElementById('modal-cliente-title').textContent = 'Nuevo Cliente';
   onGradoChange();
+  onTipoAlmacenamientoChange();
   openModal('modal-cliente');
 }
 
@@ -213,8 +256,11 @@ function editarCliente(id) {
   document.getElementById('cliente-pct').value = c.porcentaje_muestreo || 30;
   document.getElementById('cliente-calidad').checked = !!c.modulo_calidad;
   document.getElementById('cliente-retrabajo').checked = !!c.modulo_retrabajo;
+  const tipo = c.tipo_almacenamiento || 'caja';
+  document.getElementById(tipo === 'pallet' ? 'tipo-pallet' : 'tipo-caja').checked = true;
   document.getElementById('modal-cliente-title').textContent = 'Editar Cliente';
   onGradoChange();
+  onTipoAlmacenamientoChange();
   openModal('modal-cliente');
 }
 
@@ -229,6 +275,7 @@ async function guardarCliente() {
     porcentaje_muestreo: parseFloat(document.getElementById('cliente-pct').value) || 30,
     modulo_calidad: document.getElementById('cliente-calidad').checked,
     modulo_retrabajo: document.getElementById('cliente-retrabajo').checked,
+    tipo_almacenamiento: document.querySelector('input[name="tipo-almacenamiento"]:checked')?.value || 'caja',
   };
 
   try {

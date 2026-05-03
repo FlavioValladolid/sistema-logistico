@@ -50,9 +50,11 @@ async function initDB() {
       porcentaje_muestreo REAL DEFAULT 30,
       modulo_calidad INTEGER DEFAULT 0,
       modulo_retrabajo INTEGER DEFAULT 0,
+      tipo_almacenamiento TEXT DEFAULT 'caja',
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
+  try { db.run("ALTER TABLE clientes ADD COLUMN tipo_almacenamiento TEXT DEFAULT 'caja'"); } catch(e) {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS skus (
@@ -219,18 +221,18 @@ app.get('/api/clientes/:id', (req, res) => {
 });
 
 app.post('/api/clientes', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento } = req.body;
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   const id = uuidv4();
-  dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo) VALUES (?,?,?,?,?,?)`,
-    [id, nombre, grado_confianza || 2, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0]);
+  dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento) VALUES (?,?,?,?,?,?,?)`,
+    [id, nombre, grado_confianza || 2, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja']);
   res.json({ id, mensaje: 'Cliente creado' });
 });
 
 app.put('/api/clientes/:id', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo } = req.body;
-  dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=? WHERE id=?`,
-    [nombre, grado_confianza, porcentaje_muestreo, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, req.params.id]);
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento } = req.body;
+  dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=? WHERE id=?`,
+    [nombre, grado_confianza, porcentaje_muestreo, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', req.params.id]);
   res.json({ mensaje: 'Cliente actualizado' });
 });
 
@@ -310,7 +312,7 @@ app.delete('/api/skus/:id', (req, res) => {
 // --- TRACKINGS ---
 app.get('/api/trackings', (req, res) => {
   const rows = dbAll(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     ORDER BY t.created_at DESC
   `);
@@ -319,7 +321,7 @@ app.get('/api/trackings', (req, res) => {
 
 app.get('/api/trackings/:id', (req, res) => {
   const row = dbGet(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     WHERE t.id = ?
   `, [req.params.id]);
