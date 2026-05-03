@@ -62,9 +62,12 @@ async function initDB() {
       descripcion TEXT,
       pais_origen TEXT,
       insumos TEXT,
+      upc_code TEXT,
       FOREIGN KEY (cliente_id) REFERENCES clientes(id)
     )
   `);
+  // Migración: agregar upc_code si la tabla ya existía sin esa columna
+  try { db.run('ALTER TABLE skus ADD COLUMN upc_code TEXT'); } catch(e) {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS trackings (
@@ -160,8 +163,8 @@ function seedData() {
       { id: uuidv4(), code: `SKU-${c.nombre.substring(0,3).toUpperCase()}-003`, desc: 'Vestido Floral', pais: 'Vietnam', insumos: '100% Viscosa' },
     ];
     skusDemo.forEach(s => {
-      db.run(`INSERT INTO skus VALUES (?,?,?,?,?,?)`,
-        [s.id, c.id, s.code, s.desc, s.pais, s.insumos]);
+      db.run(`INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code) VALUES (?,?,?,?,?,?,?)`,
+        [s.id, c.id, s.code, s.desc, s.pais, s.insumos, null]);
     });
   });
 
@@ -247,18 +250,23 @@ app.get('/api/skus', (req, res) => {
 
 app.get('/api/skus/buscar/:code', (req, res) => {
   const { cliente_id } = req.query;
-  let sql = 'SELECT * FROM skus WHERE sku_code = ?';
-  let params = [req.params.code];
+  const code = req.params.code;
+  // Busca por UPC primero, luego por SKU code
+  let sql = 'SELECT * FROM skus WHERE (upc_code = ? OR sku_code = ?)';
+  let params = [code, code];
   if (cliente_id) { sql += ' AND cliente_id = ?'; params.push(cliente_id); }
+  sql += ' ORDER BY (upc_code = ?) DESC LIMIT 1';
+  params.push(code);
   const row = dbGet(sql, params);
   res.json(row || null);
 });
 
 app.post('/api/skus', (req, res) => {
-  const { cliente_id, sku_code, descripcion, pais_origen, insumos } = req.body;
+  const { cliente_id, sku_code, upc_code, descripcion, pais_origen, insumos } = req.body;
   if (!cliente_id || !sku_code) return res.status(400).json({ error: 'cliente_id y sku_code requeridos' });
   const id = uuidv4();
-  dbRun(`INSERT INTO skus VALUES (?,?,?,?,?,?)`, [id, cliente_id, sku_code, descripcion, pais_origen, insumos]);
+  dbRun(`INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code) VALUES (?,?,?,?,?,?,?)`,
+    [id, cliente_id, sku_code, descripcion, pais_origen, insumos, upc_code || null]);
   res.json({ id, mensaje: 'SKU creado' });
 });
 
@@ -275,11 +283,12 @@ app.post('/api/skus/importar', (req, res) => {
     const existe = dbGet('SELECT id FROM skus WHERE sku_code=? AND cliente_id=?', [sku_code, cliente_id]);
     if (existe) { omitidos++; return; }
     const id = uuidv4();
-    dbRun('INSERT INTO skus VALUES (?,?,?,?,?,?)', [
+    dbRun('INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code) VALUES (?,?,?,?,?,?,?)', [
       id, cliente_id, sku_code,
       (s.descripcion || '').trim(),
       (s.pais_origen || '').trim(),
-      (s.insumos || '').trim()
+      (s.insumos || '').trim(),
+      (s.upc_code || '').trim() || null
     ]);
     insertados++;
   });
@@ -287,9 +296,9 @@ app.post('/api/skus/importar', (req, res) => {
 });
 
 app.put('/api/skus/:id', (req, res) => {
-  const { sku_code, descripcion, pais_origen, insumos } = req.body;
-  dbRun(`UPDATE skus SET sku_code=?,descripcion=?,pais_origen=?,insumos=? WHERE id=?`,
-    [sku_code, descripcion, pais_origen, insumos, req.params.id]);
+  const { sku_code, upc_code, descripcion, pais_origen, insumos } = req.body;
+  dbRun(`UPDATE skus SET sku_code=?,descripcion=?,pais_origen=?,insumos=?,upc_code=? WHERE id=?`,
+    [sku_code, descripcion, pais_origen, insumos, upc_code || null, req.params.id]);
   res.json({ mensaje: 'SKU actualizado' });
 });
 

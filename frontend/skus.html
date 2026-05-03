@@ -69,9 +69,14 @@ document.body.insertAdjacentHTML('beforeend', `
             <input type="text" class="form-control form-control-mono" id="sku-code" placeholder="Ej: SKU-TEX-001">
           </div>
           <div class="form-group">
-            <label class="form-label">Descripción</label>
-            <input type="text" class="form-control" id="sku-desc" placeholder="Ej: Camisa Básica">
+            <label class="form-label">UPC Code</label>
+            <input type="text" class="form-control form-control-mono" id="sku-upc" placeholder="Ej: 012345678905">
+            <div class="form-hint">Código de barras escaneado en operación</div>
           </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Descripción</label>
+          <input type="text" class="form-control" id="sku-desc" placeholder="Ej: Camisa Básica">
         </div>
         <div class="form-row">
           <div class="form-group">
@@ -108,7 +113,7 @@ document.body.insertAdjacentHTML('beforeend', `
         <div class="form-group">
           <label class="form-label">Archivo CSV *</label>
           <input type="file" class="form-control" id="imp-archivo" accept=".csv,.txt" onchange="previewCSV(this)">
-          <div class="form-hint">Formato: sku_code, descripcion, pais_origen, insumos</div>
+          <div class="form-hint">Formato: sku_code, upc_code, descripcion, pais_origen, insumos</div>
         </div>
         <div id="imp-preview" class="hidden">
           <div class="section-title" style="margin-top:12px">Vista previa (<span id="imp-count">0</span> filas)</div>
@@ -117,6 +122,7 @@ document.body.insertAdjacentHTML('beforeend', `
               <thead>
                 <tr>
                   <th style="padding:6px 10px;background:var(--bg-secondary);text-align:left">SKU</th>
+                  <th style="padding:6px 10px;background:var(--bg-secondary);text-align:left">UPC</th>
                   <th style="padding:6px 10px;background:var(--bg-secondary);text-align:left">Descripción</th>
                   <th style="padding:6px 10px;background:var(--bg-secondary);text-align:left">País Origen</th>
                   <th style="padding:6px 10px;background:var(--bg-secondary);text-align:left">Insumos</th>
@@ -172,6 +178,7 @@ function renderTabla(skus) {
         <thead>
           <tr>
             <th>Código SKU</th>
+            <th>UPC Code</th>
             <th>Descripción</th>
             <th>Cliente</th>
             <th>País Origen</th>
@@ -185,6 +192,7 @@ function renderTabla(skus) {
             return `
               <tr>
                 <td class="td-mono" style="color:var(--accent-cyan);font-weight:600">${s.sku_code}</td>
+                <td class="td-mono">${s.upc_code || '—'}</td>
                 <td>${s.descripcion || '—'}</td>
                 <td>${cliente?.nombre || '—'}</td>
                 <td>${s.pais_origen || '—'}</td>
@@ -207,6 +215,7 @@ function renderTabla(skus) {
 function abrirNuevo() {
   document.getElementById('sku-id').value = '';
   document.getElementById('sku-code').value = '';
+  document.getElementById('sku-upc').value = '';
   document.getElementById('sku-desc').value = '';
   document.getElementById('sku-pais').value = '';
   document.getElementById('sku-insumos').value = '';
@@ -220,6 +229,7 @@ function editarSKU(id) {
   document.getElementById('sku-id').value = s.id;
   document.getElementById('sku-cliente').value = s.cliente_id;
   document.getElementById('sku-code').value = s.sku_code;
+  document.getElementById('sku-upc').value = s.upc_code || '';
   document.getElementById('sku-desc').value = s.descripcion || '';
   document.getElementById('sku-pais').value = s.pais_origen || '';
   document.getElementById('sku-insumos').value = s.insumos || '';
@@ -232,6 +242,7 @@ async function guardarSKU() {
   const payload = {
     cliente_id: document.getElementById('sku-cliente').value,
     sku_code: document.getElementById('sku-code').value.trim().toUpperCase(),
+    upc_code: document.getElementById('sku-upc').value.trim() || null,
     descripcion: document.getElementById('sku-desc').value.trim(),
     pais_origen: document.getElementById('sku-pais').value.trim(),
     insumos: document.getElementById('sku-insumos').value.trim(),
@@ -257,11 +268,11 @@ async function eliminarSKU(id, code) {
 document.getElementById('btn-nuevo-sku').onclick = abrirNuevo;
 
 document.getElementById('btn-descargar-layout').onclick = function() {
-  const header = 'sku_code,descripcion,pais_origen,insumos';
+  const header = 'sku_code,upc_code,descripcion,pais_origen,insumos';
   const ejemplo = [
-    'SKU-EJEMPLO-001,Camisa Básica,China,100% Algodón',
-    'SKU-EJEMPLO-002,Pantalón Slim,Bangladesh,65% Poliéster 35% Algodón',
-    'SKU-EJEMPLO-003,Vestido Floral,Vietnam,100% Viscosa',
+    'SKU-EJEMPLO-001,012345678905,Camisa Básica,China,100% Algodón',
+    'SKU-EJEMPLO-002,012345678912,Pantalón Slim,Bangladesh,65% Poliéster 35% Algodón',
+    'SKU-EJEMPLO-003,012345678929,Vestido Floral,Vietnam,100% Viscosa',
   ].join('\n');
   const csv = header + '\n' + ejemplo;
   const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
@@ -308,7 +319,7 @@ function parseCSV(text) {
     const cols = splitCSVLine(line);
     const sku_code = cols[0] || '';
     if (!sku_code) continue;
-    rows.push({ sku_code, descripcion: cols[1] || '', pais_origen: cols[2] || '', insumos: cols[3] || '' });
+    rows.push({ sku_code, upc_code: cols[1] || '', descripcion: cols[2] || '', pais_origen: cols[3] || '', insumos: cols[4] || '' });
   }
   return rows;
 }
@@ -324,6 +335,7 @@ function previewCSV(input) {
     tbody.innerHTML = csvRows.map(r => `
       <tr>
         <td style="padding:5px 10px;font-family:monospace;color:var(--accent-cyan)">${r.sku_code}</td>
+        <td style="padding:5px 10px;font-family:monospace">${r.upc_code || '—'}</td>
         <td style="padding:5px 10px">${r.descripcion || '—'}</td>
         <td style="padding:5px 10px">${r.pais_origen || '—'}</td>
         <td style="padding:5px 10px">${r.insumos || '—'}</td>
