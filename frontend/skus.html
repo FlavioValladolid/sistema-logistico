@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Catálogo SKUs — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<script src="js/app.js"></script>
+<script src="js/shell.js"></script>
+<script>
+buildShell('SKUs', 'ADMINISTRACIÓN / CATÁLOGO SKUs', `
+  <button class="btn btn-secondary btn-sm" id="btn-descargar-layout">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Descargar Layout
+  </button>
+  <button class="btn btn-secondary btn-sm" id="btn-cargar-skus">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+    Cargar SKUs
+  </button>
+  <button class="btn btn-primary btn-sm" id="btn-nuevo-sku">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Nuevo SKU
+  </button>
+`);
+
+document.getElementById('page-content').innerHTML = `
+  <div class="flex justify-between items-center mb-24">
+    <div>
+      <h1 class="page-title">Catálogo de SKUs</h1>
+      <p class="page-subtitle">Productos registrados con país de origen e insumos de catálogo</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" style="flex-wrap:wrap;gap:10px">
+      <span class="card-title">Productos</span>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <select class="form-control" id="filtro-cliente" style="width:200px">
+          <option value="">— Todos los clientes —</option>
+        </select>
+        <input type="text" class="form-control" id="search-sku" placeholder="Buscar SKU o descripción..." style="width:220px">
+      </div>
+    </div>
+    <div id="tabla-skus">
+      <div class="text-center" style="padding:32px"><div class="spinner"></div></div>
+    </div>
+  </div>
+`;
+
+// Modal
+document.body.insertAdjacentHTML('beforeend', `
+  <div id="modal-sku" class="modal-overlay">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title" id="modal-sku-title">Nuevo SKU</span>
+        <button class="modal-close" onclick="closeModal('modal-sku')">×</button>
+      </div>
+      <div class="modal-body">
+        <input type="hidden" id="sku-id">
+        <div class="form-group">
+          <label class="form-label">Cliente / Proveedor *</label>
+          <select class="form-control" id="sku-cliente"></select>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Código SKU *</label>
+            <input type="text" class="form-control form-control-mono" id="sku-code" placeholder="Ej: SKU-TEX-001">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Descripción</label>
+            <input type="text" class="form-control" id="sku-desc" placeholder="Ej: Camisa Básica">
+          </div>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">País de Origen (Catálogo)</label>
+            <input type="text" class="form-control" id="sku-pais" placeholder="Ej: China, Bangladesh...">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Insumos (Catálogo)</label>
+            <input type="text" class="form-control" id="sku-insumos" placeholder="Ej: 100% Algodón">
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-sku')">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarSKU()">Guardar</button>
+      </div>
+    </div>
+  </div>
+`);
+
+// Modal importar
+document.body.insertAdjacentHTML('beforeend', `
+  <div id="modal-importar" class="modal-overlay">
+    <div class="modal" style="max-width:640px">
+      <div class="modal-header">
+        <span class="modal-title">Cargar SKUs desde CSV</span>
+        <button class="modal-close" onclick="closeModal('modal-importar')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Cliente / Proveedor *</label>
+          <select class="form-control" id="imp-cliente"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Archivo CSV *</label>
+          <input type="file" class="form-control" id="imp-archivo" accept=".csv,.txt" onchange="previewCSV(this)">
+          <div class="form-hint">Formato: sku_code, descripcion, pais_origen, insumos</div>
+        </div>
+        <div id="imp-preview" class="hidden">
+          <div class="section-title" style="margin-top:12px">Vista previa (<span id="imp-count">0</span> filas)</div>
+          <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:6px">
+            <table style="width:100%;font-size:12px">
+              <thead>
+                <tr>
+                  <th style="padding:6px 10px;background:var(--bg-secondary);text-align:left">SKU</th>
+                  <th style="padding:6px 10px;background:var(--bg-secondary);text-align:left">Descripción</th>
+                  <th style="padding:6px 10px;background:var(--bg-secondary);text-align:left">País Origen</th>
+                  <th style="padding:6px 10px;background:var(--bg-secondary);text-align:left">Insumos</th>
+                </tr>
+              </thead>
+              <tbody id="imp-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div id="imp-alert"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-importar')">Cancelar</button>
+        <button class="btn btn-primary" id="btn-importar" onclick="importarCSV()" disabled>Importar</button>
+      </div>
+    </div>
+  </div>
+`);
+
+let skusData = [];
+let clientesData = [];
+let csvRows = [];
+
+async function loadAll() {
+  const [clientes, skus] = await Promise.all([API.get('/clientes'), API.get('/skus')]);
+  clientesData = clientes;
+  skusData = skus;
+
+  // Populate selects
+  const opts = clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+  document.getElementById('filtro-cliente').innerHTML = '<option value="">— Todos los clientes —</option>' + opts;
+  document.getElementById('sku-cliente').innerHTML = opts;
+  document.getElementById('imp-cliente').innerHTML = '<option value="">— Seleccionar cliente —</option>' + opts;
+
+  renderTabla(skusData);
+}
+
+function renderTabla(skus) {
+  const el = document.getElementById('tabla-skus');
+  if (skus.length === 0) {
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">📋</div>
+        <div class="empty-state-title">Sin SKUs registrados</div>
+        <div class="empty-state-text">Agrega productos al catálogo para habilitar la inspección</div>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="table-wrapper" style="border:none">
+      <table>
+        <thead>
+          <tr>
+            <th>Código SKU</th>
+            <th>Descripción</th>
+            <th>Cliente</th>
+            <th>País Origen</th>
+            <th>Insumos</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${skus.map(s => {
+            const cliente = clientesData.find(c => c.id === s.cliente_id);
+            return `
+              <tr>
+                <td class="td-mono" style="color:var(--accent-cyan);font-weight:600">${s.sku_code}</td>
+                <td>${s.descripcion || '—'}</td>
+                <td>${cliente?.nombre || '—'}</td>
+                <td>${s.pais_origen || '—'}</td>
+                <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${s.insumos || '—'}</td>
+                <td>
+                  <div class="td-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="editarSKU('${s.id}')">Editar</button>
+                    <button class="btn btn-danger btn-sm" onclick="eliminarSKU('${s.id}','${s.sku_code}')">Eliminar</button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function abrirNuevo() {
+  document.getElementById('sku-id').value = '';
+  document.getElementById('sku-code').value = '';
+  document.getElementById('sku-desc').value = '';
+  document.getElementById('sku-pais').value = '';
+  document.getElementById('sku-insumos').value = '';
+  document.getElementById('modal-sku-title').textContent = 'Nuevo SKU';
+  openModal('modal-sku');
+}
+
+function editarSKU(id) {
+  const s = skusData.find(x => x.id === id);
+  if (!s) return;
+  document.getElementById('sku-id').value = s.id;
+  document.getElementById('sku-cliente').value = s.cliente_id;
+  document.getElementById('sku-code').value = s.sku_code;
+  document.getElementById('sku-desc').value = s.descripcion || '';
+  document.getElementById('sku-pais').value = s.pais_origen || '';
+  document.getElementById('sku-insumos').value = s.insumos || '';
+  document.getElementById('modal-sku-title').textContent = 'Editar SKU';
+  openModal('modal-sku');
+}
+
+async function guardarSKU() {
+  const id = document.getElementById('sku-id').value;
+  const payload = {
+    cliente_id: document.getElementById('sku-cliente').value,
+    sku_code: document.getElementById('sku-code').value.trim().toUpperCase(),
+    descripcion: document.getElementById('sku-desc').value.trim(),
+    pais_origen: document.getElementById('sku-pais').value.trim(),
+    insumos: document.getElementById('sku-insumos').value.trim(),
+  };
+  if (!payload.sku_code || !payload.cliente_id) {
+    toast('Código SKU y cliente son requeridos', 'error'); return;
+  }
+  try {
+    if (id) { await API.put(`/skus/${id}`, payload); toast('SKU actualizado'); }
+    else { await API.post('/skus', payload); toast('SKU creado'); }
+    closeModal('modal-sku');
+    loadAll();
+  } catch(e) { toast(e.error || 'Error al guardar', 'error'); }
+}
+
+async function eliminarSKU(id, code) {
+  const ok = await confirm(`¿Eliminar SKU "${code}"?`, 'Eliminar SKU');
+  if (!ok) return;
+  try { await API.del(`/skus/${id}`); toast('SKU eliminado'); loadAll(); }
+  catch(e) { toast(e.error || 'Error', 'error'); }
+}
+
+document.getElementById('btn-nuevo-sku').onclick = abrirNuevo;
+
+document.getElementById('btn-descargar-layout').onclick = function() {
+  const header = 'sku_code,descripcion,pais_origen,insumos';
+  const ejemplo = [
+    'SKU-EJEMPLO-001,Camisa Básica,China,100% Algodón',
+    'SKU-EJEMPLO-002,Pantalón Slim,Bangladesh,65% Poliéster 35% Algodón',
+    'SKU-EJEMPLO-003,Vestido Floral,Vietnam,100% Viscosa',
+  ].join('\n');
+  const csv = header + '\n' + ejemplo;
+  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'layout_skus.csv'; a.click();
+  URL.revokeObjectURL(url);
+};
+
+document.getElementById('btn-cargar-skus').onclick = function() {
+  csvRows = [];
+  document.getElementById('imp-archivo').value = '';
+  document.getElementById('imp-preview').classList.add('hidden');
+  document.getElementById('imp-alert').innerHTML = '';
+  document.getElementById('btn-importar').disabled = true;
+  openModal('modal-importar');
+};
+
+function splitCSVLine(line) {
+  const cols = [];
+  let cur = '', inQ = false;
+  for (let c = 0; c < line.length; c++) {
+    if (line[c] === '"') { inQ = !inQ; }
+    else if (line[c] === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+    else { cur += line[c]; }
+  }
+  cols.push(cur.trim());
+  return cols;
+}
+
+function parseCSV(text) {
+  // Strip BOM if present
+  const clean = text.charCodeAt(0) === 0xFEFF ? text.slice(1) : text;
+  const lines = clean.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n');
+  const rows = [];
+  // Find first non-empty line and skip it (header)
+  let dataStart = 0;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i].trim()) { dataStart = i + 1; break; }
+  }
+  for (let i = dataStart; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const cols = splitCSVLine(line);
+    const sku_code = cols[0] || '';
+    if (!sku_code) continue;
+    rows.push({ sku_code, descripcion: cols[1] || '', pais_origen: cols[2] || '', insumos: cols[3] || '' });
+  }
+  return rows;
+}
+
+function previewCSV(input) {
+  const file = input.files[0];
+  if (!file) return;
+  document.getElementById('imp-alert').innerHTML = '';
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    csvRows = parseCSV(e.target.result);
+    const tbody = document.getElementById('imp-tbody');
+    tbody.innerHTML = csvRows.map(r => `
+      <tr>
+        <td style="padding:5px 10px;font-family:monospace;color:var(--accent-cyan)">${r.sku_code}</td>
+        <td style="padding:5px 10px">${r.descripcion || '—'}</td>
+        <td style="padding:5px 10px">${r.pais_origen || '—'}</td>
+        <td style="padding:5px 10px">${r.insumos || '—'}</td>
+      </tr>
+    `).join('');
+    document.getElementById('imp-count').textContent = csvRows.length;
+    document.getElementById('imp-preview').classList.toggle('hidden', csvRows.length === 0);
+    document.getElementById('btn-importar').disabled = csvRows.length === 0;
+    if (csvRows.length === 0) {
+      document.getElementById('imp-alert').innerHTML =
+        '<div class="alert alert-error" style="margin-top:10px">No se encontraron filas válidas. Verifica que el archivo sea el layout descargado con datos en las filas.</div>';
+    }
+  };
+  reader.onerror = function() {
+    document.getElementById('imp-alert').innerHTML =
+      '<div class="alert alert-error" style="margin-top:10px">No se pudo leer el archivo. Asegúrate de seleccionar un archivo CSV.</div>';
+  };
+  reader.readAsText(file, 'UTF-8');
+}
+
+async function importarCSV() {
+  const clienteId = document.getElementById('imp-cliente').value;
+  if (!clienteId) { toast('Selecciona un cliente', 'error'); return; }
+  if (!csvRows.length) return;
+  try {
+    document.getElementById('btn-importar').disabled = true;
+    document.getElementById('imp-alert').innerHTML = '';
+    const res = await API.post('/skus/importar', { cliente_id: clienteId, skus: csvRows });
+    toast(`Importación completada: ${res.insertados} insertados, ${res.omitidos} omitidos`);
+    closeModal('modal-importar');
+    loadAll();
+  } catch(e) {
+    const msg = e?.error || e?.message || 'Error al comunicarse con el servidor. Verifica que el servidor esté corriendo.';
+    document.getElementById('imp-alert').innerHTML = `<div class="alert alert-error" style="margin-top:10px">${msg}</div>`;
+    document.getElementById('btn-importar').disabled = false;
+  }
+}
+
+document.getElementById('search-sku').addEventListener('input', applyFilters);
+document.getElementById('filtro-cliente').addEventListener('change', applyFilters);
+
+function applyFilters() {
+  const q = document.getElementById('search-sku').value.toLowerCase();
+  const clienteId = document.getElementById('filtro-cliente').value;
+  renderTabla(skusData.filter(s => {
+    const matchQ = !q || s.sku_code.toLowerCase().includes(q) || (s.descripcion||'').toLowerCase().includes(q);
+    const matchC = !clienteId || s.cliente_id === clienteId;
+    return matchQ && matchC;
+  }));
+}
+
+loadAll();
+</script>
+</body>
+</html>

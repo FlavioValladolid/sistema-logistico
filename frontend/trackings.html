@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trackings — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<script src="js/app.js"></script>
+<script src="js/shell.js"></script>
+<script>
+buildShell('Trackings', 'TRACKINGS', `
+  <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    Nueva Operación
+  </button>
+`);
+
+document.getElementById('page-content').innerHTML = `
+  <div class="flex justify-between items-center mb-24">
+    <div>
+      <h1 class="page-title">Trackings</h1>
+      <p class="page-subtitle">Historial de envíos y sus inspecciones</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header" style="flex-wrap:wrap;gap:10px">
+      <span class="card-title">Todos los Trackings</span>
+      <div style="display:flex;gap:8px;margin-left:auto">
+        <select class="form-control" id="filtro-estatus" style="width:160px">
+          <option value="">Todos los estados</option>
+          <option value="abierto">Abiertos</option>
+          <option value="cerrado">Cerrados</option>
+        </select>
+        <input type="text" class="form-control" id="search-tracking" placeholder="Buscar tracking..." style="width:200px">
+      </div>
+    </div>
+    <div id="tabla-trackings">
+      <div class="text-center" style="padding:32px"><div class="spinner"></div></div>
+    </div>
+  </div>
+`;
+
+let trackingsData = [];
+
+async function loadTrackings() {
+  trackingsData = await API.get('/trackings');
+  renderTabla(trackingsData);
+}
+
+function renderTabla(data) {
+  const el = document.getElementById('tabla-trackings');
+  if (data.length === 0) {
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">📦</div>
+        <div class="empty-state-title">Sin trackings registrados</div>
+        <div class="empty-state-text">Inicia una nueva operación para registrar el primero</div>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="table-wrapper" style="border:none">
+      <table>
+        <thead>
+          <tr>
+            <th>Tracking #</th>
+            <th>Cliente</th>
+            <th>Caja</th>
+            <th>Grado</th>
+            <th>Declaradas</th>
+            <th>Inspeccionadas</th>
+            <th>Estado</th>
+            <th>Fecha</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.map(t => {
+            const pct = t.cantidad_declarada > 0 ? Math.round(t.cantidad_final / t.cantidad_declarada * 100) : 0;
+            const discrepancia = t.cantidad_final !== t.cantidad_declarada && t.cantidad_declarada > 0;
+            return `
+              <tr>
+                <td class="td-mono" style="color:var(--accent-cyan);font-weight:700">${t.tracking_number}</td>
+                <td>${t.cliente_nombre || '—'}</td>
+                <td class="td-mono">${t.caja_id}</td>
+                <td>${gradoBadge(t.grado_confianza)}</td>
+                <td class="td-mono">${formatNum(t.cantidad_declarada)}</td>
+                <td>
+                  <div class="td-mono">${formatNum(t.cantidad_final)}</div>
+                  <div class="progress-bar" style="width:80px;margin-top:4px">
+                    <div class="progress-fill" style="width:${Math.min(pct,100)}%;background:${pct>=100?'var(--accent-green)':'var(--accent-amber)'}"></div>
+                  </div>
+                  ${discrepancia ? `<span class="badge badge-amber" style="margin-top:2px">⚠ Discrepancia</span>` : ''}
+                </td>
+                <td>
+                  <span class="badge ${t.estatus === 'cerrado' ? 'badge-green' : 'badge-amber'}">
+                    ${t.estatus === 'cerrado' ? '✓ Cerrado' : '⟳ Abierto'}
+                  </span>
+                </td>
+                <td class="td-mono text-muted">${formatDate(t.created_at)}</td>
+                <td>
+                  <div class="td-actions">
+                    <button class="btn btn-secondary btn-sm" onclick="window.location='operacion.html?id=${t.id}'">
+                      ${t.estatus === 'abierto' ? 'Inspeccionar' : 'Ver'}
+                    </button>
+                    <button class="btn btn-ghost btn-sm" onclick="window.location='reportes.html?tracking=${t.id}'">
+                      Reporte
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            `;
+          }).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+function applyFilters() {
+  const q = document.getElementById('search-tracking').value.toLowerCase();
+  const estatus = document.getElementById('filtro-estatus').value;
+  renderTabla(trackingsData.filter(t => {
+    const matchQ = !q || t.tracking_number.toLowerCase().includes(q) || (t.cliente_nombre||'').toLowerCase().includes(q);
+    const matchE = !estatus || t.estatus === estatus;
+    return matchQ && matchE;
+  }));
+}
+
+document.getElementById('search-tracking').addEventListener('input', applyFilters);
+document.getElementById('filtro-estatus').addEventListener('change', applyFilters);
+
+loadTrackings();
+</script>
+</body>
+</html>

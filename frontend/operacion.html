@@ -1,0 +1,875 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Operación — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+  <style>
+    .fase-indicator {
+      display:flex;gap:0;margin-bottom:24px;
+      border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden;
+    }
+    .fase {
+      flex:1;padding:10px 16px;font-family:'IBM Plex Mono',monospace;font-size:11px;
+      font-weight:700;letter-spacing:0.06em;text-align:center;
+      background:var(--bg-elevated);color:var(--text-muted);
+      border-right:1px solid var(--border);transition:all .2s;
+    }
+    .fase:last-child{border-right:none;}
+    .fase.active{background:rgba(0,230,118,.1);color:var(--accent-green);}
+    .fase.done{background:rgba(0,230,118,.05);color:var(--accent-green-dim);}
+    .fase-num{display:block;font-size:9px;color:inherit;opacity:.7;margin-bottom:2px;}
+
+    .sku-list-item{
+      background:var(--bg-elevated);border:1px solid var(--border);
+      border-radius:var(--radius-sm);padding:12px 14px;
+      display:flex;align-items:center;gap:12px;
+      animation:slideIn .2s ease;
+    }
+    @keyframes slideIn{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+
+    .sku-list-item.has-error{border-color:rgba(255,61,61,.3);}
+    .sku-code{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--accent-cyan);}
+    .sku-meta{font-size:11px;color:var(--text-muted);}
+    .sku-badges{display:flex;gap:4px;flex-wrap:wrap;}
+
+    .panel-right{
+      background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);
+      position:sticky;top:76px;height:fit-content;
+    }
+    .panel-header{
+      padding:14px 16px;border-bottom:1px solid var(--border);
+      font-family:'IBM Plex Mono',monospace;font-size:11px;font-weight:700;
+      letter-spacing:.08em;color:var(--text-secondary);text-transform:uppercase;
+    }
+    .info-row{
+      display:flex;justify-content:space-between;align-items:center;
+      padding:8px 16px;border-bottom:1px solid var(--border);
+    }
+    .info-row:last-child{border-bottom:none;}
+    .info-key{font-size:11px;color:var(--text-muted);}
+    .info-val{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--text-primary);}
+  </style>
+</head>
+<body>
+<script src="js/app.js"></script>
+<script src="js/shell.js"></script>
+<script>
+buildShell('Operación', 'OPERACIÓN / INSPECCIÓN', '');
+
+document.getElementById('page-content').innerHTML = `
+  <div id="fase-inicio" class="hidden">
+    <!-- Fase 1: Inicio de tracking -->
+  </div>
+  <div id="fase-inspeccion" class="hidden">
+    <!-- Fase 2: Inspección SKUs -->
+  </div>
+  <div id="loading-state" style="text-align:center;padding:80px">
+    <div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div>
+    <div style="margin-top:16px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;font-size:12px">CARGANDO...</div>
+  </div>
+`;
+
+// Modal de Error/Evidencia
+document.body.insertAdjacentHTML('beforeend', `
+  <div id="modal-error" class="modal-overlay">
+    <div class="modal" style="max-width:500px">
+      <div class="modal-header">
+        <span class="modal-title">📸 Registrar Error / Evidencia</span>
+        <button class="modal-close" onclick="closeModal('modal-error')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="disposicion-banner">
+          <span class="disposicion-icon">📦</span>
+          <div>
+            <div class="disposicion-text">COLOCAR EN CAJA DE DAÑADOS</div>
+            <div class="disposicion-sub">Instrucción mandatoria — separar físicamente la pieza</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Tipo de Error *</label>
+          <select class="form-control" id="error-tipo">
+            <option value="Calidad">Calidad — Pieza dañada / defectuosa</option>
+            <option value="Origen">País de Origen — No coincide con catálogo</option>
+            <option value="Insumo">Insumos / Material — No coincide con catálogo</option>
+            <option value="Otro">Otro</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Fotografía de Evidencia *</label>
+          <div class="photo-upload" id="photo-drop-zone">
+            <input type="file" id="error-foto" accept="image/*" capture="environment" onchange="previewFoto(this)">
+            <div class="photo-upload-icon">📷</div>
+            <div class="photo-upload-text">Toca para tomar foto o seleccionar imagen</div>
+            <div class="photo-upload-hint">JPG, PNG — requerido para guardar</div>
+          </div>
+          <img id="foto-preview" class="photo-preview hidden" alt="Vista previa">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Descripción del Error *</label>
+          <textarea class="form-control" id="error-desc" rows="3" placeholder="Describe detalladamente el defecto o discrepancia encontrada..." style="resize:vertical"></textarea>
+        </div>
+
+        <input type="hidden" id="error-detalle-id">
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-error')">Cancelar</button>
+        <button class="btn btn-danger" onclick="guardarError()">
+          ⚠ Registrar Error
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-discrepancia" class="modal-overlay">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <span class="modal-title">⚠ Discrepancia de Inventario</span>
+        <button class="modal-close" onclick="closeModal('modal-discrepancia')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="alert alert-warning">
+          La cantidad física no coincide con la declarada en el Tracking. Registra la cantidad real para generar la alerta.
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Cantidad Declarada</label>
+            <input type="number" class="form-control form-control-mono" id="disc-original" readonly style="opacity:.6">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cantidad Real *</label>
+            <input type="number" class="form-control form-control-mono" id="disc-corregida" placeholder="0" min="0">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nota (opcional)</label>
+          <input type="text" class="form-control" id="disc-nota" placeholder="Motivo de la discrepancia...">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-discrepancia')">Cancelar</button>
+        <button class="btn btn-amber" onclick="guardarDiscrepancia()">Registrar Discrepancia</button>
+      </div>
+    </div>
+  </div>
+`);
+
+// ========================
+// STATE
+// ========================
+let state = {
+  fase: 'inicio', // 'inicio' | 'inspeccion'
+  tracking: null,
+  cliente: null,
+  detalles: [],
+  errores: [],
+  skuActual: null,
+  paisCoincide: true,
+  insumosCoincide: true,
+  calidadActual: 'Buena',
+};
+
+// Check URL for existing tracking
+const params = new URLSearchParams(window.location.search);
+const trackingIdParam = params.get('id');
+
+async function init() {
+  if (trackingIdParam) {
+    try {
+      const tracking = await API.get(`/trackings/${trackingIdParam}`);
+      state.tracking = tracking;
+      state.cliente = tracking;
+      const [detalles, errores] = await Promise.all([
+        API.get(`/trackings/${trackingIdParam}/detalles`),
+        API.get(`/trackings/${trackingIdParam}/errores`)
+      ]);
+      state.detalles = detalles;
+      state.errores = errores;
+      state.fase = 'inspeccion';
+      renderInspeccion();
+    } catch(e) {
+      renderInicio();
+    }
+  } else {
+    renderInicio();
+  }
+}
+
+// ========================
+// FASE 1 — INICIO
+// ========================
+async function renderInicio() {
+  state.fase = 'inicio';
+  document.getElementById('loading-state').classList.add('hidden');
+
+  const clientes = await API.get('/clientes');
+
+  document.getElementById('fase-inicio').innerHTML = `
+    <div style="max-width:640px;margin:0 auto">
+      <h1 class="page-title">Nueva Operación</h1>
+      <p class="page-subtitle">Configura los parámetros del envío antes de iniciar la inspección</p>
+
+      <div class="fase-indicator">
+        <div class="fase active"><span class="fase-num">FASE 01</span>INICIO DEL TRACKING</div>
+        <div class="fase"><span class="fase-num">FASE 02</span>INSPECCIÓN SKUs</div>
+        <div class="fase"><span class="fase-num">FASE 03</span>CIERRE Y MANIFIESTO</div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">Parámetros del Envío</span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Cliente / Proveedor *</label>
+          <select class="form-control" id="ini-cliente" onchange="onClienteChange(this)">
+            <option value="">— Seleccionar cliente —</option>
+            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}">${c.nombre}</option>`).join('')}
+          </select>
+          <div id="cliente-config-preview" class="mt-8 hidden">
+            <div style="display:flex;gap:8px;flex-wrap:wrap" id="cliente-badges"></div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Tracking Number *</label>
+            <input type="text" class="form-control form-control-mono" id="ini-tracking" placeholder="TRK-2025-XXXXX" style="text-transform:uppercase">
+            <div class="form-hint">Identificador único del envío</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Número de Caja *</label>
+            <input type="text" class="form-control form-control-mono" id="ini-caja" placeholder="CAJA-001">
+            <div class="form-hint">Se heredará a todos los SKUs de esta sesión</div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Cantidad Declarada</label>
+            <input type="number" class="form-control form-control-mono" id="ini-cantidad" placeholder="0" min="0">
+            <div class="form-hint">Total de piezas según manifiesto del proveedor (opcional)</div>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Operador</label>
+            <input type="text" class="form-control" id="ini-operador" placeholder="Nombre del operador" value="Operador">
+          </div>
+        </div>
+
+        <div id="alert-inicio"></div>
+
+        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+          <button class="btn btn-primary btn-lg" onclick="iniciarTracking()">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+            Iniciar Operación
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.getElementById('fase-inicio').classList.remove('hidden');
+  document.getElementById('fase-inspeccion').classList.add('hidden');
+}
+
+function onClienteChange(sel) {
+  const opt = sel.selectedOptions[0];
+  const preview = document.getElementById('cliente-config-preview');
+  const badges = document.getElementById('cliente-badges');
+  if (!opt.value) { preview.classList.add('hidden'); return; }
+
+  const grado = parseInt(opt.dataset.grado);
+  const info = GRADO_INFO[grado];
+  const calidad = opt.dataset.calidad === '1';
+  const retrabajo = opt.dataset.retrabajo === '1';
+  const pct = opt.dataset.pct;
+
+  badges.innerHTML = `
+    <span class="grado-badge ${info.class}">${info.label}</span>
+    ${calidad ? '<span class="badge badge-blue">✓ Calidad</span>' : ''}
+    ${retrabajo ? '<span class="badge badge-amber">✓ Retrabajos</span>' : ''}
+    ${grado === 2 ? `<span class="badge badge-muted">Muestreo ${pct}%</span>` : ''}
+  `;
+  preview.classList.remove('hidden');
+}
+
+async function iniciarTracking() {
+  const clienteId = document.getElementById('ini-cliente').value;
+  const trackingNum = document.getElementById('ini-tracking').value.trim().toUpperCase();
+  const cajaId = document.getElementById('ini-caja').value.trim();
+  const cantidadRaw = document.getElementById('ini-cantidad').value;
+  const cantidad = cantidadRaw !== '' ? parseInt(cantidadRaw) : 0;
+  const operador = document.getElementById('ini-operador').value.trim() || 'Operador';
+  const alertEl = document.getElementById('alert-inicio');
+
+  if (!clienteId || !trackingNum || !cajaId) {
+    alertEl.innerHTML = '<div class="alert alert-error">Todos los campos marcados con * son requeridos</div>';
+    return;
+  }
+
+  try {
+    alertEl.innerHTML = '';
+    const res = await API.post('/trackings', {
+      tracking_number: trackingNum,
+      cliente_id: clienteId,
+      caja_id: cajaId,
+      operador,
+      cantidad_declarada: cantidad
+    });
+
+    state.tracking = await API.get(`/trackings/${res.id}`);
+    state.cliente = state.tracking;
+    state.detalles = [];
+    state.errores = [];
+    state.fase = 'inspeccion';
+
+    // Update URL
+    window.history.pushState({}, '', `?id=${res.id}`);
+
+    toast('Tracking iniciado correctamente');
+    renderInspeccion();
+  } catch(e) {
+    alertEl.innerHTML = `<div class="alert alert-error">${e.error || 'Error al crear tracking'}</div>`;
+  }
+}
+
+// ========================
+// FASE 2 — INSPECCIÓN
+// ========================
+function renderInspeccion() {
+  document.getElementById('loading-state').classList.add('hidden');
+  document.getElementById('fase-inicio').classList.add('hidden');
+
+  const t = state.tracking;
+  const grado = parseInt(t.grado_confianza);
+  const modCalidad = parseInt(t.modulo_calidad) === 1;
+  const isClosed = t.estatus === 'cerrado';
+
+  let muestreoTarget = 0;
+  if (grado === 2) {
+    muestreoTarget = Math.ceil(t.cantidad_declarada * (t.porcentaje_muestreo / 100));
+  } else if (grado === 3) {
+    muestreoTarget = t.cantidad_declarada;
+  }
+
+  const totalInspeccionado = state.detalles.reduce((s, d) => s + (d.cantidad || 1), 0);
+  const pctAvance = muestreoTarget > 0 ? Math.min(Math.round(totalInspeccionado / muestreoTarget * 100), 100) : 100;
+  const erroresCount = state.errores.length;
+  const discrepancia = t.cantidad_final !== t.cantidad_declarada && t.cantidad_declarada > 0;
+
+  const el = document.getElementById('fase-inspeccion');
+  el.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 280px;gap:20px;align-items:start">
+      <!-- COLUMNA PRINCIPAL -->
+      <div>
+        <div class="flex justify-between items-center mb-24">
+          <div>
+            <h1 class="page-title">Inspección de Tracking</h1>
+            <p class="page-subtitle">
+              <span class="font-mono" style="color:var(--accent-cyan)">${t.tracking_number}</span>
+              · ${t.cliente_nombre}
+            </p>
+          </div>
+          ${!isClosed ? `
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary btn-sm" onclick="abrirDiscrepancia()">⚠ Discrepancia</button>
+              <button class="btn btn-primary btn-sm" onclick="cerrarTracking()">✓ Cerrar Tracking</button>
+            </div>
+          ` : `
+            <div style="display:flex;gap:8px">
+              <span class="badge badge-green" style="padding:8px 14px;font-size:12px">✓ CERRADO</span>
+              <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html?tracking=${t.id}'">📄 Manifiesto</button>
+            </div>
+          `}
+        </div>
+
+        <div class="fase-indicator">
+          <div class="fase done"><span class="fase-num">FASE 01</span>INICIO ✓</div>
+          <div class="fase active"><span class="fase-num">FASE 02</span>INSPECCIÓN SKUs</div>
+          <div class="fase ${isClosed ? 'done' : ''}"><span class="fase-num">FASE 03</span>CIERRE ${isClosed ? '✓' : ''}</div>
+        </div>
+
+        ${discrepancia ? `
+          <div class="alert alert-warning">
+            ⚠ <strong>Discrepancia de inventario:</strong> Declaradas: ${formatNum(t.cantidad_declarada)} · Contadas: ${formatNum(t.cantidad_final)}
+          </div>
+        ` : ''}
+
+        ${grado === 1 ? `
+          <div class="alert alert-info">
+            <strong>G1 — Flujo Rápido:</strong> Este cliente solo requiere registro logístico. No se requiere inspección detallada de SKUs.
+          </div>
+        ` : ''}
+
+        ${!isClosed ? `
+          <!-- ESCANEO SKU -->
+          <div class="section-title">Escanear / Ingresar Número de Parte</div>
+
+          <div class="card mb-16" style="padding:16px">
+            <div class="scan-box" onclick="document.getElementById('scan-input').focus()">
+              <div style="font-size:11px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;letter-spacing:.1em;margin-bottom:8px">
+                📷 ESCANEAR CÓDIGO DE BARRAS O INGRESAR MANUALMENTE
+              </div>
+              <input type="text" id="scan-input" class="scan-input" placeholder="Escanear o escribir SKU y presionar Enter..."
+                onkeydown="if(event.key==='Enter') buscarSKU(this.value)">
+            </div>
+
+            <div id="sku-form" class="hidden" style="margin-top:16px">
+              <div class="section-title">Datos del Producto</div>
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Código SKU</label>
+                  <input type="text" class="form-control form-control-mono" id="f-sku-code" placeholder="SKU-XXX-000">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Descripción</label>
+                  <input type="text" class="form-control" id="f-sku-desc" placeholder="Nombre del producto">
+                </div>
+              </div>
+
+              ${grado !== 1 ? `
+                <!-- VERIFICACIÓN PAÍS -->
+                <div class="form-group">
+                  <label class="form-label">País de Origen</label>
+                  <div class="verify-field">
+                    <div>
+                      <div class="verify-label">Catálogo</div>
+                      <div class="verify-value" id="f-pais-catalogo">—</div>
+                    </div>
+                    <div class="verify-actions">
+                      <button class="verify-btn verify-ok selected" id="btn-pais-ok" onclick="setPaisCoincide(true)">✓ Coincide</button>
+                      <button class="verify-btn verify-no" id="btn-pais-no" onclick="setPaisCoincide(false)">✕ No coincide</button>
+                    </div>
+                  </div>
+                  <div id="pais-real-group" class="hidden mt-8">
+                    <input type="text" class="form-control" id="f-pais-real" placeholder="País real en la prenda...">
+                  </div>
+                </div>
+
+                <!-- VERIFICACIÓN INSUMOS -->
+                <div class="form-group">
+                  <label class="form-label">Insumos / Composición</label>
+                  <div class="verify-field">
+                    <div style="flex:1">
+                      <div class="verify-label">Catálogo</div>
+                      <div class="verify-value" id="f-insumos-catalogo" style="font-size:13px">—</div>
+                    </div>
+                    <div class="verify-actions">
+                      <button class="verify-btn verify-ok selected" id="btn-insumos-ok" onclick="setInsumosCoincide(true)">✓ Coincide</button>
+                      <button class="verify-btn verify-no" id="btn-insumos-no" onclick="setInsumosCoincide(false)">✕ No coincide</button>
+                    </div>
+                  </div>
+                  <div id="insumos-real-group" class="hidden mt-8">
+                    <input type="text" class="form-control" id="f-insumos-real" placeholder="Composición real en la prenda...">
+                  </div>
+                </div>
+
+                <!-- CALIDAD (si módulo activo) -->
+                ${modCalidad ? `
+                  <div class="form-group">
+                    <label class="form-label">Control de Calidad</label>
+                    <div class="quality-selector">
+                      <button class="quality-btn quality-good selected" id="btn-calidad-good" onclick="setCalidad('Buena')">✓ BUENA</button>
+                      <button class="quality-btn quality-bad" id="btn-calidad-bad" onclick="setCalidad('Mala')">✕ MALA</button>
+                    </div>
+                  </div>
+                ` : ''}
+              ` : ''}
+
+              <div class="form-row">
+                <div class="form-group">
+                  <label class="form-label">Cantidad de Piezas</label>
+                  <input type="number" class="form-control form-control-mono" id="f-cantidad" value="1" min="1">
+                </div>
+              </div>
+
+              ${grado !== 1 ? `
+                <div id="error-requerido-banner" class="hidden">
+                  <div class="alert alert-warning">
+                    ⚠ Se detectaron discrepancias o calidad mala. <strong>Deberás registrar el error con fotografía antes de continuar.</strong>
+                  </div>
+                </div>
+              ` : ''}
+
+              <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+                <button class="btn btn-secondary" onclick="cancelarSKU()">Cancelar</button>
+                <button class="btn btn-primary" onclick="registrarSKU()">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="20 6 9 17 4 12"/></svg>
+                  Registrar SKU
+                </button>
+              </div>
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- LISTA DE SKUs REGISTRADOS -->
+        <div class="section-title">SKUs Registrados (${state.detalles.length})</div>
+        <div id="lista-skus" style="display:flex;flex-direction:column;gap:8px">
+          ${renderSKUList()}
+        </div>
+      </div>
+
+      <!-- PANEL DERECHO -->
+      <div class="panel-right">
+        <div class="panel-header">Estado del Tracking</div>
+
+        <div class="info-row">
+          <span class="info-key">Tracking #</span>
+          <span class="info-val" style="color:var(--accent-cyan)">${t.tracking_number}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Caja</span>
+          <span class="info-val">${t.caja_id}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Grado</span>
+          <span>${gradoBadge(grado)}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Declaradas</span>
+          <span class="info-val">${formatNum(t.cantidad_declarada)}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Contadas</span>
+          <span class="info-val" style="color:${discrepancia?'var(--accent-amber)':'var(--accent-green)'}">${formatNum(t.cantidad_final)}</span>
+        </div>
+
+        ${grado > 1 ? `
+          <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
+            <div class="info-key" style="margin-bottom:6px">Avance de Inspección</div>
+            <div class="flex justify-between" style="margin-bottom:4px">
+              <span class="font-mono" style="font-size:11px">${formatNum(totalInspeccionado)} / ${grado===3?formatNum(t.cantidad_declarada):'~'+formatNum(muestreoTarget)} piezas</span>
+              <span class="font-mono" style="font-size:11px;color:var(--accent-green)">${pctAvance}%</span>
+            </div>
+            <div class="progress-bar">
+              <div class="progress-fill" style="width:${pctAvance}%"></div>
+            </div>
+          </div>
+        ` : ''}
+
+        <div class="info-row">
+          <span class="info-key">SKUs registrados</span>
+          <span class="info-val">${state.detalles.length}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Errores</span>
+          <span class="info-val" style="color:${erroresCount>0?'var(--accent-red)':'inherit'}">${erroresCount}</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Estado</span>
+          <span class="badge ${isClosed?'badge-green':'badge-amber'}">${isClosed?'✓ Cerrado':'⟳ Abierto'}</span>
+        </div>
+
+        ${!isClosed ? `
+          <div style="padding:12px 16px">
+            <button class="btn btn-primary w-full" onclick="cerrarTracking()" style="justify-content:center">
+              ✓ Cerrar Tracking
+            </button>
+            <button class="btn btn-secondary w-full mt-8" onclick="abrirDiscrepancia()" style="justify-content:center">
+              ⚠ Registrar Discrepancia
+            </button>
+          </div>
+        ` : `
+          <div style="padding:12px 16px">
+            <button class="btn btn-secondary w-full" onclick="window.location='reportes.html?tracking=${t.id}'" style="justify-content:center">
+              📄 Ver Manifiesto
+            </button>
+          </div>
+        `}
+      </div>
+    </div>
+  `;
+
+  el.classList.remove('hidden');
+
+  // Auto focus scan input
+  setTimeout(() => document.getElementById('scan-input')?.focus(), 100);
+}
+
+function renderSKUList() {
+  if (state.detalles.length === 0) return `
+    <div class="empty-state" style="padding:32px">
+      <div class="empty-state-icon">🔍</div>
+      <div class="empty-state-title">Sin SKUs registrados aún</div>
+      <div class="empty-state-text">Escanea el primer producto para comenzar la inspección</div>
+    </div>
+  `;
+
+  return state.detalles.map(d => {
+    const errD = state.errores.filter(e => e.detalle_sku_id === d.id);
+    const hasError = errD.length > 0;
+    const isMalo = d.calidad === 'Mala';
+    const paisDiff = !d.pais_coincide;
+    const insDiff = !d.insumos_coincide;
+
+    return `
+      <div class="sku-list-item ${hasError ? 'has-error' : ''}">
+        <div style="flex:1">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">
+            <span class="sku-code">${d.sku_code}</span>
+            <span class="sku-meta">${d.descripcion || ''}</span>
+          </div>
+          <div class="sku-badges">
+            <span class="badge badge-muted">×${d.cantidad}</span>
+            ${d.pais_origen_real ? `<span class="badge ${paisDiff?'badge-amber':'badge-muted'}">🌍 ${d.pais_origen_real}${paisDiff?' ⚠':''}</span>` : ''}
+            ${d.calidad ? `<span class="badge ${isMalo?'badge-red':'badge-green'}">${isMalo?'✕ Mala':'✓ Buena'}</span>` : ''}
+            ${paisDiff ? `<span class="badge badge-amber">País no coincide</span>` : ''}
+            ${insDiff ? `<span class="badge badge-amber">Insumos no coinciden</span>` : ''}
+            ${hasError ? `<span class="badge badge-red">⚠ ${errD.length} error(es)</span>` : ''}
+          </div>
+        </div>
+        ${state.tracking.estatus !== 'cerrado' ? `
+          <div style="display:flex;gap:6px;flex-shrink:0">
+            <button class="btn btn-danger btn-sm" onclick="eliminarDetalle('${d.id}')">✕</button>
+          </div>
+        ` : ''}
+      </div>
+    `;
+  }).join('');
+}
+
+// ========================
+// SKU OPERATIONS
+// ========================
+async function buscarSKU(code) {
+  if (!code.trim()) return;
+  state.skuActual = null;
+
+  const clienteId = state.tracking.cliente_id;
+  try {
+    const sku = await API.get(`/skus/buscar/${encodeURIComponent(code.trim().toUpperCase())}?cliente_id=${clienteId}`);
+    state.skuActual = sku;
+
+    document.getElementById('f-sku-code').value = sku ? sku.sku_code : code.trim().toUpperCase();
+    document.getElementById('f-sku-desc').value = sku?.descripcion || '';
+    const elPais = document.getElementById('f-pais-catalogo');
+    if (elPais) elPais.textContent = sku?.pais_origen || 'No registrado';
+    const elInsumos = document.getElementById('f-insumos-catalogo');
+    if (elInsumos) elInsumos.textContent = sku?.insumos || 'No registrado';
+    document.getElementById('f-cantidad').value = 1;
+
+    // Reset verificaciones
+    if (document.getElementById('btn-pais-ok')) setPaisCoincide(true);
+    if (document.getElementById('btn-insumos-ok')) setInsumosCoincide(true);
+    if (document.getElementById('btn-calidad-good')) setCalidad('Buena');
+
+    document.getElementById('sku-form').classList.remove('hidden');
+    document.getElementById('f-sku-code').focus();
+  } catch(e) {
+    toast('Error buscando SKU', 'error');
+  }
+}
+
+function cancelarSKU() {
+  document.getElementById('sku-form').classList.add('hidden');
+  document.getElementById('scan-input').value = '';
+  document.getElementById('scan-input').focus();
+}
+
+function setPaisCoincide(val) {
+  state.paisCoincide = val;
+  document.getElementById('btn-pais-ok')?.classList.toggle('selected', val);
+  document.getElementById('btn-pais-no')?.classList.toggle('selected', !val);
+  document.getElementById('pais-real-group')?.classList.toggle('hidden', val);
+  checkErrorRequerido();
+}
+
+function setInsumosCoincide(val) {
+  state.insumosCoincide = val;
+  document.getElementById('btn-insumos-ok')?.classList.toggle('selected', val);
+  document.getElementById('btn-insumos-no')?.classList.toggle('selected', !val);
+  document.getElementById('insumos-real-group')?.classList.toggle('hidden', val);
+  checkErrorRequerido();
+}
+
+function setCalidad(val) {
+  state.calidadActual = val;
+  document.getElementById('btn-calidad-good')?.classList.toggle('selected', val === 'Buena');
+  document.getElementById('btn-calidad-bad')?.classList.toggle('selected', val === 'Mala');
+  checkErrorRequerido();
+}
+
+function checkErrorRequerido() {
+  const hayProblema = (state.paisCoincide === false) || (state.insumosCoincide === false) || state.calidadActual === 'Mala';
+  document.getElementById('error-requerido-banner')?.classList.toggle('hidden', !hayProblema);
+}
+
+async function registrarSKU() {
+  const skuCode = document.getElementById('f-sku-code').value.trim().toUpperCase();
+  const desc = document.getElementById('f-sku-desc').value.trim();
+  const cantidad = parseInt(document.getElementById('f-cantidad').value) || 1;
+  const paisCatalogo = document.getElementById('f-pais-catalogo')?.textContent || '';
+  const paisReal = state.paisCoincide !== false ? paisCatalogo : (document.getElementById('f-pais-real')?.value.trim() || paisCatalogo);
+  const insCatalogo = document.getElementById('f-insumos-catalogo')?.textContent || '';
+  const insReal = state.insumosCoincide !== false ? insCatalogo : (document.getElementById('f-insumos-real')?.value.trim() || insCatalogo);
+
+  if (!skuCode) { toast('Código SKU requerido', 'error'); return; }
+
+  try {
+    const res = await API.post(`/trackings/${state.tracking.id}/detalles`, {
+      sku_code: skuCode,
+      descripcion: desc,
+      cantidad,
+      pais_origen_catalogo: paisCatalogo,
+      pais_origen_real: paisReal,
+      pais_coincide: state.paisCoincide,
+      insumos_catalogo: insCatalogo,
+      insumos_real: insReal,
+      insumos_coincide: state.insumosCoincide,
+      calidad: state.calidadActual,
+    });
+
+    // Reload
+    state.tracking = await API.get(`/trackings/${state.tracking.id}`);
+    state.detalles = await API.get(`/trackings/${state.tracking.id}/detalles`);
+    state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
+
+    toast(`SKU ${skuCode} registrado`);
+
+    // Si hay problemas → abrir modal de error
+    const hayProblema = (state.paisCoincide === false) || (state.insumosCoincide === false) || state.calidadActual === 'Mala';
+    if (hayProblema) {
+      document.getElementById('error-detalle-id').value = res.id;
+
+      let tipoSugerido = 'Calidad';
+      if (!state.paisCoincide) tipoSugerido = 'Origen';
+      else if (!state.insumosCoincide) tipoSugerido = 'Insumo';
+      document.getElementById('error-tipo').value = tipoSugerido;
+
+      openModal('modal-error');
+    }
+
+    cancelarSKU();
+    document.getElementById('lista-skus').innerHTML = renderSKUList();
+
+    // Actualizar panel
+    renderInspeccion();
+  } catch(e) {
+    toast(e.error || 'Error al registrar SKU', 'error');
+  }
+}
+
+async function eliminarDetalle(id) {
+  const ok = await confirm('¿Eliminar este SKU del registro?', 'Eliminar SKU');
+  if (!ok) return;
+  try {
+    await API.del(`/trackings/${state.tracking.id}/detalles/${id}`);
+    state.tracking = await API.get(`/trackings/${state.tracking.id}`);
+    state.detalles = await API.get(`/trackings/${state.tracking.id}/detalles`);
+    renderInspeccion();
+    toast('SKU eliminado');
+  } catch(e) { toast(e.error || 'Error', 'error'); }
+}
+
+// ========================
+// ERROR / EVIDENCIA
+// ========================
+function previewFoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const prev = document.getElementById('foto-preview');
+    prev.src = e.target.result;
+    prev.classList.remove('hidden');
+  };
+  reader.readAsDataURL(file);
+}
+
+async function guardarError() {
+  const tipo = document.getElementById('error-tipo').value;
+  const desc = document.getElementById('error-desc').value.trim();
+  const fotoInput = document.getElementById('error-foto');
+  const detalleId = document.getElementById('error-detalle-id').value;
+
+  if (!desc) { toast('La descripción es requerida', 'error'); return; }
+  if (!fotoInput.files[0]) { toast('La fotografía de evidencia es requerida', 'error'); return; }
+
+  const fd = new FormData();
+  fd.append('tipo_error', tipo);
+  fd.append('comentarios', desc);
+  fd.append('detalle_sku_id', detalleId);
+  fd.append('foto', fotoInput.files[0]);
+
+  try {
+    await API.postForm(`/trackings/${state.tracking.id}/errores`, fd);
+    state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
+    closeModal('modal-error');
+
+    // Reset modal
+    document.getElementById('error-desc').value = '';
+    document.getElementById('error-foto').value = '';
+    document.getElementById('foto-preview').classList.add('hidden');
+
+    toast('Error registrado con evidencia');
+    renderInspeccion();
+  } catch(e) {
+    toast(e.error || 'Error al guardar', 'error');
+  }
+}
+
+// ========================
+// DISCREPANCIA
+// ========================
+function abrirDiscrepancia() {
+  document.getElementById('disc-original').value = state.tracking.cantidad_declarada;
+  document.getElementById('disc-corregida').value = state.tracking.cantidad_final;
+  openModal('modal-discrepancia');
+}
+
+async function guardarDiscrepancia() {
+  const original = parseInt(document.getElementById('disc-original').value);
+  const corregida = parseInt(document.getElementById('disc-corregida').value);
+
+  if (!corregida && corregida !== 0) { toast('Ingresa la cantidad real', 'error'); return; }
+
+  try {
+    await API.post(`/trackings/${state.tracking.id}/discrepancia`, {
+      cantidad_original: original,
+      cantidad_corregida: corregida
+    });
+    state.tracking = await API.get(`/trackings/${state.tracking.id}`);
+    closeModal('modal-discrepancia');
+    toast('Discrepancia registrada');
+    renderInspeccion();
+  } catch(e) {
+    toast(e.error || 'Error', 'error');
+  }
+}
+
+// ========================
+// CERRAR TRACKING
+// ========================
+async function cerrarTracking() {
+  // Verificar errores sin foto
+  const erroresSinFoto = state.errores.filter(e => !e.path_fotografia);
+  if (erroresSinFoto.length > 0) {
+    toast(`Hay ${erroresSinFoto.length} error(es) sin fotografía de evidencia`, 'error');
+    return;
+  }
+
+  const ok = await confirm('¿Cerrar este tracking? Una vez cerrado no se podrán agregar más SKUs.', 'Cerrar Tracking');
+  if (!ok) return;
+
+  try {
+    await API.post(`/trackings/${state.tracking.id}/cerrar`, {});
+    state.tracking = await API.get(`/trackings/${state.tracking.id}`);
+    toast('Tracking cerrado exitosamente');
+    renderInspeccion();
+  } catch(e) {
+    toast(e.error || 'Error al cerrar', 'error');
+  }
+}
+
+// ========================
+// INIT
+// ========================
+init();
+</script>
+</body>
+</html>

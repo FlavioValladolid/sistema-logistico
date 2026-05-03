@@ -1,0 +1,161 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dashboard — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<script src="js/app.js"></script>
+<script src="js/shell.js"></script>
+<script>
+buildShell('Dashboard', 'DASHBOARD', `
+  <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+    Nueva Operación
+  </button>
+`);
+
+const content = document.getElementById('page-content');
+
+async function loadDashboard() {
+  try {
+    const [resumen, trackings] = await Promise.all([
+      API.get('/reportes/resumen'),
+      API.get('/trackings')
+    ]);
+
+    const abiertos = trackings.filter(t => t.estatus === 'abierto').length;
+    const cerrados = trackings.filter(t => t.estatus === 'cerrado').length;
+
+    content.innerHTML = `
+      <div class="flex justify-between items-center mb-24">
+        <div>
+          <h1 class="page-title">Dashboard</h1>
+          <p class="page-subtitle">Resumen del sistema de inspección logística</p>
+        </div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-muted);text-align:right">
+          ${new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}
+        </div>
+      </div>
+
+      <div class="stat-grid">
+        <div class="stat-card" style="--accent-color:var(--accent-cyan)">
+          <div class="stat-label">Total Trackings</div>
+          <div class="stat-value">${formatNum(resumen.totalTrackings)}</div>
+          <div class="stat-sub">${abiertos} abiertos · ${cerrados} cerrados</div>
+        </div>
+        <div class="stat-card" style="--accent-color:var(--accent-green)">
+          <div class="stat-label">Piezas Inspeccionadas</div>
+          <div class="stat-value">${formatNum(resumen.totalPiezas)}</div>
+          <div class="stat-sub">Unidades totales procesadas</div>
+        </div>
+        <div class="stat-card" style="--accent-color:var(--accent-red)">
+          <div class="stat-label">Errores Registrados</div>
+          <div class="stat-value">${formatNum(resumen.totalErrores)}</div>
+          <div class="stat-sub">Calidad / Origen / Insumos</div>
+        </div>
+        <div class="stat-card" style="--accent-color:var(--accent-amber)">
+          <div class="stat-label">Discrepancias</div>
+          <div class="stat-value">${formatNum(resumen.totalDiscrepancias)}</div>
+          <div class="stat-sub">Alertas de inventario</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Trackings Recientes</span>
+            <a href="trackings.html" class="btn btn-ghost btn-sm">Ver todos →</a>
+          </div>
+          ${trackings.length === 0 ? `
+            <div class="empty-state">
+              <div class="empty-state-icon">📦</div>
+              <div class="empty-state-title">Sin trackings aún</div>
+              <div class="empty-state-text">Inicia una operación para registrar el primero</div>
+            </div>
+          ` : `
+            <div class="table-wrapper" style="border:none">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Tracking #</th>
+                    <th>Cliente</th>
+                    <th>Grado</th>
+                    <th>Piezas</th>
+                    <th>Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${trackings.slice(0,8).map(t => `
+                    <tr style="cursor:pointer" onclick="window.location='operacion.html?id=${t.id}'">
+                      <td class="td-mono">${t.tracking_number}</td>
+                      <td>${t.cliente_nombre || '—'}</td>
+                      <td>${gradoBadge(t.grado_confianza)}</td>
+                      <td class="td-mono">${formatNum(t.cantidad_final)} / ${formatNum(t.cantidad_declarada)}</td>
+                      <td>
+                        <span class="badge ${t.estatus === 'cerrado' ? 'badge-green' : 'badge-amber'}">
+                          ${t.estatus}
+                        </span>
+                      </td>
+                    </tr>
+                  `).join('')}
+                </tbody>
+              </table>
+            </div>
+          `}
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Grados de Confianza</span>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:16px;padding:4px 0">
+            ${[1,2,3].map(g => {
+              const info = GRADO_INFO[g];
+              const count = trackings.filter(t => t.grado_confianza === g).length;
+              const pct = resumen.totalTrackings > 0 ? Math.round(count / resumen.totalTrackings * 100) : 0;
+              return `
+                <div>
+                  <div class="flex justify-between items-center mb-8">
+                    <span class="grado-badge ${info.class}">${info.label}</span>
+                    <span class="font-mono" style="font-size:12px;color:var(--text-muted)">${count} trackings</span>
+                  </div>
+                  <div class="progress-bar">
+                    <div class="progress-fill" style="width:${pct}%;background:${g===1?'var(--g1-color)':g===2?'var(--g2-color)':'var(--g3-color)'}"></div>
+                  </div>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${info.desc}</div>
+                </div>
+              `;
+            }).join('')}
+          </div>
+
+          <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+            <div class="card-title" style="margin-bottom:12px">Acciones Rápidas</div>
+            <div style="display:flex;flex-direction:column;gap:8px">
+              <a href="operacion.html" class="btn btn-primary w-full" style="justify-content:center">
+                ▶  Iniciar Nueva Operación
+              </a>
+              <a href="clientes.html" class="btn btn-secondary w-full" style="justify-content:center">
+                ⚙  Administrar Clientes
+              </a>
+              <a href="reportes.html" class="btn btn-secondary w-full" style="justify-content:center">
+                📄  Ver Reportes
+              </a>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    `;
+  } catch (e) {
+    content.innerHTML = `<div class="alert alert-error">Error cargando dashboard: ${e.message || 'Error desconocido'}</div>`;
+  }
+}
+
+loadDashboard();
+</script>
+</body>
+</html>

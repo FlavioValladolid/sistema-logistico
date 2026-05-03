@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Reportes — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+  <style>
+    @media print {
+      .sidebar, .topbar, .no-print { display: none !important; }
+      .main-content { margin-left: 0 !important; }
+      body { background: white !important; color: black !important; }
+      .card { border: 1px solid #ccc !important; background: white !important; }
+      * { color: black !important; }
+    }
+
+    .manifiesto-header {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 24px;
+      padding-bottom: 20px;
+      border-bottom: 2px solid var(--border);
+    }
+
+    .mani-logo {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 22px;
+      font-weight: 700;
+      color: var(--accent-green);
+      letter-spacing: -0.02em;
+    }
+
+    .mani-title {
+      font-family: 'IBM Plex Mono', monospace;
+      font-size: 13px;
+      color: var(--text-muted);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+    }
+
+    .mani-data-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .mani-data-item {
+      background: var(--bg-elevated);
+      padding: 10px 14px;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+    }
+    .mani-data-label { font-size: 9px; color: var(--text-muted); letter-spacing: .12em; text-transform: uppercase; font-family: 'IBM Plex Mono', monospace; margin-bottom: 3px; }
+    .mani-data-val { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; color: var(--text-primary); }
+
+    .foto-thumb {
+      width: 80px; height: 80px;
+      object-fit: cover;
+      border-radius: var(--radius-sm);
+      border: 1px solid var(--border);
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+<script src="js/app.js"></script>
+<script src="js/shell.js"></script>
+<script>
+buildShell('Reportes', 'REPORTES / MANIFIESTOS', '');
+
+const params = new URLSearchParams(window.location.search);
+const trackingIdParam = params.get('tracking');
+
+document.getElementById('page-content').innerHTML = `
+  <div class="flex justify-between items-center mb-24">
+    <div>
+      <h1 class="page-title">Reportes y Manifiestos</h1>
+      <p class="page-subtitle">Generación de manifiestos de salida y reportes de auditoría</p>
+    </div>
+    <button class="btn btn-secondary no-print" onclick="window.print()">🖨 Imprimir</button>
+  </div>
+
+  ${!trackingIdParam ? `
+    <div class="card">
+      <div class="card-header">
+        <span class="card-title">Seleccionar Tracking</span>
+      </div>
+      <div id="lista-trackings-reporte">
+        <div class="text-center" style="padding:32px"><div class="spinner"></div></div>
+      </div>
+    </div>
+  ` : `
+    <div id="manifiesto-content">
+      <div class="text-center" style="padding:80px"><div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div></div>
+    </div>
+  `}
+`;
+
+async function loadListaTrackings() {
+  const trackings = await API.get('/trackings');
+  const el = document.getElementById('lista-trackings-reporte');
+
+  if (trackings.length === 0) {
+    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📄</div><div class="empty-state-title">Sin trackings</div></div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="table-wrapper" style="border:none">
+      <table>
+        <thead>
+          <tr>
+            <th>Tracking #</th>
+            <th>Cliente</th>
+            <th>Fecha</th>
+            <th>Estado</th>
+            <th>Piezas</th>
+            <th>Acción</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${trackings.map(t => `
+            <tr>
+              <td class="td-mono" style="color:var(--accent-cyan)">${t.tracking_number}</td>
+              <td>${t.cliente_nombre || '—'}</td>
+              <td class="td-mono text-muted">${formatDate(t.created_at)}</td>
+              <td><span class="badge ${t.estatus==='cerrado'?'badge-green':'badge-amber'}">${t.estatus}</span></td>
+              <td class="td-mono">${formatNum(t.cantidad_final)}</td>
+              <td>
+                <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html?tracking=${t.id}'">
+                  Ver Manifiesto →
+                </button>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function loadManifiesto(id) {
+  const el = document.getElementById('manifiesto-content');
+  try {
+    const { tracking, detalles, errores, discrepancias } = await API.get(`/reportes/manifiesto/${id}`);
+
+    const t = tracking;
+    const erroresPorTipo = { Calidad: 0, Origen: 0, Insumo: 0, Otro: 0 };
+    errores.forEach(e => { erroresPorTipo[e.tipo_error] = (erroresPorTipo[e.tipo_error] || 0) + 1; });
+
+    const totalPiezas = detalles.reduce((s, d) => s + (d.cantidad || 1), 0);
+
+    el.innerHTML = `
+      <div class="card" style="max-width:900px;margin:0 auto">
+
+        <!-- HEADER -->
+        <div class="manifiesto-header">
+          <div>
+            <div class="mani-logo">LOGÍSTICA</div>
+            <div class="mani-title">Sistema de Inspección de Calidad</div>
+            <div style="margin-top:12px;font-size:11px;color:var(--text-muted)">
+              Generado: ${new Date().toLocaleString('es-MX')}
+            </div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;color:var(--accent-cyan)">${t.tracking_number}</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">MANIFIESTO DE INSPECCIÓN</div>
+            <div style="margin-top:8px">${gradoBadge(t.grado_confianza)}</div>
+            <div style="margin-top:6px">
+              <span class="badge ${t.estatus==='cerrado'?'badge-green':'badge-amber'}" style="font-size:12px;padding:4px 12px">
+                ${t.estatus === 'cerrado' ? '✓ CERRADO / AUDITADO' : '⟳ EN PROCESO'}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        <!-- DATOS GENERALES -->
+        <div class="section-title">Información General</div>
+        <div class="mani-data-grid">
+          <div class="mani-data-item">
+            <div class="mani-data-label">Cliente</div>
+            <div class="mani-data-val" style="font-size:13px">${t.cliente_nombre}</div>
+          </div>
+          <div class="mani-data-item">
+            <div class="mani-data-label">Caja</div>
+            <div class="mani-data-val">${t.caja_id}</div>
+          </div>
+          <div class="mani-data-item">
+            <div class="mani-data-label">Operador</div>
+            <div class="mani-data-val" style="font-size:12px">${t.operador || '—'}</div>
+          </div>
+          <div class="mani-data-item">
+            <div class="mani-data-label">Cantidad Declarada</div>
+            <div class="mani-data-val">${formatNum(t.cantidad_declarada)}</div>
+          </div>
+          <div class="mani-data-item">
+            <div class="mani-data-label">Cantidad Final</div>
+            <div class="mani-data-val" style="color:${t.cantidad_final !== t.cantidad_declarada ? 'var(--accent-amber)' : 'var(--accent-green)'}">${formatNum(t.cantidad_final)}</div>
+          </div>
+          <div class="mani-data-item">
+            <div class="mani-data-label">Piezas Inspeccionadas</div>
+            <div class="mani-data-val">${formatNum(totalPiezas)}</div>
+          </div>
+        </div>
+
+        <!-- RESUMEN ERRORES -->
+        ${errores.length > 0 ? `
+          <div class="section-title">Resumen de Errores</div>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
+            ${Object.entries(erroresPorTipo).map(([tipo, cnt]) => `
+              <div class="mani-data-item" style="border-color:${cnt>0?'rgba(255,61,61,.3)':'var(--border)'}">
+                <div class="mani-data-label">${tipo}</div>
+                <div class="mani-data-val" style="color:${cnt>0?'var(--accent-red)':'var(--text-muted)'}">${cnt}</div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        <!-- DISCREPANCIAS -->
+        ${discrepancias.length > 0 ? `
+          <div class="section-title">Alertas de Discrepancia</div>
+          <div style="margin-bottom:20px">
+            ${discrepancias.map(d => `
+              <div class="alert alert-warning">
+                ⚠ Discrepancia registrada — Original: <strong>${formatNum(d.cantidad_original)}</strong> → Corregido: <strong>${formatNum(d.cantidad_corregida)}</strong>
+                <span class="td-mono" style="margin-left:auto;font-size:11px">${formatDate(d.created_at)}</span>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        <!-- DETALLE SKUs -->
+        <div class="section-title">Detalle de SKUs Inspeccionados (${detalles.length})</div>
+        ${detalles.length === 0 ? `
+          <div class="alert alert-info">Sin SKUs inspeccionados en este tracking</div>
+        ` : `
+          <div class="table-wrapper" style="margin-bottom:20px">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th>
+                  <th>SKU</th>
+                  <th>Descripción</th>
+                  <th>Cant.</th>
+                  <th>País Origen</th>
+                  <th>Insumos</th>
+                  <th>Calidad</th>
+                  <th>Hora</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${detalles.map((d, i) => {
+                  const errD = errores.filter(e => e.detalle_sku_id === d.id);
+                  const hasErr = errD.length > 0;
+                  return `
+                    <tr style="${hasErr ? 'background:rgba(255,61,61,.04)' : ''}">
+                      <td class="td-mono text-muted">${String(i+1).padStart(2,'0')}</td>
+                      <td class="td-mono" style="color:var(--accent-cyan)">${d.sku_code}</td>
+                      <td>${d.descripcion || '—'}</td>
+                      <td class="td-mono">${d.cantidad}</td>
+                      <td>
+                        ${d.pais_origen_real || '—'}
+                        ${!d.pais_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠ Cat.</span>' : ''}
+                      </td>
+                      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                        ${d.insumos_real || '—'}
+                        ${!d.insumos_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠ Cat.</span>' : ''}
+                      </td>
+                      <td>
+                        ${d.calidad ? `<span class="badge ${d.calidad==='Mala'?'badge-red':'badge-green'}">${d.calidad}</span>` : '—'}
+                      </td>
+                      <td class="td-mono text-muted">${formatDate(d.created_at).split(',')[1]||'—'}</td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+
+        <!-- ERRORES CON EVIDENCIA -->
+        ${errores.length > 0 ? `
+          <div class="section-title">Registro de Errores y Evidencias (${errores.length})</div>
+          <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
+            ${errores.map((e, i) => `
+              <div style="background:var(--bg-elevated);border:1px solid rgba(255,61,61,.25);border-radius:var(--radius-sm);padding:14px 16px">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+                  <span class="badge badge-red">Error ${String(i+1).padStart(2,'0')}</span>
+                  <span class="badge badge-amber">${e.tipo_error}</span>
+                  <span class="td-mono text-muted" style="margin-left:auto;font-size:11px">${formatDate(e.created_at)}</span>
+                </div>
+                <div style="display:flex;gap:16px;align-items:flex-start">
+                  ${e.path_fotografia ? `
+                    <img src="${e.path_fotografia}" class="foto-thumb" onclick="window.open('${e.path_fotografia}','_blank')" title="Ver foto completa">
+                  ` : `
+                    <div style="width:80px;height:80px;background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);text-align:center">Sin foto</div>
+                  `}
+                  <div style="flex:1">
+                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">DESCRIPCIÓN</div>
+                    <div style="font-size:13px;line-height:1.5">${e.comentarios || '—'}</div>
+                    <div style="margin-top:8px">
+                      <span class="disposicion-icon" style="font-size:14px">📦</span>
+                      <span style="font-size:11px;color:var(--accent-red);font-weight:700;font-family:'IBM Plex Mono',monospace"> COLOCAR EN CAJA DE DAÑADOS</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        ` : ''}
+
+        <!-- FIRMA -->
+        ${t.estatus === 'cerrado' ? `
+          <div style="border-top:1px solid var(--border);padding-top:20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;margin-top:8px">
+            <div style="border-top:2px solid var(--border-bright);padding-top:8px;text-align:center">
+              <div style="height:40px"></div>
+              <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Operador</div>
+              <div style="font-size:11px;margin-top:2px">${t.operador}</div>
+            </div>
+            <div style="border-top:2px solid var(--border-bright);padding-top:8px;text-align:center">
+              <div style="height:40px"></div>
+              <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Supervisión</div>
+            </div>
+            <div style="border-top:2px solid var(--border-bright);padding-top:8px;text-align:center">
+              <div style="height:40px"></div>
+              <div style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em">Almacén / Recepción</div>
+            </div>
+          </div>
+        ` : ''}
+
+        <div style="text-align:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <button class="btn btn-secondary no-print" onclick="window.location='reportes.html'">← Todos los reportes</button>
+          <button class="btn btn-primary no-print" onclick="window.print()" style="margin-left:10px">🖨 Imprimir / PDF</button>
+          ${t.estatus !== 'cerrado' ? `<button class="btn btn-amber no-print" onclick="window.location='operacion.html?id=${t.id}'" style="margin-left:10px">→ Ir a Operación</button>` : ''}
+        </div>
+      </div>
+    `;
+  } catch(e) {
+    el.innerHTML = `<div class="alert alert-error">Error cargando manifiesto: ${e.error || 'No encontrado'}</div>`;
+  }
+}
+
+// Init
+if (trackingIdParam) {
+  loadManifiesto(trackingIdParam);
+} else {
+  loadListaTrackings();
+}
+</script>
+</body>
+</html>

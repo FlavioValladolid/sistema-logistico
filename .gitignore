@@ -1,0 +1,4 @@
+node_modules/
+uploads/
+backend/database.bin
+*.tar.gz
