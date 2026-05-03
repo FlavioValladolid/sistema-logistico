@@ -80,17 +80,24 @@ document.body.insertAdjacentHTML('beforeend', `
         <button class="modal-close" onclick="closeModal('modal-error')">×</button>
       </div>
       <div class="modal-body">
-        <div class="disposicion-banner">
+        <div id="disposicion-danados" class="disposicion-banner">
           <span class="disposicion-icon">📦</span>
           <div>
             <div class="disposicion-text">COLOCAR EN CAJA DE DAÑADOS</div>
             <div class="disposicion-sub">Instrucción mandatoria — separar físicamente la pieza</div>
           </div>
         </div>
+        <div id="disposicion-discrepancia" class="disposicion-banner hidden" style="background:rgba(68,138,255,0.08);border-color:var(--accent-blue)">
+          <span class="disposicion-icon">📋</span>
+          <div>
+            <div class="disposicion-text" style="color:var(--accent-blue)">MANTENER EN CAJA — DOCUMENTAR</div>
+            <div class="disposicion-sub">La pieza no está dañada. Registrar discrepancia y continuar flujo.</div>
+          </div>
+        </div>
 
         <div class="form-group">
           <label class="form-label">Tipo de Error *</label>
-          <select class="form-control" id="error-tipo">
+          <select class="form-control" id="error-tipo" onchange="onTipoErrorChange(this.value)">
             <option value="Calidad">Calidad — Pieza dañada / defectuosa</option>
             <option value="Origen">País de Origen — No coincide con catálogo</option>
             <option value="Insumo">Insumos / Material — No coincide con catálogo</option>
@@ -886,9 +893,10 @@ async function registrarSKU() {
       document.getElementById('error-detalle-id').value = res.id;
 
       let tipoSugerido = 'Calidad';
-      if (!state.paisCoincide) tipoSugerido = 'Origen';
-      else if (!state.insumosCoincide) tipoSugerido = 'Insumo';
+      if (state.paisCoincide === false) tipoSugerido = 'Origen';
+      else if (state.insumosCoincide === false) tipoSugerido = 'Insumo';
       document.getElementById('error-tipo').value = tipoSugerido;
+      onTipoErrorChange(tipoSugerido);
 
       openModal('modal-error');
     }
@@ -928,6 +936,12 @@ function previewFoto(input) {
     prev.classList.remove('hidden');
   };
   reader.readAsDataURL(file);
+}
+
+function onTipoErrorChange(tipo) {
+  const esDanado = tipo === 'Calidad' || tipo === 'Otro';
+  document.getElementById('disposicion-danados').classList.toggle('hidden', !esDanado);
+  document.getElementById('disposicion-discrepancia').classList.toggle('hidden', esDanado);
 }
 
 async function guardarError() {
