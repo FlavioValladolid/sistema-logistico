@@ -447,7 +447,140 @@ function renderInspeccion() {
                     </div>
                   </div>
                   <div id="pais-real-group" class="hidden mt-8">
-                    <input type="text" class="form-control" id="f-pais-real" placeholder="País real en la prenda...">
+                    <select class="form-control" id="f-pais-real-select" onchange="onPaisRealSelect(this.value)">
+                      <option value="">— Select country —</option>
+                      <optgroup label="Common">
+                        <option>Bangladesh</option>
+                        <option>Cambodia</option>
+                        <option>China</option>
+                        <option>El Salvador</option>
+                        <option>Guatemala</option>
+                        <option>Honduras</option>
+                        <option>India</option>
+                        <option>Indonesia</option>
+                        <option>Mexico</option>
+                        <option>Morocco</option>
+                        <option>Myanmar</option>
+                        <option>Nicaragua</option>
+                        <option>Pakistan</option>
+                        <option>Sri Lanka</option>
+                        <option>Thailand</option>
+                        <option>Turkey</option>
+                        <option>Vietnam</option>
+                      </optgroup>
+                      <optgroup label="All Countries">
+                        <option>Afghanistan</option>
+                        <option>Albania</option>
+                        <option>Algeria</option>
+                        <option>Angola</option>
+                        <option>Argentina</option>
+                        <option>Armenia</option>
+                        <option>Australia</option>
+                        <option>Austria</option>
+                        <option>Azerbaijan</option>
+                        <option>Bahrain</option>
+                        <option>Bangladesh</option>
+                        <option>Belarus</option>
+                        <option>Belgium</option>
+                        <option>Benin</option>
+                        <option>Bolivia</option>
+                        <option>Bosnia and Herzegovina</option>
+                        <option>Brazil</option>
+                        <option>Bulgaria</option>
+                        <option>Burkina Faso</option>
+                        <option>Cambodia</option>
+                        <option>Cameroon</option>
+                        <option>Canada</option>
+                        <option>Chile</option>
+                        <option>China</option>
+                        <option>Colombia</option>
+                        <option>Costa Rica</option>
+                        <option>Croatia</option>
+                        <option>Czech Republic</option>
+                        <option>Denmark</option>
+                        <option>Dominican Republic</option>
+                        <option>Ecuador</option>
+                        <option>Egypt</option>
+                        <option>El Salvador</option>
+                        <option>Ethiopia</option>
+                        <option>Finland</option>
+                        <option>France</option>
+                        <option>Georgia</option>
+                        <option>Germany</option>
+                        <option>Ghana</option>
+                        <option>Greece</option>
+                        <option>Guatemala</option>
+                        <option>Haiti</option>
+                        <option>Honduras</option>
+                        <option>Hong Kong</option>
+                        <option>Hungary</option>
+                        <option>India</option>
+                        <option>Indonesia</option>
+                        <option>Iran</option>
+                        <option>Iraq</option>
+                        <option>Israel</option>
+                        <option>Italy</option>
+                        <option>Ivory Coast</option>
+                        <option>Japan</option>
+                        <option>Jordan</option>
+                        <option>Kazakhstan</option>
+                        <option>Kenya</option>
+                        <option>Laos</option>
+                        <option>Lebanon</option>
+                        <option>Madagascar</option>
+                        <option>Malaysia</option>
+                        <option>Mali</option>
+                        <option>Mauritius</option>
+                        <option>Mexico</option>
+                        <option>Moldova</option>
+                        <option>Mongolia</option>
+                        <option>Morocco</option>
+                        <option>Mozambique</option>
+                        <option>Myanmar</option>
+                        <option>Nepal</option>
+                        <option>Netherlands</option>
+                        <option>Nicaragua</option>
+                        <option>Nigeria</option>
+                        <option>North Macedonia</option>
+                        <option>Pakistan</option>
+                        <option>Panama</option>
+                        <option>Paraguay</option>
+                        <option>Peru</option>
+                        <option>Philippines</option>
+                        <option>Poland</option>
+                        <option>Portugal</option>
+                        <option>Romania</option>
+                        <option>Russia</option>
+                        <option>Saudi Arabia</option>
+                        <option>Senegal</option>
+                        <option>Serbia</option>
+                        <option>Singapore</option>
+                        <option>South Africa</option>
+                        <option>South Korea</option>
+                        <option>Spain</option>
+                        <option>Sri Lanka</option>
+                        <option>Sweden</option>
+                        <option>Switzerland</option>
+                        <option>Syria</option>
+                        <option>Taiwan</option>
+                        <option>Tanzania</option>
+                        <option>Thailand</option>
+                        <option>Tunisia</option>
+                        <option>Turkey</option>
+                        <option>Uganda</option>
+                        <option>Ukraine</option>
+                        <option>United Arab Emirates</option>
+                        <option>United Kingdom</option>
+                        <option>United States</option>
+                        <option>Uruguay</option>
+                        <option>Uzbekistan</option>
+                        <option>Venezuela</option>
+                        <option>Vietnam</option>
+                        <option>Zimbabwe</option>
+                      </optgroup>
+                      <option value="__other__">Other (enter manually)</option>
+                    </select>
+                    <input type="text" class="form-control mt-8" id="f-pais-real-manual" placeholder="Enter country name..." style="display:none">
                   </div>
                 </div>
 
@@ -671,11 +804,27 @@ function cancelarSKU() {
   document.getElementById('scan-input').focus();
 }
 
+function onPaisRealSelect(val) {
+  const manual = document.getElementById('f-pais-real-manual');
+  if (manual) manual.style.display = val === '__other__' ? 'block' : 'none';
+}
+
+function getPaisReal() {
+  const sel = document.getElementById('f-pais-real-select');
+  if (!sel) return '';
+  if (sel.value === '__other__') return document.getElementById('f-pais-real-manual')?.value.trim() || '';
+  return sel.value;
+}
+
 function setPaisCoincide(val) {
   state.paisCoincide = val;
   document.getElementById('btn-pais-ok')?.classList.toggle('selected', val);
   document.getElementById('btn-pais-no')?.classList.toggle('selected', !val);
   document.getElementById('pais-real-group')?.classList.toggle('hidden', val);
+  if (val) {
+    const sel = document.getElementById('f-pais-real-select');
+    if (sel) { sel.value = ''; onPaisRealSelect(''); }
+  }
   checkErrorRequerido();
 }
 
@@ -704,7 +853,7 @@ async function registrarSKU() {
   const desc = document.getElementById('f-sku-desc').value.trim();
   const cantidad = parseInt(document.getElementById('f-cantidad').value) || 1;
   const paisCatalogo = document.getElementById('f-pais-catalogo')?.textContent || '';
-  const paisReal = state.paisCoincide !== false ? paisCatalogo : (document.getElementById('f-pais-real')?.value.trim() || paisCatalogo);
+  const paisReal = state.paisCoincide !== false ? paisCatalogo : (getPaisReal() || paisCatalogo);
   const insCatalogo = document.getElementById('f-insumos-catalogo')?.textContent || '';
   const insReal = state.insumosCoincide !== false ? insCatalogo : (document.getElementById('f-insumos-real')?.value.trim() || insCatalogo);
 
