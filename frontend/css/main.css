@@ -40,6 +40,44 @@
   --sidebar-width: 240px;
 }
 
+/* ── LIGHT MODE ── */
+[data-theme="light"] {
+  --bg-primary: #f4f4f7;
+  --bg-secondary: #e8e8ed;
+  --bg-card: #ffffff;
+  --bg-elevated: #ececf1;
+  --border: #d0d0dc;
+  --border-bright: #b4b4c4;
+
+  --text-primary: #111118;
+  --text-secondary: #44445a;
+  --text-muted: #7a7a92;
+
+  --accent-green: #008c38;
+  --accent-green-dim: #007530;
+  --accent-amber: #b87800;
+  --accent-red: #c41c1c;
+  --accent-blue: #1a56cc;
+  --accent-cyan: #0078a0;
+
+  --g1-color: #008c38;
+  --g2-color: #b87800;
+  --g3-color: #c41c1c;
+
+  --shadow-sm: 0 2px 8px rgba(0,0,0,0.07);
+  --shadow-md: 0 4px 20px rgba(0,0,0,0.11);
+  --shadow-lg: 0 8px 40px rgba(0,0,0,0.16);
+}
+
+/* Ajustes específicos light mode */
+[data-theme="light"] .modal-overlay { background: rgba(0,0,0,0.45); }
+[data-theme="light"] select.form-control {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M6 8L0 0h12z' fill='%237a7a92'/%3E%3C/svg%3E");
+}
+[data-theme="light"] .nav-item.active {
+  background: rgba(0,140,56,0.1);
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 html { font-size: 14px; scroll-behavior: smooth; }
@@ -174,6 +212,51 @@ body {
   padding: 14px 18px;
   border-top: 1px solid var(--border);
 }
+
+.theme-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 8px 10px;
+  margin-bottom: 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: 'IBM Plex Mono', monospace;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.theme-toggle-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-bright);
+  background: var(--border);
+}
+.theme-toggle-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.theme-toggle-btn .theme-toggle-dot {
+  margin-left: auto;
+  width: 28px; height: 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-bright);
+  border-radius: 8px;
+  position: relative;
+  transition: var(--transition);
+}
+.theme-toggle-btn .theme-toggle-dot::after {
+  content: '';
+  position: absolute;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  top: 2px; left: 2px;
+  background: var(--text-muted);
+  transition: var(--transition);
+}
+[data-theme="light"] .theme-toggle-btn .theme-toggle-dot { background: rgba(0,140,56,0.15); border-color: var(--accent-green); }
+[data-theme="light"] .theme-toggle-btn .theme-toggle-dot::after { background: var(--accent-green); transform: translateX(12px); }
 
 .sidebar-version {
   font-family: 'IBM Plex Mono', monospace;
