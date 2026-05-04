@@ -55,6 +55,7 @@ async function initDB() {
     )
   `);
   try { db.run("ALTER TABLE clientes ADD COLUMN tipo_almacenamiento TEXT DEFAULT 'caja'"); } catch(e) {}
+  try { db.run("ALTER TABLE clientes ADD COLUMN uph INTEGER DEFAULT 0"); } catch(e) {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS skus (
@@ -102,10 +103,19 @@ async function initDB() {
       insumos_real TEXT,
       insumos_coincide INTEGER DEFAULT 1,
       calidad TEXT DEFAULT 'Buena',
+      foto_etiqueta TEXT,
+      foto_insumos TEXT,
+      foto_pieza TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       FOREIGN KEY (tracking_id) REFERENCES trackings(id)
     )
   `);
+
+  // Columna impresa en trackings
+  try { db.run('ALTER TABLE trackings ADD COLUMN impresa INTEGER DEFAULT 0'); } catch(e) {}
+  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_etiqueta TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_insumos TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_pieza TEXT'); } catch(e) {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS errores (
@@ -221,18 +231,18 @@ app.get('/api/clientes/:id', (req, res) => {
 });
 
 app.post('/api/clientes', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph } = req.body;
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   const id = uuidv4();
-  dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento) VALUES (?,?,?,?,?,?,?)`,
-    [id, nombre, grado_confianza || 2, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja']);
+  dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph) VALUES (?,?,?,?,?,?,?,?)`,
+    [id, nombre, grado_confianza || 2, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0]);
   res.json({ id, mensaje: 'Cliente creado' });
 });
 
 app.put('/api/clientes/:id', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento } = req.body;
-  dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=? WHERE id=?`,
-    [nombre, grado_confianza, porcentaje_muestreo, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', req.params.id]);
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph } = req.body;
+  dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=? WHERE id=?`,
+    [nombre, grado_confianza, porcentaje_muestreo, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, req.params.id]);
   res.json({ mensaje: 'Cliente actualizado' });
 });
 
@@ -330,9 +340,9 @@ app.get('/api/trackings/:id', (req, res) => {
 });
 
 app.post('/api/trackings', (req, res) => {
-  const { tracking_number, cliente_id, caja_id, operador, cantidad_declarada } = req.body;
-  if (!tracking_number || !cliente_id || !caja_id) {
-    return res.status(400).json({ error: 'tracking_number, cliente_id y caja_id son requeridos' });
+  const { tracking_number, cliente_id, operador, cantidad_declarada } = req.body;
+  if (!tracking_number || !cliente_id) {
+    return res.status(400).json({ error: 'tracking_number y cliente_id son requeridos' });
   }
 
   const existing = dbGet('SELECT id FROM trackings WHERE tracking_number = ?', [tracking_number]);
@@ -340,7 +350,7 @@ app.post('/api/trackings', (req, res) => {
 
   const id = uuidv4();
   dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,operador,cantidad_declarada,cantidad_final) VALUES (?,?,?,?,?,?,?)`,
-    [id, tracking_number, cliente_id, caja_id, operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0]);
+    [id, tracking_number, cliente_id, '', operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0]);
   res.json({ id, mensaje: 'Tracking creado' });
 });
 
@@ -365,7 +375,12 @@ app.post('/api/trackings/:id/cerrar', (req, res) => {
     return res.status(400).json({ error: 'Hay errores sin fotografía de evidencia. No se puede cerrar.' });
   }
 
-  dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now') WHERE id=?`, [req.params.id]);
+  const { caja_id } = req.body;
+  if (!caja_id || !caja_id.trim()) {
+    return res.status(400).json({ error: 'El número de caja/pallet es requerido para cerrar el tracking' });
+  }
+
+  dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now'), caja_id=? WHERE id=?`, [caja_id.trim(), req.params.id]);
   res.json({ mensaje: 'Tracking cerrado exitosamente' });
 });
 
@@ -412,6 +427,28 @@ app.delete('/api/trackings/:tid/detalles/:did', (req, res) => {
   res.json({ mensaje: 'Detalle eliminado' });
 });
 
+// Fotos de evidencia para SKU no registrado en catálogo
+app.post('/api/detalles/:id/fotos-evidencia', upload.fields([
+  { name: 'etiqueta', maxCount: 1 },
+  { name: 'insumos', maxCount: 1 },
+  { name: 'pieza', maxCount: 1 }
+]), (req, res) => {
+  const detalle = dbGet('SELECT id FROM detalle_skus WHERE id=?', [req.params.id]);
+  if (!detalle) return res.status(404).json({ error: 'Detalle no encontrado' });
+
+  const updates = [];
+  const vals = [];
+  if (req.files?.etiqueta) { updates.push('foto_etiqueta=?'); vals.push('/uploads/' + req.files.etiqueta[0].filename); }
+  if (req.files?.insumos)  { updates.push('foto_insumos=?');  vals.push('/uploads/' + req.files.insumos[0].filename); }
+  if (req.files?.pieza)    { updates.push('foto_pieza=?');    vals.push('/uploads/' + req.files.pieza[0].filename); }
+
+  if (updates.length === 0) return res.status(400).json({ error: 'No se recibieron fotos' });
+
+  vals.push(req.params.id);
+  dbRun(`UPDATE detalle_skus SET ${updates.join(',')} WHERE id=?`, vals);
+  res.json({ mensaje: 'Fotos guardadas' });
+});
+
 // --- ERRORES ---
 app.get('/api/trackings/:id/errores', (req, res) => {
   const rows = dbAll('SELECT * FROM errores WHERE tracking_id=? ORDER BY created_at DESC', [req.params.id]);
@@ -455,6 +492,108 @@ app.get('/api/reportes/resumen', (req, res) => {
   res.json({ totalTrackings, trackingsCerrados, totalErrores, totalDiscrepancias, totalPiezas });
 });
 
+// Lista de cajas/pallets agrupadas por caja_id
+app.get('/api/reportes/cajas', (req, res) => {
+  const { cliente_id, fecha_desde, fecha_hasta } = req.query;
+
+  let where = "WHERE t.estatus = 'cerrado' AND t.caja_id != ''";
+  const params = [];
+  if (cliente_id) { where += ' AND t.cliente_id = ?'; params.push(cliente_id); }
+  if (fecha_desde) { where += " AND date(t.closed_at) >= ?"; params.push(fecha_desde); }
+  if (fecha_hasta) { where += " AND date(t.closed_at) <= ?"; params.push(fecha_hasta); }
+
+  const sql = `
+    SELECT
+      t.caja_id,
+      t.cliente_id,
+      MAX(c.nombre)                AS cliente_nombre,
+      MAX(c.tipo_almacenamiento)   AS tipo_almacenamiento,
+      COUNT(DISTINCT t.id)         AS num_trackings,
+      GROUP_CONCAT(t.id, '|')      AS tracking_ids,
+      GROUP_CONCAT(t.tracking_number, ', ') AS tracking_numbers,
+      COUNT(DISTINCT d.id)         AS num_skus,
+      COALESCE(SUM(d.cantidad), 0) AS total_piezas,
+      MAX(t.closed_at)             AS closed_at,
+      MAX(t.impresa)               AS impresa
+    FROM trackings t
+    LEFT JOIN clientes c ON t.cliente_id = c.id
+    LEFT JOIN detalle_skus d ON d.tracking_id = t.id
+    ${where}
+    GROUP BY t.caja_id, t.cliente_id
+    ORDER BY MAX(t.closed_at) DESC
+  `;
+  res.json(dbAll(sql, params));
+});
+
+// Detalle completo de una caja/pallet (todos sus trackings + SKUs + errores)
+app.get('/api/reportes/caja-detalle', (req, res) => {
+  const { caja_id, cliente_id } = req.query;
+  if (!caja_id) return res.status(400).json({ error: 'caja_id requerido' });
+
+  let sql = `
+    SELECT t.*, c.nombre as cliente_nombre, c.tipo_almacenamiento, c.grado_confianza
+    FROM trackings t
+    LEFT JOIN clientes c ON t.cliente_id = c.id
+    WHERE t.caja_id = ? AND t.estatus = 'cerrado'
+  `;
+  const params = [caja_id];
+  if (cliente_id) { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
+  sql += ' ORDER BY t.closed_at';
+
+  const trackings = dbAll(sql, params);
+
+  if (trackings.length === 0) return res.status(404).json({ error: 'Caja no encontrada' });
+
+  const tids = trackings.map(t => t.id);
+  const ph  = tids.map(() => '?').join(',');
+
+  const detalles = dbAll(`
+    SELECT d.*, t.tracking_number
+    FROM detalle_skus d
+    JOIN trackings t ON d.tracking_id = t.id
+    WHERE d.tracking_id IN (${ph})
+    ORDER BY t.tracking_number, d.created_at
+  `, tids);
+
+  const errores = dbAll(`
+    SELECT e.*, t.tracking_number
+    FROM errores e
+    JOIN trackings t ON e.tracking_id = t.id
+    WHERE e.tracking_id IN (${ph})
+    ORDER BY e.created_at
+  `, tids);
+
+  res.json({ trackings, detalles, errores });
+});
+
+// CSV: datos por tracking IDs (evita ambigüedad cuando mismo caja_id pertenece a distintos clientes)
+app.post('/api/reportes/csv-detalles', (req, res) => {
+  const { tracking_ids } = req.body;
+  if (!Array.isArray(tracking_ids) || tracking_ids.length === 0)
+    return res.status(400).json({ error: 'tracking_ids requerido' });
+
+  const ph = tracking_ids.map(() => '?').join(',');
+  const rows = dbAll(`
+    SELECT t.tracking_number, t.caja_id,
+           d.sku_code, d.cantidad, d.pais_origen_real, d.insumos_real
+    FROM detalle_skus d
+    JOIN trackings t ON d.tracking_id = t.id
+    WHERE t.id IN (${ph})
+    ORDER BY t.caja_id, t.tracking_number, d.created_at
+  `, tracking_ids);
+  res.json(rows);
+});
+
+// Marcar como impresas (por tracking IDs)
+app.post('/api/reportes/marcar-impresa', (req, res) => {
+  const { tracking_ids } = req.body;
+  if (!Array.isArray(tracking_ids) || tracking_ids.length === 0)
+    return res.status(400).json({ error: 'tracking_ids requerido' });
+  const ph = tracking_ids.map(() => '?').join(',');
+  dbRun(`UPDATE trackings SET impresa = 1 WHERE id IN (${ph})`, tracking_ids);
+  res.json({ mensaje: 'Marcadas como impresas' });
+});
+
 app.get('/api/reportes/manifiesto/:id', (req, res) => {
   const tracking = dbGet(`
     SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza
@@ -469,6 +608,36 @@ app.get('/api/reportes/manifiesto/:id', (req, res) => {
   const discrepancias = dbAll('SELECT * FROM alertas_discrepancia WHERE tracking_id=?', [req.params.id]);
 
   res.json({ tracking, detalles, errores, discrepancias });
+});
+
+// Dashboard: hora por hora
+app.get('/api/dashboard/hora-por-hora', (req, res) => {
+  const { fecha_desde, fecha_hasta, operador, cliente_id } = req.query;
+  let sql = `
+    SELECT strftime('%Y-%m-%d', datetime(d.created_at, 'localtime')) as fecha,
+           CAST(strftime('%H', datetime(d.created_at, 'localtime')) AS INTEGER) as hora,
+           t.cliente_id,
+           c.nombre as cliente_nombre,
+           COALESCE(c.uph, 0) as uph,
+           SUM(d.cantidad) as unidades,
+           COUNT(DISTINCT t.operador) as num_operadores
+    FROM detalle_skus d
+    JOIN trackings t ON d.tracking_id = t.id
+    JOIN clientes c ON t.cliente_id = c.id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (fecha_desde) { sql += ' AND date(datetime(d.created_at, \'localtime\')) >= ?'; params.push(fecha_desde); }
+  if (fecha_hasta) { sql += ' AND date(datetime(d.created_at, \'localtime\')) <= ?'; params.push(fecha_hasta); }
+  if (operador)    { sql += ' AND t.operador = ?'; params.push(operador); }
+  if (cliente_id)  { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
+  sql += ' GROUP BY fecha, hora, t.cliente_id ORDER BY fecha, hora';
+  res.json(dbAll(sql, params));
+});
+
+app.get('/api/dashboard/operadores', (req, res) => {
+  const rows = dbAll("SELECT DISTINCT operador FROM trackings WHERE operador IS NOT NULL AND operador != '' ORDER BY operador");
+  res.json(rows.map(r => r.operador));
 });
 
 // Iniciar servidor

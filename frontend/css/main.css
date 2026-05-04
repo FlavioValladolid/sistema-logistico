@@ -783,6 +783,24 @@ tbody td {
   font-weight: 400;
 }
 
+/* ── FOTOS REQUERIDAS (SKU no registrado) ── */
+.foto-req-card {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.foto-req-label {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
 /* ── VERIFICATION FIELDS ── */
 .verify-field {
   background: var(--bg-elevated);

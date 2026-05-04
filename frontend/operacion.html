@@ -58,6 +58,57 @@
 <script>
 buildShell('Operación', 'OPERACIÓN / INSPECCIÓN', '');
 
+const COUNTRY_OPTIONS = `
+  <option value="">— Select country —</option>
+  <optgroup label="Common">
+    <option>Bangladesh</option><option>Cambodia</option><option>China</option>
+    <option>El Salvador</option><option>Guatemala</option><option>Honduras</option>
+    <option>India</option><option>Indonesia</option><option>Mexico</option>
+    <option>Morocco</option><option>Myanmar</option><option>Nicaragua</option>
+    <option>Pakistan</option><option>Sri Lanka</option><option>Thailand</option>
+    <option>Turkey</option><option>Vietnam</option>
+  </optgroup>
+  <optgroup label="All Countries">
+    <option>Afghanistan</option><option>Albania</option><option>Algeria</option>
+    <option>Angola</option><option>Argentina</option><option>Armenia</option>
+    <option>Australia</option><option>Austria</option><option>Azerbaijan</option>
+    <option>Bahrain</option><option>Bangladesh</option><option>Belarus</option>
+    <option>Belgium</option><option>Benin</option><option>Bolivia</option>
+    <option>Bosnia and Herzegovina</option><option>Brazil</option><option>Bulgaria</option>
+    <option>Burkina Faso</option><option>Cambodia</option><option>Cameroon</option>
+    <option>Canada</option><option>Chile</option><option>China</option>
+    <option>Colombia</option><option>Costa Rica</option><option>Croatia</option>
+    <option>Czech Republic</option><option>Denmark</option><option>Dominican Republic</option>
+    <option>Ecuador</option><option>Egypt</option><option>El Salvador</option>
+    <option>Ethiopia</option><option>Finland</option><option>France</option>
+    <option>Georgia</option><option>Germany</option><option>Ghana</option>
+    <option>Greece</option><option>Guatemala</option><option>Haiti</option>
+    <option>Honduras</option><option>Hong Kong</option><option>Hungary</option>
+    <option>India</option><option>Indonesia</option><option>Iran</option>
+    <option>Iraq</option><option>Israel</option><option>Italy</option>
+    <option>Ivory Coast</option><option>Japan</option><option>Jordan</option>
+    <option>Kazakhstan</option><option>Kenya</option><option>Laos</option>
+    <option>Lebanon</option><option>Madagascar</option><option>Malaysia</option>
+    <option>Mali</option><option>Mauritius</option><option>Mexico</option>
+    <option>Moldova</option><option>Mongolia</option><option>Morocco</option>
+    <option>Mozambique</option><option>Myanmar</option><option>Nepal</option>
+    <option>Netherlands</option><option>Nicaragua</option><option>Nigeria</option>
+    <option>North Macedonia</option><option>Pakistan</option><option>Panama</option>
+    <option>Paraguay</option><option>Peru</option><option>Philippines</option>
+    <option>Poland</option><option>Portugal</option><option>Romania</option>
+    <option>Russia</option><option>Saudi Arabia</option><option>Senegal</option>
+    <option>Serbia</option><option>Singapore</option><option>South Africa</option>
+    <option>South Korea</option><option>Spain</option><option>Sri Lanka</option>
+    <option>Sweden</option><option>Switzerland</option><option>Syria</option>
+    <option>Taiwan</option><option>Tanzania</option><option>Thailand</option>
+    <option>Tunisia</option><option>Turkey</option><option>Uganda</option>
+    <option>Ukraine</option><option>United Arab Emirates</option><option>United Kingdom</option>
+    <option>United States</option><option>Uruguay</option><option>Uzbekistan</option>
+    <option>Venezuela</option><option>Vietnam</option><option>Zimbabwe</option>
+  </optgroup>
+  <option value="__other__">Other (enter manually)</option>
+`;
+
 document.getElementById('page-content').innerHTML = `
   <div id="fase-inicio" class="hidden">
     <!-- Fase 1: Inicio de tracking -->
@@ -163,6 +214,32 @@ document.body.insertAdjacentHTML('beforeend', `
       </div>
     </div>
   </div>
+
+  <div id="modal-cierre" class="modal-overlay">
+    <div class="modal" style="max-width:400px">
+      <div class="modal-header">
+        <span class="modal-title">✓ Cerrar Tracking</span>
+        <button class="modal-close" onclick="closeModal('modal-cierre')">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 16px;color:var(--text-secondary);font-size:14px">
+          Ingresa el número de identificación antes de cerrar. Una vez cerrado no se podrán agregar más SKUs.
+        </p>
+        <div class="form-group">
+          <label class="form-label" id="cierre-caja-label">Número de Caja *</label>
+          <input type="text" class="form-control form-control-mono" id="cierre-caja-input" placeholder="CAJA-001"
+            onkeydown="if(event.key==='Enter') confirmarCierre()">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-cierre')">Cancelar</button>
+        <button class="btn btn-primary" onclick="confirmarCierre()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg>
+          Confirmar Cierre
+        </button>
+      </div>
+    </div>
+  </div>
 `);
 
 // ========================
@@ -242,17 +319,10 @@ async function renderInicio() {
           </div>
         </div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Tracking Number *</label>
-            <input type="text" class="form-control form-control-mono" id="ini-tracking" placeholder="TRK-2025-XXXXX" style="text-transform:uppercase">
-            <div class="form-hint">Identificador único del envío</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label" id="ini-caja-label">Número de Caja *</label>
-            <input type="text" class="form-control form-control-mono" id="ini-caja" placeholder="CAJA-001">
-            <div class="form-hint" id="ini-caja-hint">Se heredará a todos los SKUs de esta sesión</div>
-          </div>
+        <div class="form-group">
+          <label class="form-label">Tracking Number *</label>
+          <input type="text" class="form-control form-control-mono" id="ini-tracking" placeholder="TRK-2025-XXXXX" style="text-transform:uppercase">
+          <div class="form-hint">Identificador único del envío</div>
         </div>
 
         <div class="form-row">
@@ -305,25 +375,17 @@ function onClienteChange(sel) {
     <span class="badge badge-muted">${esPallet ? '⬛ Pallet' : '📦 Caja'}</span>
   `;
   preview.classList.remove('hidden');
-
-  // Adaptar campo de caja/pallet
-  document.getElementById('ini-caja-label').textContent = esPallet ? 'Número de Pallet *' : 'Número de Caja *';
-  document.getElementById('ini-caja').placeholder = esPallet ? 'PALLET-001' : 'CAJA-001';
-  document.getElementById('ini-caja-hint').textContent = esPallet
-    ? 'Número de pallet — se heredará a todos los SKUs de esta sesión'
-    : 'Número de caja — se heredará a todos los SKUs de esta sesión';
 }
 
 async function iniciarTracking() {
   const clienteId = document.getElementById('ini-cliente').value;
   const trackingNum = document.getElementById('ini-tracking').value.trim().toUpperCase();
-  const cajaId = document.getElementById('ini-caja').value.trim();
   const cantidadRaw = document.getElementById('ini-cantidad').value;
   const cantidad = cantidadRaw !== '' ? parseInt(cantidadRaw) : 0;
   const operador = document.getElementById('ini-operador').value.trim() || 'Operador';
   const alertEl = document.getElementById('alert-inicio');
 
-  if (!clienteId || !trackingNum || !cajaId) {
+  if (!clienteId || !trackingNum) {
     alertEl.innerHTML = '<div class="alert alert-error">Todos los campos marcados con * son requeridos</div>';
     return;
   }
@@ -333,7 +395,6 @@ async function iniciarTracking() {
     const res = await API.post('/trackings', {
       tracking_number: trackingNum,
       cliente_id: clienteId,
-      caja_id: cajaId,
       operador,
       cantidad_declarada: cantidad
     });
@@ -449,187 +510,127 @@ function renderInspeccion() {
                 </div>
               </div>
 
-              ${grado !== 1 ? `
-                <!-- VERIFICACIÓN PAÍS -->
-                <div class="form-group">
-                  <label class="form-label">País de Origen</label>
-                  <div class="verify-field">
-                    <div>
-                      <div class="verify-label">Catálogo</div>
-                      <div class="verify-value" id="f-pais-catalogo">—</div>
-                    </div>
-                    <div class="verify-actions">
-                      <button class="verify-btn verify-ok selected" id="btn-pais-ok" onclick="setPaisCoincide(true)">✓ Coincide</button>
-                      <button class="verify-btn verify-no" id="btn-pais-no" onclick="setPaisCoincide(false)">✕ No coincide</button>
-                    </div>
-                  </div>
-                  <div id="pais-real-group" class="hidden mt-8">
-                    <select class="form-control" id="f-pais-real-select" onchange="onPaisRealSelect(this.value)">
-                      <option value="">— Select country —</option>
-                      <optgroup label="Common">
-                        <option>Bangladesh</option>
-                        <option>Cambodia</option>
-                        <option>China</option>
-                        <option>El Salvador</option>
-                        <option>Guatemala</option>
-                        <option>Honduras</option>
-                        <option>India</option>
-                        <option>Indonesia</option>
-                        <option>Mexico</option>
-                        <option>Morocco</option>
-                        <option>Myanmar</option>
-                        <option>Nicaragua</option>
-                        <option>Pakistan</option>
-                        <option>Sri Lanka</option>
-                        <option>Thailand</option>
-                        <option>Turkey</option>
-                        <option>Vietnam</option>
-                      </optgroup>
-                      <optgroup label="All Countries">
-                        <option>Afghanistan</option>
-                        <option>Albania</option>
-                        <option>Algeria</option>
-                        <option>Angola</option>
-                        <option>Argentina</option>
-                        <option>Armenia</option>
-                        <option>Australia</option>
-                        <option>Austria</option>
-                        <option>Azerbaijan</option>
-                        <option>Bahrain</option>
-                        <option>Bangladesh</option>
-                        <option>Belarus</option>
-                        <option>Belgium</option>
-                        <option>Benin</option>
-                        <option>Bolivia</option>
-                        <option>Bosnia and Herzegovina</option>
-                        <option>Brazil</option>
-                        <option>Bulgaria</option>
-                        <option>Burkina Faso</option>
-                        <option>Cambodia</option>
-                        <option>Cameroon</option>
-                        <option>Canada</option>
-                        <option>Chile</option>
-                        <option>China</option>
-                        <option>Colombia</option>
-                        <option>Costa Rica</option>
-                        <option>Croatia</option>
-                        <option>Czech Republic</option>
-                        <option>Denmark</option>
-                        <option>Dominican Republic</option>
-                        <option>Ecuador</option>
-                        <option>Egypt</option>
-                        <option>El Salvador</option>
-                        <option>Ethiopia</option>
-                        <option>Finland</option>
-                        <option>France</option>
-                        <option>Georgia</option>
-                        <option>Germany</option>
-                        <option>Ghana</option>
-                        <option>Greece</option>
-                        <option>Guatemala</option>
-                        <option>Haiti</option>
-                        <option>Honduras</option>
-                        <option>Hong Kong</option>
-                        <option>Hungary</option>
-                        <option>India</option>
-                        <option>Indonesia</option>
-                        <option>Iran</option>
-                        <option>Iraq</option>
-                        <option>Israel</option>
-                        <option>Italy</option>
-                        <option>Ivory Coast</option>
-                        <option>Japan</option>
-                        <option>Jordan</option>
-                        <option>Kazakhstan</option>
-                        <option>Kenya</option>
-                        <option>Laos</option>
-                        <option>Lebanon</option>
-                        <option>Madagascar</option>
-                        <option>Malaysia</option>
-                        <option>Mali</option>
-                        <option>Mauritius</option>
-                        <option>Mexico</option>
-                        <option>Moldova</option>
-                        <option>Mongolia</option>
-                        <option>Morocco</option>
-                        <option>Mozambique</option>
-                        <option>Myanmar</option>
-                        <option>Nepal</option>
-                        <option>Netherlands</option>
-                        <option>Nicaragua</option>
-                        <option>Nigeria</option>
-                        <option>North Macedonia</option>
-                        <option>Pakistan</option>
-                        <option>Panama</option>
-                        <option>Paraguay</option>
-                        <option>Peru</option>
-                        <option>Philippines</option>
-                        <option>Poland</option>
-                        <option>Portugal</option>
-                        <option>Romania</option>
-                        <option>Russia</option>
-                        <option>Saudi Arabia</option>
-                        <option>Senegal</option>
-                        <option>Serbia</option>
-                        <option>Singapore</option>
-                        <option>South Africa</option>
-                        <option>South Korea</option>
-                        <option>Spain</option>
-                        <option>Sri Lanka</option>
-                        <option>Sweden</option>
-                        <option>Switzerland</option>
-                        <option>Syria</option>
-                        <option>Taiwan</option>
-                        <option>Tanzania</option>
-                        <option>Thailand</option>
-                        <option>Tunisia</option>
-                        <option>Turkey</option>
-                        <option>Uganda</option>
-                        <option>Ukraine</option>
-                        <option>United Arab Emirates</option>
-                        <option>United Kingdom</option>
-                        <option>United States</option>
-                        <option>Uruguay</option>
-                        <option>Uzbekistan</option>
-                        <option>Venezuela</option>
-                        <option>Vietnam</option>
-                        <option>Zimbabwe</option>
-                      </optgroup>
-                      <option value="__other__">Other (enter manually)</option>
-                    </select>
-                    <input type="text" class="form-control mt-8" id="f-pais-real-manual" placeholder="Enter country name..." style="display:none">
-                  </div>
-                </div>
-
-                <!-- VERIFICACIÓN INSUMOS -->
-                <div class="form-group">
-                  <label class="form-label">Insumos / Composición</label>
-                  <div class="verify-field">
-                    <div style="flex:1">
-                      <div class="verify-label">Catálogo</div>
-                      <div class="verify-value" id="f-insumos-catalogo" style="font-size:13px">—</div>
-                    </div>
-                    <div class="verify-actions">
-                      <button class="verify-btn verify-ok selected" id="btn-insumos-ok" onclick="setInsumosCoincide(true)">✓ Coincide</button>
-                      <button class="verify-btn verify-no" id="btn-insumos-no" onclick="setInsumosCoincide(false)">✕ No coincide</button>
-                    </div>
-                  </div>
-                  <div id="insumos-real-group" class="hidden mt-8">
-                    <input type="text" class="form-control" id="f-insumos-real" placeholder="Composición real en la prenda...">
-                  </div>
-                </div>
-
-                <!-- CALIDAD (si módulo activo) -->
-                ${modCalidad ? `
+              <div id="seccion-verificacion">
+                ${grado !== 1 ? `
+                  <!-- VERIFICACIÓN PAÍS -->
                   <div class="form-group">
-                    <label class="form-label">Control de Calidad</label>
-                    <div class="quality-selector">
-                      <button class="quality-btn quality-good selected" id="btn-calidad-good" onclick="setCalidad('Buena')">✓ BUENA</button>
-                      <button class="quality-btn quality-bad" id="btn-calidad-bad" onclick="setCalidad('Mala')">✕ MALA</button>
+                    <label class="form-label">País de Origen</label>
+                    <div class="verify-field">
+                      <div>
+                        <div class="verify-label">Catálogo</div>
+                        <div class="verify-value" id="f-pais-catalogo">—</div>
+                      </div>
+                      <div class="verify-actions">
+                        <button class="verify-btn verify-ok selected" id="btn-pais-ok" onclick="setPaisCoincide(true)">✓ Coincide</button>
+                        <button class="verify-btn verify-no" id="btn-pais-no" onclick="setPaisCoincide(false)">✕ No coincide</button>
+                      </div>
+                    </div>
+                    <div id="pais-real-group" class="hidden mt-8">
+                      <select class="form-control" id="f-pais-real-select" onchange="onPaisRealSelect(this.value)">
+                        ${COUNTRY_OPTIONS}
+                      </select>
+                      <input type="text" class="form-control mt-8" id="f-pais-real-manual" placeholder="Enter country name..." style="display:none">
                     </div>
                   </div>
+
+                  <!-- VERIFICACIÓN INSUMOS -->
+                  <div class="form-group">
+                    <label class="form-label">Insumos / Composición</label>
+                    <div class="verify-field">
+                      <div style="flex:1">
+                        <div class="verify-label">Catálogo</div>
+                        <div class="verify-value" id="f-insumos-catalogo" style="font-size:13px">—</div>
+                      </div>
+                      <div class="verify-actions">
+                        <button class="verify-btn verify-ok selected" id="btn-insumos-ok" onclick="setInsumosCoincide(true)">✓ Coincide</button>
+                        <button class="verify-btn verify-no" id="btn-insumos-no" onclick="setInsumosCoincide(false)">✕ No coincide</button>
+                      </div>
+                    </div>
+                    <div id="insumos-real-group" class="hidden mt-8">
+                      <input type="text" class="form-control" id="f-insumos-real" placeholder="Composición real en la prenda...">
+                    </div>
+                  </div>
+
+                  <!-- CALIDAD (si módulo activo) -->
+                  ${modCalidad ? `
+                    <div class="form-group">
+                      <label class="form-label">Control de Calidad</label>
+                      <div class="quality-selector">
+                        <button class="quality-btn quality-good selected" id="btn-calidad-good" onclick="setCalidad('Buena')">✓ BUENA</button>
+                        <button class="quality-btn quality-bad" id="btn-calidad-bad" onclick="setCalidad('Mala')">✕ MALA</button>
+                      </div>
+                    </div>
+                  ` : ''}
                 ` : ''}
-              ` : ''}
+              </div>
+
+              <!-- SECCIÓN SKU NO REGISTRADO -->
+              <div id="seccion-no-registrado" class="hidden">
+                <div class="alert alert-error" style="margin-bottom:14px">
+                  ⚠ <strong>SKU no encontrado en catálogo.</strong> Completa los datos — se registrará automáticamente.
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">UPC / Código escaneado</label>
+                    <input type="text" class="form-control form-control-mono" id="nr-upc" placeholder="123456789012">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">SKU / Número de parte *</label>
+                    <input type="text" class="form-control form-control-mono" id="nr-sku" placeholder="SKU-XXX-000" style="text-transform:uppercase">
+                    <div class="form-hint">Ingresar manualmente el número de parte</div>
+                  </div>
+                </div>
+
+                <div class="form-group">
+                  <label class="form-label">Descripción del producto</label>
+                  <input type="text" class="form-control" id="nr-desc" placeholder="Nombre / descripción del producto">
+                </div>
+
+                <div class="form-row">
+                  <div class="form-group">
+                    <label class="form-label">País de Origen *</label>
+                    <select class="form-control" id="nr-pais-select" onchange="onNrPaisSelect(this.value)">
+                      ${COUNTRY_OPTIONS}
+                    </select>
+                    <input type="text" class="form-control mt-8" id="nr-pais-manual" placeholder="Enter country name..." style="display:none">
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Insumos / Composición *</label>
+                    <input type="text" class="form-control" id="nr-insumos" placeholder="Ej: 100% Cotton, 60% Polyester...">
+                  </div>
+                </div>
+
+                <div style="margin-bottom:8px">
+                  <div class="section-title" style="margin-bottom:8px">Fotografías de evidencia (obligatorias)</div>
+                  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+                    <div class="foto-req-card">
+                      <div class="foto-req-label">① Etiqueta del producto</div>
+                      <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+                        📷 Seleccionar
+                        <input type="file" id="foto-etiqueta-req" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-etiqueta')">
+                      </label>
+                      <img id="prev-etiqueta" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                    </div>
+                    <div class="foto-req-card">
+                      <div class="foto-req-label">② Insumos / País de origen</div>
+                      <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+                        📷 Seleccionar
+                        <input type="file" id="foto-insumos-req" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-insumos')">
+                      </label>
+                      <img id="prev-insumos" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                    </div>
+                    <div class="foto-req-card">
+                      <div class="foto-req-label">③ Pieza completa</div>
+                      <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+                        📷 Seleccionar
+                        <input type="file" id="foto-pieza-req" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-pieza')">
+                      </label>
+                      <img id="prev-pieza" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                    </div>
+                  </div>
+                </div>
+              </div>
 
               <div class="form-row">
                 <div class="form-group">
@@ -645,6 +646,7 @@ function renderInspeccion() {
                   </div>
                 </div>
               ` : ''}
+
 
               <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
                 <button class="btn btn-secondary" onclick="cancelarSKU()">Cancelar</button>
@@ -673,8 +675,8 @@ function renderInspeccion() {
           <span class="info-val" style="color:var(--accent-cyan)">${t.tracking_number}</span>
         </div>
         <div class="info-row">
-          <span class="info-key">${parseInt(t.grado_confianza) && t.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja'}</span>
-          <span class="info-val">${t.caja_id}</span>
+          <span class="info-key">${t.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja'}</span>
+          <span class="info-val">${t.caja_id || '<span style="color:var(--text-muted);font-style:italic">Al cerrar</span>'}</span>
         </div>
         <div class="info-row">
           <span class="info-key">Grado</span>
@@ -766,12 +768,20 @@ function renderSKUList() {
           </div>
           <div class="sku-badges">
             <span class="badge badge-muted">×${d.cantidad}</span>
+            ${d.foto_etiqueta ? `<span class="badge badge-blue">📷 Evidencia (3 fotos)</span>` : ''}
             ${d.pais_origen_real ? `<span class="badge ${paisDiff?'badge-amber':'badge-muted'}">🌍 ${d.pais_origen_real}${paisDiff?' ⚠':''}</span>` : ''}
             ${d.calidad ? `<span class="badge ${isMalo?'badge-red':'badge-green'}">${isMalo?'✕ Mala':'✓ Buena'}</span>` : ''}
             ${paisDiff ? `<span class="badge badge-amber">País no coincide</span>` : ''}
             ${insDiff ? `<span class="badge badge-amber">Insumos no coinciden</span>` : ''}
             ${hasError ? `<span class="badge badge-red">⚠ ${errD.length} error(es)</span>` : ''}
           </div>
+          ${d.foto_etiqueta ? `
+            <div style="display:flex;gap:6px;margin-top:6px">
+              <img src="${d.foto_etiqueta}" title="Etiqueta" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">
+              <img src="${d.foto_insumos}" title="Insumos/Origen" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">
+              <img src="${d.foto_pieza}" title="Pieza completa" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">
+            </div>
+          ` : ''}
         </div>
         ${state.tracking.estatus !== 'cerrado' ? `
           <div style="display:flex;gap:6px;flex-shrink:0">
@@ -789,24 +799,55 @@ function renderSKUList() {
 async function buscarSKU(code) {
   if (!code.trim()) return;
   state.skuActual = null;
+  state.skuNoRegistrado = false;
 
   const clienteId = state.tracking.cliente_id;
   try {
     const sku = await API.get(`/skus/buscar/${encodeURIComponent(code.trim().toUpperCase())}?cliente_id=${clienteId}`);
     state.skuActual = sku;
+    state.skuNoRegistrado = !sku;
 
     document.getElementById('f-sku-code').value = sku ? sku.sku_code : code.trim().toUpperCase();
     document.getElementById('f-sku-desc').value = sku?.descripcion || '';
     const elPais = document.getElementById('f-pais-catalogo');
-    if (elPais) elPais.textContent = sku?.pais_origen || 'No registrado';
+    if (elPais) elPais.textContent = sku?.pais_origen || '—';
     const elInsumos = document.getElementById('f-insumos-catalogo');
-    if (elInsumos) elInsumos.textContent = sku?.insumos || 'No registrado';
+    if (elInsumos) elInsumos.textContent = sku?.insumos || '—';
     document.getElementById('f-cantidad').value = 1;
 
     // Reset verificaciones
     if (document.getElementById('btn-pais-ok')) setPaisCoincide(true);
     if (document.getElementById('btn-insumos-ok')) setInsumosCoincide(true);
     if (document.getElementById('btn-calidad-good')) setCalidad('Buena');
+
+    // Mostrar sección correcta según si el SKU está registrado o no
+    const secVerif = document.getElementById('seccion-verificacion');
+    const secNR = document.getElementById('seccion-no-registrado');
+    if (secVerif) secVerif.classList.toggle('hidden', !sku);
+    if (secNR) {
+      secNR.classList.toggle('hidden', !!sku);
+      if (!sku) {
+        // Pre-llenar UPC con el código escaneado, limpiar SKU para entrada manual
+        const nrUpc = document.getElementById('nr-upc');
+        const nrSku = document.getElementById('nr-sku');
+        if (nrUpc) nrUpc.value = code.trim();
+        if (nrSku) { nrSku.value = ''; setTimeout(() => nrSku.focus(), 50); }
+        document.getElementById('nr-desc').value = '';
+        document.getElementById('nr-pais-select').value = '';
+        document.getElementById('nr-insumos').value = '';
+        const manual = document.getElementById('nr-pais-manual');
+        if (manual) { manual.value = ''; manual.style.display = 'none'; }
+        // Limpiar previews de fotos
+        ['prev-etiqueta','prev-insumos','prev-pieza'].forEach(id => {
+          const img = document.getElementById(id);
+          if (img) { img.src = ''; img.classList.add('hidden'); }
+        });
+        ['foto-etiqueta-req','foto-insumos-req','foto-pieza-req'].forEach(id => {
+          const inp = document.getElementById(id);
+          if (inp) inp.value = '';
+        });
+      }
+    }
 
     document.getElementById('sku-form').classList.remove('hidden');
     document.getElementById('f-sku-code').focus();
@@ -816,7 +857,11 @@ async function buscarSKU(code) {
 }
 
 function cancelarSKU() {
+  state.skuNoRegistrado = false;
+  state.skuActual = null;
   document.getElementById('sku-form').classList.add('hidden');
+  document.getElementById('seccion-no-registrado')?.classList.add('hidden');
+  document.getElementById('seccion-verificacion')?.classList.remove('hidden');
   document.getElementById('scan-input').value = '';
   document.getElementById('scan-input').focus();
 }
@@ -830,6 +875,18 @@ function getPaisReal() {
   const sel = document.getElementById('f-pais-real-select');
   if (!sel) return '';
   if (sel.value === '__other__') return document.getElementById('f-pais-real-manual')?.value.trim() || '';
+  return sel.value;
+}
+
+function onNrPaisSelect(val) {
+  const manual = document.getElementById('nr-pais-manual');
+  if (manual) manual.style.display = val === '__other__' ? 'block' : 'none';
+}
+
+function getNrPais() {
+  const sel = document.getElementById('nr-pais-select');
+  if (!sel) return '';
+  if (sel.value === '__other__') return document.getElementById('nr-pais-manual')?.value.trim() || '';
   return sel.value;
 }
 
@@ -866,36 +923,86 @@ function checkErrorRequerido() {
 }
 
 async function registrarSKU() {
-  const skuCode = document.getElementById('f-sku-code').value.trim().toUpperCase();
-  const desc = document.getElementById('f-sku-desc').value.trim();
   const cantidad = parseInt(document.getElementById('f-cantidad').value) || 1;
-  const paisCatalogo = document.getElementById('f-pais-catalogo')?.textContent || '';
-  const paisReal = state.paisCoincide !== false ? paisCatalogo : (getPaisReal() || paisCatalogo);
-  const insCatalogo = document.getElementById('f-insumos-catalogo')?.textContent || '';
-  const insReal = state.insumosCoincide !== false ? insCatalogo : (document.getElementById('f-insumos-real')?.value.trim() || insCatalogo);
 
-  if (!skuCode) { toast('Código SKU requerido', 'error'); return; }
+  let skuCode, desc, paisCatalogo, paisReal, insCatalogo, insReal, upcCode;
+
+  if (state.skuNoRegistrado) {
+    // Leer desde campos de no-registrado
+    skuCode = document.getElementById('nr-sku').value.trim().toUpperCase();
+    upcCode = document.getElementById('nr-upc').value.trim();
+    desc    = document.getElementById('nr-desc').value.trim();
+    paisReal = getNrPais();
+    insReal  = document.getElementById('nr-insumos').value.trim();
+    paisCatalogo = '';
+    insCatalogo  = '';
+
+    if (!skuCode) { toast('El número de parte (SKU) es requerido', 'error'); return; }
+    if (!paisReal) { toast('El país de origen es requerido', 'error'); return; }
+    if (!insReal)  { toast('Los insumos / composición son requeridos', 'error'); return; }
+
+    const fEtiqueta = document.getElementById('foto-etiqueta-req')?.files[0];
+    const fInsumos  = document.getElementById('foto-insumos-req')?.files[0];
+    const fPieza    = document.getElementById('foto-pieza-req')?.files[0];
+    if (!fEtiqueta || !fInsumos || !fPieza) {
+      toast('Se requieren las 3 fotografías de evidencia (etiqueta, insumos/origen, pieza completa)', 'error');
+      return;
+    }
+  } else {
+    // Leer desde campos normales
+    skuCode = document.getElementById('f-sku-code').value.trim().toUpperCase();
+    desc    = document.getElementById('f-sku-desc').value.trim();
+    // Para G1 los campos de verificación no están en el DOM → usar datos del catálogo directamente
+    paisCatalogo = document.getElementById('f-pais-catalogo')?.textContent || state.skuActual?.pais_origen || '';
+    insCatalogo  = document.getElementById('f-insumos-catalogo')?.textContent || state.skuActual?.insumos || '';
+    paisReal     = state.paisCoincide !== false ? paisCatalogo : (getPaisReal() || paisCatalogo);
+    insReal      = state.insumosCoincide !== false ? insCatalogo : (document.getElementById('f-insumos-real')?.value.trim() || insCatalogo);
+    upcCode = state.skuActual?.upc_code || '';
+
+    if (!skuCode) { toast('Código SKU requerido', 'error'); return; }
+  }
 
   try {
+    // Si SKU no estaba en catálogo → guardarlo primero
+    if (state.skuNoRegistrado) {
+      await API.post('/skus', {
+        cliente_id: state.tracking.cliente_id,
+        sku_code:   skuCode,
+        upc_code:   upcCode || null,
+        descripcion: desc || null,
+        pais_origen: paisReal,
+        insumos:     insReal,
+      });
+    }
+
     const res = await API.post(`/trackings/${state.tracking.id}/detalles`, {
       sku_code: skuCode,
       descripcion: desc,
       cantidad,
-      pais_origen_catalogo: paisCatalogo,
+      pais_origen_catalogo: state.skuNoRegistrado ? paisReal : paisCatalogo,
       pais_origen_real: paisReal,
-      pais_coincide: state.paisCoincide,
-      insumos_catalogo: insCatalogo,
+      pais_coincide: state.skuNoRegistrado ? true : (state.paisCoincide ?? true),
+      insumos_catalogo: state.skuNoRegistrado ? insReal : insCatalogo,
       insumos_real: insReal,
-      insumos_coincide: state.insumosCoincide,
+      insumos_coincide: state.skuNoRegistrado ? true : (state.insumosCoincide ?? true),
       calidad: state.calidadActual,
     });
+
+    // Subir fotos de evidencia si el SKU no estaba en catálogo
+    if (state.skuNoRegistrado) {
+      const fd = new FormData();
+      fd.append('etiqueta', document.getElementById('foto-etiqueta-req').files[0]);
+      fd.append('insumos',  document.getElementById('foto-insumos-req').files[0]);
+      fd.append('pieza',    document.getElementById('foto-pieza-req').files[0]);
+      await API.postForm(`/detalles/${res.id}/fotos-evidencia`, fd);
+    }
 
     // Reload
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);
     state.detalles = await API.get(`/trackings/${state.tracking.id}/detalles`);
     state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
 
-    toast(`SKU ${skuCode} registrado`);
+    toast(`SKU ${skuCode} registrado${state.skuNoRegistrado ? ' (fotos de evidencia guardadas)' : ''}`);
 
     // Si hay problemas → abrir modal de error
     const hayProblema = (state.paisCoincide === false) || (state.insumosCoincide === false) || state.calidadActual === 'Mala';
@@ -944,6 +1051,17 @@ function previewFoto(input) {
     const prev = document.getElementById('foto-preview');
     prev.src = e.target.result;
     prev.classList.remove('hidden');
+  };
+  reader.readAsDataURL(file);
+}
+
+function previewFotoReq(input, previewId) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById(previewId);
+    if (img) { img.src = e.target.result; img.classList.remove('hidden'); }
   };
   reader.readAsDataURL(file);
 }
@@ -1018,7 +1136,7 @@ async function guardarDiscrepancia() {
 // ========================
 // CERRAR TRACKING
 // ========================
-async function cerrarTracking() {
+function cerrarTracking() {
   // Verificar errores sin foto
   const erroresSinFoto = state.errores.filter(e => !e.path_fotografia);
   if (erroresSinFoto.length > 0) {
@@ -1026,12 +1144,25 @@ async function cerrarTracking() {
     return;
   }
 
-  const ok = await confirm('¿Cerrar este tracking? Una vez cerrado no se podrán agregar más SKUs.', 'Cerrar Tracking');
-  if (!ok) return;
+  // Determinar si es pallet o caja
+  const esPallet = state.tracking.tipo_almacenamiento === 'pallet';
+  document.getElementById('cierre-caja-label').textContent = esPallet ? 'Número de Pallet *' : 'Número de Caja *';
+  document.getElementById('cierre-caja-input').placeholder = esPallet ? 'PALLET-001' : 'CAJA-001';
+  document.getElementById('cierre-caja-input').value = '';
+  openModal('modal-cierre');
+}
+
+async function confirmarCierre() {
+  const cajaId = document.getElementById('cierre-caja-input').value.trim();
+  if (!cajaId) {
+    toast('El número de caja/pallet es requerido', 'error');
+    return;
+  }
 
   try {
-    await API.post(`/trackings/${state.tracking.id}/cerrar`, {});
+    await API.post(`/trackings/${state.tracking.id}/cerrar`, { caja_id: cajaId });
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);
+    closeModal('modal-cierre');
     toast('Tracking cerrado exitosamente');
     renderInspeccion();
   } catch(e) {

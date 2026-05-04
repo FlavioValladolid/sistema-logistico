@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Dashboard — Sistema Logístico</title>
   <link rel="stylesheet" href="css/main.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
 <script src="js/app.js"></script>
@@ -150,12 +151,243 @@ async function loadDashboard() {
 
       </div>
     `;
+    // Build UPH section after main content
+    buildUphSection();
+    initUph();
   } catch (e) {
     content.innerHTML = `<div class="alert alert-error">Error cargando dashboard: ${e.message || 'Error desconocido'}</div>`;
   }
 }
 
 loadDashboard();
+
+// ── Hora por Hora ─────────────────────────────────────────────────────────────
+
+let uphChart = null;
+let uphRawData = [];
+let uphOperadores = [];
+
+function isoDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+function getRangeFor(mode) {
+  const now = new Date();
+  if (mode === 'dia') {
+    return { desde: isoDate(now), hasta: isoDate(now) };
+  } else if (mode === 'semana') {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 6);
+    return { desde: isoDate(d), hasta: isoDate(now) };
+  } else {
+    const d = new Date(now);
+    d.setDate(d.getDate() - 29);
+    return { desde: isoDate(d), hasta: isoDate(now) };
+  }
+}
+
+function buildUphSection() {
+  const section = document.createElement('div');
+  section.id = 'uph-section';
+  section.style.cssText = 'margin-top:16px';
+  section.innerHTML = `
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap;gap:10px">
+        <span class="card-title">Productividad Hora por Hora</span>
+        <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;gap:4px">
+            <button id="uph-btn-dia" class="btn btn-primary btn-sm" onclick="setUphMode('dia')">Hoy</button>
+            <button id="uph-btn-semana" class="btn btn-secondary btn-sm" onclick="setUphMode('semana')">Semana</button>
+            <button id="uph-btn-mes" class="btn btn-secondary btn-sm" onclick="setUphMode('mes')">Mes</button>
+          </div>
+          <select id="uph-cliente" class="form-control" style="width:170px" onchange="loadUph()">
+            <option value="">Todos los clientes</option>
+          </select>
+          <select id="uph-operador" class="form-control" style="width:170px" onchange="loadUph()">
+            <option value="">Todos los operadores</option>
+          </select>
+        </div>
+      </div>
+      <div style="padding:0 4px 4px">
+        <canvas id="uph-chart" height="100"></canvas>
+      </div>
+      <div id="uph-empty" class="empty-state" style="display:none">
+        <div class="empty-state-icon">📊</div>
+        <div class="empty-state-title">Sin datos en el rango seleccionado</div>
+        <div class="empty-state-text">Registra operaciones para ver la productividad</div>
+      </div>
+    </div>
+  `;
+  document.getElementById('page-content').appendChild(section);
+}
+
+let uphMode = 'dia';
+
+function setUphMode(mode) {
+  uphMode = mode;
+  ['dia','semana','mes'].forEach(m => {
+    const btn = document.getElementById(`uph-btn-${m}`);
+    if (btn) {
+      btn.className = `btn btn-sm ${m === mode ? 'btn-primary' : 'btn-secondary'}`;
+    }
+  });
+  loadUph();
+}
+
+async function initUph() {
+  try {
+    const [operadores, clientes] = await Promise.all([
+      API.get('/dashboard/operadores'),
+      API.get('/clientes')
+    ]);
+
+    const selOp = document.getElementById('uph-operador');
+    operadores.forEach(op => {
+      const o = document.createElement('option');
+      o.value = op; o.textContent = op;
+      selOp.appendChild(o);
+    });
+
+    const selCl = document.getElementById('uph-cliente');
+    clientes.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id; o.textContent = c.nombre;
+      selCl.appendChild(o);
+    });
+  } catch(e) {}
+  loadUph();
+}
+
+async function loadUph() {
+  const { desde, hasta } = getRangeFor(uphMode);
+  const operador = document.getElementById('uph-operador')?.value || '';
+  const clienteId = document.getElementById('uph-cliente')?.value || '';
+  const params = new URLSearchParams({ fecha_desde: desde, fecha_hasta: hasta });
+  if (operador) params.append('operador', operador);
+  if (clienteId) params.append('cliente_id', clienteId);
+
+  try {
+    uphRawData = await API.get(`/dashboard/hora-por-hora?${params}`);
+    renderUphChart(uphRawData, uphMode, operador);
+  } catch(e) {
+    // Show empty state on API error
+    const canvas = document.getElementById('uph-chart');
+    const emptyEl = document.getElementById('uph-empty');
+    if (canvas) canvas.style.display = 'none';
+    if (emptyEl) emptyEl.style.display = '';
+    if (uphChart) { uphChart.destroy(); uphChart = null; }
+  }
+}
+
+function renderUphChart(data, mode, operadorFiltro) {
+  const canvas = document.getElementById('uph-chart');
+  const emptyEl = document.getElementById('uph-empty');
+  if (!canvas) return;
+
+  if (!data || data.length === 0) {
+    canvas.style.display = 'none';
+    emptyEl.style.display = '';
+    if (uphChart) { uphChart.destroy(); uphChart = null; }
+    return;
+  }
+  canvas.style.display = '';
+  emptyEl.style.display = 'none';
+
+  // Build labels: if mode=dia → hours 0-23; else date+hour combos
+  // Aggregate: sum unidades per label; target = SUM(uph * num_operadores) per label
+  const labelMap = new Map(); // label → { unidades, meta }
+
+  data.forEach(row => {
+    let label;
+    if (mode === 'dia') {
+      label = `${String(row.hora).padStart(2,'0')}:00`;
+    } else {
+      label = `${row.fecha} ${String(row.hora).padStart(2,'0')}:00`;
+    }
+    const prev = labelMap.get(label) || { unidades: 0, meta: 0 };
+    prev.unidades += (row.unidades || 0);
+    // Si hay un operador específico filtrado, la meta es UPH×1 (un solo operador)
+    const ops = operadorFiltro ? 1 : (row.num_operadores || 1);
+    prev.meta += (row.uph || 0) * ops;
+    labelMap.set(label, prev);
+  });
+
+  // If dia mode, fill all 0–23 hours for current day
+  if (mode === 'dia') {
+    for (let h = 0; h < 24; h++) {
+      const lbl = `${String(h).padStart(2,'0')}:00`;
+      if (!labelMap.has(lbl)) labelMap.set(lbl, { unidades: 0, meta: 0 });
+    }
+  }
+
+  const sortedLabels = [...labelMap.keys()].sort();
+  const barData = sortedLabels.map(l => labelMap.get(l).unidades);
+  const lineData = sortedLabels.map(l => labelMap.get(l).meta);
+
+  if (uphChart) uphChart.destroy();
+
+  uphChart = new Chart(canvas, {
+    data: {
+      labels: sortedLabels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Unidades procesadas',
+          data: barData,
+          backgroundColor: sortedLabels.map((l, i) => barData[i] >= lineData[i] && lineData[i] > 0
+            ? 'rgba(0,230,118,0.7)'
+            : 'rgba(0,188,212,0.65)'),
+          borderRadius: 4,
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'Meta (UPH × operadores)',
+          data: lineData,
+          borderColor: 'rgba(255,171,0,0.9)',
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: 'rgba(255,171,0,0.9)',
+          tension: 0.3,
+          order: 1,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          labels: { color: '#b0bec5', font: { size: 11, family: "'IBM Plex Mono', monospace" } }
+        },
+        tooltip: {
+          callbacks: {
+            afterBody(ctx) {
+              const idx = ctx[0].dataIndex;
+              const real = barData[idx];
+              const meta = lineData[idx];
+              if (meta === 0) return '';
+              const pct = Math.round(real / meta * 100);
+              return `Eficiencia: ${pct}%`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { color: '#78909c', font: { size: 10 }, maxRotation: 45 },
+          grid: { color: 'rgba(255,255,255,0.05)' }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { color: '#78909c', font: { size: 11 } },
+          grid: { color: 'rgba(255,255,255,0.07)' }
+        }
+      }
+    }
+  });
+}
 </script>
 </body>
 </html>

@@ -7,205 +7,490 @@
   <link rel="stylesheet" href="css/main.css">
   <style>
     @media print {
-      .sidebar, .topbar, .no-print { display: none !important; }
-      .main-content { margin-left: 0 !important; }
-      body { background: white !important; color: black !important; }
-      .card { border: 1px solid #ccc !important; background: white !important; }
-      * { color: black !important; }
+      .sidebar, .topbar, .no-print { display:none !important; }
+      .main-content { margin-left:0 !important; }
+      body { background:white !important; color:black !important; }
+      .card { border:1px solid #ccc !important; background:white !important; }
+      * { color:black !important; }
     }
-
-    .manifiesto-header {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 20px;
-      margin-bottom: 24px;
-      padding-bottom: 20px;
-      border-bottom: 2px solid var(--border);
-    }
-
-    .mani-logo {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 22px;
-      font-weight: 700;
-      color: var(--accent-green);
-      letter-spacing: -0.02em;
-    }
-
-    .mani-title {
-      font-family: 'IBM Plex Mono', monospace;
-      font-size: 13px;
-      color: var(--text-muted);
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-    }
-
-    .mani-data-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr 1fr;
-      gap: 12px;
-      margin-bottom: 20px;
-    }
-
-    .mani-data-item {
-      background: var(--bg-elevated);
-      padding: 10px 14px;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-    }
-    .mani-data-label { font-size: 9px; color: var(--text-muted); letter-spacing: .12em; text-transform: uppercase; font-family: 'IBM Plex Mono', monospace; margin-bottom: 3px; }
-    .mani-data-val { font-family: 'IBM Plex Mono', monospace; font-size: 14px; font-weight: 700; color: var(--text-primary); }
-
-    .foto-thumb {
-      width: 80px; height: 80px;
-      object-fit: cover;
-      border-radius: var(--radius-sm);
-      border: 1px solid var(--border);
-      cursor: pointer;
-    }
+    .manifiesto-header { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:24px; padding-bottom:20px; border-bottom:2px solid var(--border); }
+    .mani-logo { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:700; color:var(--accent-green); letter-spacing:-.02em; }
+    .mani-title { font-family:'IBM Plex Mono',monospace; font-size:13px; color:var(--text-muted); letter-spacing:.1em; text-transform:uppercase; }
+    .mani-data-grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:12px; margin-bottom:20px; }
+    .mani-data-item { background:var(--bg-elevated); padding:10px 14px; border-radius:var(--radius-sm); border:1px solid var(--border); }
+    .mani-data-label { font-size:9px; color:var(--text-muted); letter-spacing:.12em; text-transform:uppercase; font-family:'IBM Plex Mono',monospace; margin-bottom:3px; }
+    .mani-data-val { font-family:'IBM Plex Mono',monospace; font-size:14px; font-weight:700; color:var(--text-primary); }
+    .foto-thumb { width:80px; height:80px; object-fit:cover; border-radius:var(--radius-sm); border:1px solid var(--border); cursor:pointer; }
+    .cb-select { width:16px; height:16px; accent-color:var(--accent-green); cursor:pointer; }
+    #btn-csv:disabled { opacity:.4; cursor:not-allowed; }
+    .badge-impresa { background:rgba(0,180,216,.15); color:var(--accent-cyan); border:1px solid rgba(0,180,216,.3); }
+    .tracking-chip { display:inline-flex; align-items:center; gap:6px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:var(--radius-sm); padding:6px 12px; font-family:'IBM Plex Mono',monospace; font-size:12px; }
   </style>
 </head>
 <body>
 <script src="js/app.js"></script>
 <script src="js/shell.js"></script>
 <script>
-buildShell('Reportes', 'REPORTES / MANIFIESTOS', '');
+buildShell('Reportes', 'REPORTES', `
+  <button id="btn-csv" class="btn btn-primary btn-sm" onclick="descargarCSV()" disabled style="display:none">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Descargar CSV <span id="csv-count" style="display:none;margin-left:4px;background:rgba(255,255,255,.2);border-radius:10px;padding:0 6px;font-size:10px"></span>
+  </button>
+`);
 
-const params = new URLSearchParams(window.location.search);
-const trackingIdParam = params.get('tracking');
+const urlParams = new URLSearchParams(window.location.search);
+const trackingIdParam = urlParams.get('tracking');
+const cajaIdParam     = urlParams.get('caja');
 
-document.getElementById('page-content').innerHTML = `
-  <div class="flex justify-between items-center mb-24">
-    <div>
-      <h1 class="page-title">Reportes y Manifiestos</h1>
-      <p class="page-subtitle">Generación de manifiestos de salida y reportes de auditoría</p>
-    </div>
-    <button class="btn btn-secondary no-print" onclick="window.print()">🖨 Imprimir</button>
-  </div>
+document.getElementById('page-content').innerHTML = `<div id="view-root"></div>`;
 
-  ${!trackingIdParam ? `
-    <div class="card">
-      <div class="card-header">
-        <span class="card-title">Seleccionar Tracking</span>
+// ========================================
+// VISTA 1: LISTA DE CAJAS / PALLETS
+// ========================================
+let cajasData = [];
+// Clave de selección: "caja_id|||cliente_id" para separar mismo caja en distintos clientes
+let seleccion = new Set();
+// Map de clave → tracking_ids[] para poder pasar IDs al CSV/marcar-impresa
+let seleccionMeta = new Map();
+
+async function loadCajas() {
+  document.getElementById('btn-csv').style.display = '';
+
+  const root = document.getElementById('view-root');
+  root.innerHTML = `
+    <div class="flex justify-between items-center mb-24">
+      <div>
+        <h1 class="page-title">Reportes</h1>
+        <p class="page-subtitle">Cajas y pallets cerrados — exportación y control de impresión</p>
       </div>
-      <div id="lista-trackings-reporte">
+    </div>
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap;gap:10px">
+        <span class="card-title">Cajas / Pallets</span>
+        <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
+          <select class="form-control" id="filtro-cliente" style="width:180px" onchange="applyFilters()">
+            <option value="">Todos los clientes</option>
+          </select>
+          <input type="date" class="form-control" id="filtro-desde" style="width:148px" onchange="applyFilters()">
+          <input type="date" class="form-control" id="filtro-hasta" style="width:148px" onchange="applyFilters()">
+          <input type="text" class="form-control" id="filtro-buscar" placeholder="Buscar caja o tracking..." style="width:190px" oninput="applyFilters()">
+        </div>
+      </div>
+      <div id="tabla-cajas">
         <div class="text-center" style="padding:32px"><div class="spinner"></div></div>
       </div>
     </div>
-  ` : `
-    <div id="manifiesto-content">
-      <div class="text-center" style="padding:80px"><div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div></div>
-    </div>
-  `}
-`;
+  `;
 
-async function loadListaTrackings() {
-  const trackings = await API.get('/trackings');
-  const el = document.getElementById('lista-trackings-reporte');
+  cajasData = await API.get('/reportes/cajas');
 
-  if (trackings.length === 0) {
-    el.innerHTML = `<div class="empty-state"><div class="empty-state-icon">📄</div><div class="empty-state-title">Sin trackings</div></div>`;
+  // Poblar dropdown clientes
+  const clientesUnicos = [...new Map(cajasData.map(c => [c.cliente_nombre, c.cliente_nombre])).entries()];
+  const sel = document.getElementById('filtro-cliente');
+  clientesUnicos.forEach(([nombre]) => {
+    const o = document.createElement('option');
+    o.value = o.textContent = nombre;
+    sel.appendChild(o);
+  });
+
+  renderListaCajas(cajasData);
+}
+
+function applyFilters() {
+  const cliente = document.getElementById('filtro-cliente')?.value || '';
+  const desde   = document.getElementById('filtro-desde')?.value || '';
+  const hasta   = document.getElementById('filtro-hasta')?.value || '';
+  const q       = (document.getElementById('filtro-buscar')?.value || '').toLowerCase();
+
+  renderListaCajas(cajasData.filter(c => {
+    if (cliente && c.cliente_nombre !== cliente) return false;
+    if (desde && (c.closed_at || '') < desde) return false;
+    if (hasta && (c.closed_at || '') > hasta + 'T99') return false;
+    if (q && !c.caja_id.toLowerCase().includes(q) && !(c.tracking_numbers || '').toLowerCase().includes(q)) return false;
+    return true;
+  }));
+}
+
+function renderListaCajas(data) {
+  const el = document.getElementById('tabla-cajas');
+  if (!el) return;
+
+  if (data.length === 0) {
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">📦</div>
+        <div class="empty-state-title">Sin cajas cerradas</div>
+        <div class="empty-state-text">Las cajas y pallets aparecen aquí al cerrar el tracking</div>
+      </div>`;
+    actualizarBotonCSV();
     return;
   }
+
+  const allKeys = data.map(c => cajaKey(c));
+  const allSel  = allKeys.length > 0 && allKeys.every(k => seleccion.has(k));
+  const allKeysJson = JSON.stringify(allKeys).replace(/"/g, '&quot;');
 
   el.innerHTML = `
     <div class="table-wrapper" style="border:none">
       <table>
         <thead>
           <tr>
-            <th>Tracking #</th>
+            <th style="width:36px">
+              <input type="checkbox" class="cb-select" id="cb-all" ${allSel ? 'checked' : ''}
+                onchange="toggleAll(this.checked, ${allKeysJson})">
+            </th>
+            <th>Caja / Pallet</th>
             <th>Cliente</th>
-            <th>Fecha</th>
-            <th>Estado</th>
+            <th>Trackings</th>
+            <th>SKUs</th>
             <th>Piezas</th>
-            <th>Acción</th>
+            <th>Fecha cierre</th>
+            <th>Impresa</th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
-          ${trackings.map(t => `
-            <tr>
-              <td class="td-mono" style="color:var(--accent-cyan)">${t.tracking_number}</td>
-              <td>${t.cliente_nombre || '—'}</td>
-              <td class="td-mono text-muted">${formatDate(t.created_at)}</td>
-              <td><span class="badge ${t.estatus==='cerrado'?'badge-green':'badge-amber'}">${t.estatus}</span></td>
-              <td class="td-mono">${formatNum(t.cantidad_final)}</td>
-              <td>
-                <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html?tracking=${t.id}'">
-                  Ver Manifiesto →
-                </button>
-              </td>
-            </tr>
-          `).join('')}
+          ${data.map(c => {
+            const key = cajaKey(c);
+            const detailUrl = `?caja=${encodeURIComponent(c.caja_id)}&cid=${encodeURIComponent(c.cliente_id)}`;
+            return `
+              <tr>
+                <td><input type="checkbox" class="cb-select cb-row" data-key="${key}"
+                  ${seleccion.has(key) ? 'checked' : ''}
+                  onchange="toggleRow('${key}', this.checked, ${JSON.stringify(c.tracking_ids || '').replace(/"/g,'&quot;')})">
+                </td>
+                <td>
+                  <a href="${detailUrl}" style="font-family:'IBM Plex Mono',monospace;font-weight:700;color:var(--accent-cyan);text-decoration:none">
+                    ${c.caja_id}
+                  </a>
+                  <div style="font-size:10px;color:var(--text-muted)">${c.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja'}</div>
+                </td>
+                <td>${c.cliente_nombre || '—'}</td>
+                <td style="font-size:11px;color:var(--text-secondary);font-family:'IBM Plex Mono',monospace">
+                  ${c.num_trackings} tracking${c.num_trackings !== 1 ? 's' : ''}
+                </td>
+                <td class="td-mono">${c.num_skus}</td>
+                <td class="td-mono">${formatNum(c.total_piezas)}</td>
+                <td class="td-mono text-muted">${c.closed_at ? formatDate(c.closed_at).split(',')[0] : '—'}</td>
+                <td>
+                  ${c.impresa
+                    ? '<span class="badge badge-impresa">✓ Impresa</span>'
+                    : '<span class="badge badge-muted">Pendiente</span>'}
+                </td>
+                <td>
+                  <button class="btn btn-secondary btn-sm" onclick="window.location='${detailUrl}'">
+                    Ver detalle →
+                  </button>
+                </td>
+              </tr>
+            `;
+          }).join('')}
         </tbody>
       </table>
     </div>
   `;
+  actualizarBotonCSV();
 }
 
-async function loadManifiesto(id) {
-  const el = document.getElementById('manifiesto-content');
-  try {
-    const { tracking, detalles, errores, discrepancias } = await API.get(`/reportes/manifiesto/${id}`);
+function cajaKey(c) { return `${c.caja_id}|||${c.cliente_id}`; }
 
+function toggleRow(key, checked, trackingIdsStr) {
+  if (checked) {
+    seleccion.add(key);
+    seleccionMeta.set(key, (trackingIdsStr || '').split('|').filter(Boolean));
+  } else {
+    seleccion.delete(key);
+    seleccionMeta.delete(key);
+  }
+  actualizarBotonCSV();
+  const rows = document.querySelectorAll('.cb-row');
+  const cbAll = document.getElementById('cb-all');
+  if (cbAll) cbAll.checked = rows.length > 0 && [...rows].every(r => r.checked);
+}
+
+function toggleAll(checked, keys) {
+  if (checked) {
+    // Re-populate meta from data
+    cajasData.forEach(c => {
+      const k = cajaKey(c);
+      if (keys.includes(k)) {
+        seleccion.add(k);
+        seleccionMeta.set(k, (c.tracking_ids || '').split('|').filter(Boolean));
+      }
+    });
+  } else {
+    keys.forEach(k => { seleccion.delete(k); seleccionMeta.delete(k); });
+  }
+  document.querySelectorAll('.cb-row').forEach(cb => { cb.checked = checked; });
+  actualizarBotonCSV();
+}
+
+function actualizarBotonCSV() {
+  const btn = document.getElementById('btn-csv');
+  const cnt = document.getElementById('csv-count');
+  const n = seleccion.size;
+  if (btn) btn.disabled = n === 0;
+  if (cnt) { cnt.style.display = n > 0 ? 'inline' : 'none'; cnt.textContent = n; }
+}
+
+async function descargarCSV() {
+  if (seleccion.size === 0) return;
+  // Recopilar todos los tracking_ids de las seleccionadas
+  const tracking_ids = [...seleccionMeta.values()].flat();
+  if (tracking_ids.length === 0) { toast('Sin SKUs en las cajas seleccionadas', 'error'); return; }
+  try {
+    const rows = await API.post('/reportes/csv-detalles', { tracking_ids });
+    generarDescargaCSV(rows, `reporte_${new Date().toISOString().slice(0,10)}.csv`);
+    await API.post('/reportes/marcar-impresa', { tracking_ids });
+    // Actualizar estado local
+    [...seleccionMeta.values()].flat().forEach(tid => {
+      const c = cajasData.find(x => (x.tracking_ids || '').includes(tid));
+      if (c) c.impresa = 1;
+    });
+    seleccion.clear(); seleccionMeta.clear();
+    applyFilters();
+    toast(`CSV descargado — ${seleccion.size || tracking_ids.length} caja(s) marcada(s) como impresas`);
+  } catch(e) {
+    toast(e.error || 'Error al generar CSV', 'error');
+  }
+}
+
+function generarDescargaCSV(rows, filename) {
+  const header = ['Tracking', 'Box/Pallet', 'SKU', 'QTY', 'Country of Origin', 'Materials'];
+  const lines  = [header.join(',')];
+  rows.forEach(r => lines.push([
+    `"${r.tracking_number}"`, `"${r.caja_id}"`, `"${r.sku_code}"`,
+    r.cantidad,
+    `"${(r.pais_origen_real || '').replace(/"/g,'""')}"`,
+    `"${(r.insumos_real || '').replace(/"/g,'""')}"`,
+  ].join(',')));
+  const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ========================================
+// VISTA 2: DETALLE DE CAJA / PALLET
+// ========================================
+async function loadCajaDetalle(cajaId, clienteId) {
+  document.getElementById('btn-csv').style.display = 'none';
+  const root = document.getElementById('view-root');
+  root.innerHTML = `<div class="text-center" style="padding:80px"><div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div></div>`;
+
+  try {
+    let url = `/reportes/caja-detalle?caja_id=${encodeURIComponent(cajaId)}`;
+    if (clienteId) url += `&cliente_id=${encodeURIComponent(clienteId)}`;
+    const { trackings, detalles, errores } = await API.get(url);
+    const t0 = trackings[0];
+    const tipoAlm = t0.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja';
+    const totalPiezas = detalles.reduce((s, d) => s + (d.cantidad || 1), 0);
+    const impresa = trackings.every(t => t.impresa);
+    const tids = trackings.map(t => t.id);
+
+    root.innerHTML = `
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px">
+        <button class="btn btn-secondary btn-sm no-print" onclick="window.location='reportes.html'">← Reportes</button>
+        <h1 class="page-title" style="margin:0">${tipoAlm}: <span style="color:var(--accent-cyan)">${cajaId}</span></h1>
+        <span style="font-size:12px;color:var(--text-muted)">${t0.cliente_nombre}</span>
+        ${impresa ? '<span class="badge badge-impresa" style="padding:6px 14px">✓ Impresa</span>' : '<span class="badge badge-muted" style="padding:6px 14px">Pendiente</span>'}
+        <div style="margin-left:auto;display:flex;gap:8px" class="no-print">
+          <button class="btn btn-primary btn-sm" onclick="descargarCSVCaja(${JSON.stringify(tids)}, '${cajaId.replace(/'/g,"\\'")}')">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Descargar CSV
+          </button>
+          <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨 Imprimir</button>
+        </div>
+      </div>
+
+      <!-- INFO GENERAL -->
+      <div class="mani-data-grid" style="grid-template-columns:repeat(4,1fr);margin-bottom:20px">
+        <div class="mani-data-item">
+          <div class="mani-data-label">Cliente</div>
+          <div class="mani-data-val" style="font-size:13px">${t0.cliente_nombre}</div>
+        </div>
+        <div class="mani-data-item">
+          <div class="mani-data-label">Total SKUs</div>
+          <div class="mani-data-val">${detalles.length}</div>
+        </div>
+        <div class="mani-data-item">
+          <div class="mani-data-label">Total Piezas</div>
+          <div class="mani-data-val">${formatNum(totalPiezas)}</div>
+        </div>
+        <div class="mani-data-item">
+          <div class="mani-data-label">Errores</div>
+          <div class="mani-data-val" style="color:${errores.length > 0 ? 'var(--accent-red)' : 'inherit'}">${errores.length}</div>
+        </div>
+      </div>
+
+      <!-- TRACKINGS ASOCIADOS -->
+      <div class="card mb-16">
+        <div class="card-header">
+          <span class="card-title">Trackings asociados</span>
+          <span class="badge badge-muted">${trackings.length}</span>
+        </div>
+        <div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px">
+          ${trackings.map(t => `
+            <div class="tracking-chip">
+              <span style="color:var(--accent-cyan)">${t.tracking_number}</span>
+              <span style="color:var(--text-muted);font-size:10px">· ${formatNum(t.cantidad_final)} pzas</span>
+              <span>${gradoBadge(t.grado_confianza)}</span>
+              <a href="?tracking=${t.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">Ver</a>
+              <a href="operacion.html?id=${t.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">✏ Editar</a>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+
+      <!-- DETALLE SKUs -->
+      <div class="card mb-16">
+        <div class="card-header">
+          <span class="card-title">SKUs inspeccionados</span>
+          <span class="badge badge-muted">${detalles.length}</span>
+        </div>
+        ${detalles.length === 0 ? `
+          <div class="empty-state" style="padding:32px">
+            <div class="empty-state-icon">🔍</div>
+            <div class="empty-state-title">Sin SKUs</div>
+          </div>
+        ` : `
+          <div class="table-wrapper" style="border:none">
+            <table>
+              <thead>
+                <tr>
+                  <th>#</th><th>Tracking</th><th>SKU</th><th>Descripción</th>
+                  <th>Cant.</th><th>País Origen</th><th>Insumos</th><th>Calidad</th><th>Evidencia</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${detalles.map((d, i) => {
+                  const errD = errores.filter(e => e.detalle_sku_id === d.id);
+                  return `
+                    <tr style="${errD.length > 0 ? 'background:rgba(255,61,61,.04)' : ''}">
+                      <td class="td-mono text-muted">${String(i+1).padStart(2,'0')}</td>
+                      <td class="td-mono" style="font-size:11px;color:var(--text-secondary)">${d.tracking_number}</td>
+                      <td class="td-mono" style="color:var(--accent-cyan)">${d.sku_code}</td>
+                      <td>${d.descripcion || '—'}</td>
+                      <td class="td-mono">${d.cantidad}</td>
+                      <td>${d.pais_origen_real || '—'}${!d.pais_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}</td>
+                      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                        ${d.insumos_real || '—'}${!d.insumos_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}
+                      </td>
+                      <td>${d.calidad ? `<span class="badge ${d.calidad==='Mala'?'badge-red':'badge-green'}">${d.calidad}</span>` : '—'}</td>
+                      <td>
+                        ${d.foto_etiqueta ? `
+                          <div style="display:flex;gap:3px">
+                            <img src="${d.foto_etiqueta}" style="width:28px;height:28px;object-fit:cover;border-radius:3px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${d.foto_etiqueta}','_blank')" title="Etiqueta">
+                            <img src="${d.foto_insumos}" style="width:28px;height:28px;object-fit:cover;border-radius:3px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${d.foto_insumos}','_blank')" title="Insumos/Origen">
+                            <img src="${d.foto_pieza}" style="width:28px;height:28px;object-fit:cover;border-radius:3px;border:1px solid var(--border);cursor:pointer" onclick="window.open('${d.foto_pieza}','_blank')" title="Pieza completa">
+                          </div>
+                        ` : '—'}
+                      </td>
+                    </tr>
+                  `;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        `}
+      </div>
+
+      <!-- ERRORES -->
+      ${errores.length > 0 ? `
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">Errores y evidencias</span>
+            <span class="badge badge-red">${errores.length}</span>
+          </div>
+          <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+            ${errores.map((e, i) => `
+              <div style="background:var(--bg-elevated);border:1px solid rgba(255,61,61,.25);border-radius:var(--radius-sm);padding:12px 14px">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+                  <span class="badge badge-red">Error ${String(i+1).padStart(2,'0')}</span>
+                  <span class="badge badge-amber">${e.tipo_error}</span>
+                  <span class="td-mono text-muted" style="font-size:10px">${e.tracking_number}</span>
+                  <span class="td-mono text-muted" style="margin-left:auto;font-size:10px">${formatDate(e.created_at)}</span>
+                </div>
+                <div style="display:flex;gap:12px;align-items:flex-start">
+                  ${e.path_fotografia ? `<img src="${e.path_fotografia}" class="foto-thumb" onclick="window.open('${e.path_fotografia}','_blank')">` : ''}
+                  <div style="flex:1;font-size:13px;line-height:1.5">${e.comentarios || '—'}</div>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      ` : ''}
+    `;
+  } catch(e) {
+    root.innerHTML = `<div class="alert alert-error">Error: ${e.error || 'Caja no encontrada'}</div>`;
+  }
+}
+
+async function descargarCSVCaja(tracking_ids, cajaId) {
+  try {
+    const rows = await API.post('/reportes/csv-detalles', { tracking_ids });
+    generarDescargaCSV(rows, `${cajaId}_${new Date().toISOString().slice(0,10)}.csv`);
+    await API.post('/reportes/marcar-impresa', { tracking_ids });
+    toast('CSV descargado — caja marcada como impresa');
+    // Refrescar para mostrar badge Impresa
+    loadCajaDetalle(cajaId, urlParams.get('cid'));
+  } catch(e) {
+    toast(e.error || 'Error al generar CSV', 'error');
+  }
+}
+
+// ========================================
+// VISTA 3: MANIFIESTO DE TRACKING INDIVIDUAL
+// ========================================
+async function loadManifiesto(trackingId) {
+  document.getElementById('btn-csv').style.display = 'none';
+  const root = document.getElementById('view-root');
+  root.innerHTML = `<div class="text-center" style="padding:80px"><div class="spinner" style="width:32px;height:32px;border-width:3px;margin:0 auto"></div></div>`;
+
+  try {
+    const { tracking, detalles, errores, discrepancias } = await API.get(`/reportes/manifiesto/${trackingId}`);
     const t = tracking;
     const erroresPorTipo = { Calidad: 0, Origen: 0, Insumo: 0, Otro: 0 };
     errores.forEach(e => { erroresPorTipo[e.tipo_error] = (erroresPorTipo[e.tipo_error] || 0) + 1; });
-
     const totalPiezas = detalles.reduce((s, d) => s + (d.cantidad || 1), 0);
+    const tipoAlm = t.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja';
 
-    el.innerHTML = `
+    root.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:20px" class="no-print">
+        <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html'">← Reportes</button>
+        ${t.caja_id ? `<button class="btn btn-ghost btn-sm" onclick="window.location='?caja=${encodeURIComponent(t.caja_id)}'">← ${tipoAlm} ${t.caja_id}</button>` : ''}
+      </div>
+
       <div class="card" style="max-width:900px;margin:0 auto">
-
-        <!-- HEADER -->
         <div class="manifiesto-header">
           <div>
             <div class="mani-logo">LOGÍSTICA</div>
-            <div class="mani-title">Sistema de Inspección de Calidad</div>
-            <div style="margin-top:12px;font-size:11px;color:var(--text-muted)">
-              Generado: ${new Date().toLocaleString('es-MX')}
-            </div>
+            <div class="mani-title">Manifiesto de Inspección</div>
+            <div style="margin-top:12px;font-size:11px;color:var(--text-muted)">Generado: ${new Date().toLocaleString('es-MX')}</div>
           </div>
           <div style="text-align:right">
             <div style="font-family:'IBM Plex Mono',monospace;font-size:22px;font-weight:700;color:var(--accent-cyan)">${t.tracking_number}</div>
-            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">MANIFIESTO DE INSPECCIÓN</div>
+            <div style="font-size:11px;color:var(--text-muted);margin-top:4px">TRACKING / INSPECCIÓN</div>
             <div style="margin-top:8px">${gradoBadge(t.grado_confianza)}</div>
             <div style="margin-top:6px">
               <span class="badge ${t.estatus==='cerrado'?'badge-green':'badge-amber'}" style="font-size:12px;padding:4px 12px">
-                ${t.estatus === 'cerrado' ? '✓ CERRADO / AUDITADO' : '⟳ EN PROCESO'}
+                ${t.estatus === 'cerrado' ? '✓ CERRADO' : '⟳ EN PROCESO'}
               </span>
             </div>
           </div>
         </div>
 
-        <!-- DATOS GENERALES -->
         <div class="section-title">Información General</div>
         <div class="mani-data-grid">
-          <div class="mani-data-item">
-            <div class="mani-data-label">Cliente</div>
-            <div class="mani-data-val" style="font-size:13px">${t.cliente_nombre}</div>
-          </div>
-          <div class="mani-data-item">
-            <div class="mani-data-label">Caja</div>
-            <div class="mani-data-val">${t.caja_id}</div>
-          </div>
-          <div class="mani-data-item">
-            <div class="mani-data-label">Operador</div>
-            <div class="mani-data-val" style="font-size:12px">${t.operador || '—'}</div>
-          </div>
-          <div class="mani-data-item">
-            <div class="mani-data-label">Cantidad Declarada</div>
-            <div class="mani-data-val">${formatNum(t.cantidad_declarada)}</div>
-          </div>
-          <div class="mani-data-item">
-            <div class="mani-data-label">Cantidad Final</div>
-            <div class="mani-data-val" style="color:${t.cantidad_final !== t.cantidad_declarada ? 'var(--accent-amber)' : 'var(--accent-green)'}">${formatNum(t.cantidad_final)}</div>
-          </div>
-          <div class="mani-data-item">
-            <div class="mani-data-label">Piezas Inspeccionadas</div>
-            <div class="mani-data-val">${formatNum(totalPiezas)}</div>
-          </div>
+          <div class="mani-data-item"><div class="mani-data-label">Cliente</div><div class="mani-data-val" style="font-size:13px">${t.cliente_nombre}</div></div>
+          <div class="mani-data-item"><div class="mani-data-label">${tipoAlm}</div><div class="mani-data-val">${t.caja_id || '—'}</div></div>
+          <div class="mani-data-item"><div class="mani-data-label">Operador</div><div class="mani-data-val" style="font-size:12px">${t.operador || '—'}</div></div>
+          <div class="mani-data-item"><div class="mani-data-label">Cant. Declarada</div><div class="mani-data-val">${formatNum(t.cantidad_declarada)}</div></div>
+          <div class="mani-data-item"><div class="mani-data-label">Cant. Final</div><div class="mani-data-val" style="color:${t.cantidad_final !== t.cantidad_declarada ? 'var(--accent-amber)' : 'var(--accent-green)'}">${formatNum(t.cantidad_final)}</div></div>
+          <div class="mani-data-item"><div class="mani-data-label">Inspeccionadas</div><div class="mani-data-val">${formatNum(totalPiezas)}</div></div>
         </div>
 
-        <!-- RESUMEN ERRORES -->
         ${errores.length > 0 ? `
           <div class="section-title">Resumen de Errores</div>
           <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:20px">
@@ -218,71 +503,43 @@ async function loadManifiesto(id) {
           </div>
         ` : ''}
 
-        <!-- DISCREPANCIAS -->
         ${discrepancias.length > 0 ? `
-          <div class="section-title">Alertas de Discrepancia</div>
+          <div class="section-title">Discrepancias</div>
           <div style="margin-bottom:20px">
             ${discrepancias.map(d => `
               <div class="alert alert-warning">
-                ⚠ Discrepancia registrada — Original: <strong>${formatNum(d.cantidad_original)}</strong> → Corregido: <strong>${formatNum(d.cantidad_corregida)}</strong>
-                <span class="td-mono" style="margin-left:auto;font-size:11px">${formatDate(d.created_at)}</span>
+                ⚠ Original: <strong>${formatNum(d.cantidad_original)}</strong> → Corregido: <strong>${formatNum(d.cantidad_corregida)}</strong>
+                <span class="td-mono text-muted" style="margin-left:auto;font-size:11px">${formatDate(d.created_at)}</span>
               </div>
             `).join('')}
           </div>
         ` : ''}
 
-        <!-- DETALLE SKUs -->
-        <div class="section-title">Detalle de SKUs Inspeccionados (${detalles.length})</div>
-        ${detalles.length === 0 ? `
-          <div class="alert alert-info">Sin SKUs inspeccionados en este tracking</div>
-        ` : `
+        <div class="section-title">SKUs Inspeccionados (${detalles.length})</div>
+        ${detalles.length === 0 ? `<div class="alert alert-info">Sin SKUs en este tracking</div>` : `
           <div class="table-wrapper" style="margin-bottom:20px">
             <table>
-              <thead>
-                <tr>
-                  <th>#</th>
-                  <th>SKU</th>
-                  <th>Descripción</th>
-                  <th>Cant.</th>
-                  <th>País Origen</th>
-                  <th>Insumos</th>
-                  <th>Calidad</th>
-                  <th>Hora</th>
-                </tr>
-              </thead>
+              <thead><tr><th>#</th><th>SKU</th><th>Descripción</th><th>Cant.</th><th>País Origen</th><th>Insumos</th><th>Calidad</th></tr></thead>
               <tbody>
                 ${detalles.map((d, i) => {
                   const errD = errores.filter(e => e.detalle_sku_id === d.id);
-                  const hasErr = errD.length > 0;
-                  return `
-                    <tr style="${hasErr ? 'background:rgba(255,61,61,.04)' : ''}">
-                      <td class="td-mono text-muted">${String(i+1).padStart(2,'0')}</td>
-                      <td class="td-mono" style="color:var(--accent-cyan)">${d.sku_code}</td>
-                      <td>${d.descripcion || '—'}</td>
-                      <td class="td-mono">${d.cantidad}</td>
-                      <td>
-                        ${d.pais_origen_real || '—'}
-                        ${!d.pais_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠ Cat.</span>' : ''}
-                      </td>
-                      <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                        ${d.insumos_real || '—'}
-                        ${!d.insumos_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠ Cat.</span>' : ''}
-                      </td>
-                      <td>
-                        ${d.calidad ? `<span class="badge ${d.calidad==='Mala'?'badge-red':'badge-green'}">${d.calidad}</span>` : '—'}
-                      </td>
-                      <td class="td-mono text-muted">${formatDate(d.created_at).split(',')[1]||'—'}</td>
-                    </tr>
-                  `;
+                  return `<tr style="${errD.length > 0 ? 'background:rgba(255,61,61,.04)' : ''}">
+                    <td class="td-mono text-muted">${String(i+1).padStart(2,'0')}</td>
+                    <td class="td-mono" style="color:var(--accent-cyan)">${d.sku_code}</td>
+                    <td>${d.descripcion || '—'}</td>
+                    <td class="td-mono">${d.cantidad}</td>
+                    <td>${d.pais_origen_real || '—'}${!d.pais_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}</td>
+                    <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.insumos_real || '—'}${!d.insumos_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}</td>
+                    <td>${d.calidad ? `<span class="badge ${d.calidad==='Mala'?'badge-red':'badge-green'}">${d.calidad}</span>` : '—'}</td>
+                  </tr>`;
                 }).join('')}
               </tbody>
             </table>
           </div>
         `}
 
-        <!-- ERRORES CON EVIDENCIA -->
         ${errores.length > 0 ? `
-          <div class="section-title">Registro de Errores y Evidencias (${errores.length})</div>
+          <div class="section-title">Errores y Evidencias (${errores.length})</div>
           <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
             ${errores.map((e, i) => `
               <div style="background:var(--bg-elevated);border:1px solid rgba(255,61,61,.25);border-radius:var(--radius-sm);padding:14px 16px">
@@ -292,26 +549,14 @@ async function loadManifiesto(id) {
                   <span class="td-mono text-muted" style="margin-left:auto;font-size:11px">${formatDate(e.created_at)}</span>
                 </div>
                 <div style="display:flex;gap:16px;align-items:flex-start">
-                  ${e.path_fotografia ? `
-                    <img src="${e.path_fotografia}" class="foto-thumb" onclick="window.open('${e.path_fotografia}','_blank')" title="Ver foto completa">
-                  ` : `
-                    <div style="width:80px;height:80px;background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);text-align:center">Sin foto</div>
-                  `}
-                  <div style="flex:1">
-                    <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">DESCRIPCIÓN</div>
-                    <div style="font-size:13px;line-height:1.5">${e.comentarios || '—'}</div>
-                    <div style="margin-top:8px">
-                      <span class="disposicion-icon" style="font-size:14px">📦</span>
-                      <span style="font-size:11px;color:var(--accent-red);font-weight:700;font-family:'IBM Plex Mono',monospace"> COLOCAR EN CAJA DE DAÑADOS</span>
-                    </div>
-                  </div>
+                  ${e.path_fotografia ? `<img src="${e.path_fotografia}" class="foto-thumb" onclick="window.open('${e.path_fotografia}','_blank')">` : `<div style="width:80px;height:80px;background:var(--bg-card);border:1px dashed var(--border);border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;font-size:11px;color:var(--text-muted);text-align:center">Sin foto</div>`}
+                  <div style="flex:1"><div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">DESCRIPCIÓN</div><div style="font-size:13px;line-height:1.5">${e.comentarios || '—'}</div></div>
                 </div>
               </div>
             `).join('')}
           </div>
         ` : ''}
 
-        <!-- FIRMA -->
         ${t.estatus === 'cerrado' ? `
           <div style="border-top:1px solid var(--border);padding-top:20px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:24px;margin-top:8px">
             <div style="border-top:2px solid var(--border-bright);padding-top:8px;text-align:center">
@@ -330,23 +575,27 @@ async function loadManifiesto(id) {
           </div>
         ` : ''}
 
-        <div style="text-align:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-          <button class="btn btn-secondary no-print" onclick="window.location='reportes.html'">← Todos los reportes</button>
-          <button class="btn btn-primary no-print" onclick="window.print()" style="margin-left:10px">🖨 Imprimir / PDF</button>
-          ${t.estatus !== 'cerrado' ? `<button class="btn btn-amber no-print" onclick="window.location='operacion.html?id=${t.id}'" style="margin-left:10px">→ Ir a Operación</button>` : ''}
+        <div style="text-align:center;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)" class="no-print">
+          <button class="btn btn-secondary" onclick="history.back()">← Volver</button>
+          <button class="btn btn-primary" onclick="window.print()" style="margin-left:10px">🖨 Imprimir / PDF</button>
+          ${t.estatus !== 'cerrado' ? `<button class="btn btn-amber" onclick="window.location='operacion.html?id=${t.id}'" style="margin-left:10px">✏ Ir a Operación</button>` : ''}
         </div>
       </div>
     `;
   } catch(e) {
-    el.innerHTML = `<div class="alert alert-error">Error cargando manifiesto: ${e.error || 'No encontrado'}</div>`;
+    root.innerHTML = `<div class="alert alert-error">Error: ${e.error || 'No encontrado'}</div>`;
   }
 }
 
-// Init
+// ========================================
+// INIT — elegir vista según URL params
+// ========================================
 if (trackingIdParam) {
   loadManifiesto(trackingIdParam);
+} else if (cajaIdParam) {
+  loadCajaDetalle(cajaIdParam, urlParams.get('cid'));
 } else {
-  loadListaTrackings();
+  loadCajas();
 }
 </script>
 </body>
