@@ -458,9 +458,10 @@ function renderInspeccion() {
               <button class="btn btn-primary btn-sm" onclick="cerrarTracking()">✓ Cerrar Tracking</button>
             </div>
           ` : `
-            <div style="display:flex;gap:8px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
               <span class="badge badge-green" style="padding:8px 14px;font-size:12px">✓ CERRADO</span>
               <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html?tracking=${t.id}'">📄 Manifiesto</button>
+              <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">▶ Iniciar otra operación</button>
             </div>
           `}
         </div>
@@ -1163,8 +1164,10 @@ async function confirmarCierre() {
     await API.post(`/trackings/${state.tracking.id}/cerrar`, { caja_id: cajaId });
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);
     closeModal('modal-cierre');
-    toast('Tracking cerrado exitosamente');
+    toast('Tracking cerrado exitosamente ✓');
     renderInspeccion();
+    // Scroll al top para que el botón "Iniciar otra operación" sea visible
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch(e) {
     toast(e.error || 'Error al cerrar', 'error');
   }
