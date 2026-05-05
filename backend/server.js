@@ -364,9 +364,9 @@ app.post('/api/skus/importar', (req, res) => {
 });
 
 app.put('/api/skus/:id', (req, res) => {
-  const { sku_code, upc_code, descripcion, pais_origen, insumos } = req.body;
-  dbRun(`UPDATE skus SET sku_code=?,descripcion=?,pais_origen=?,insumos=?,upc_code=? WHERE id=?`,
-    [sku_code, descripcion, pais_origen, insumos, upc_code || null, req.params.id]);
+  const { cliente_id, sku_code, upc_code, descripcion, pais_origen, insumos } = req.body;
+  dbRun(`UPDATE skus SET cliente_id=?,sku_code=?,descripcion=?,pais_origen=?,insumos=?,upc_code=? WHERE id=?`,
+    [cliente_id, sku_code, descripcion, pais_origen, insumos, upc_code || null, req.params.id]);
   res.json({ mensaje: 'SKU actualizado' });
 });
 
@@ -623,11 +623,20 @@ app.get('/api/trackings/:id/discrepancias', (req, res) => {
 
 // --- REPORTES ---
 app.get('/api/reportes/resumen', (req, res) => {
-  const totalTrackings = dbGet('SELECT COUNT(*) as cnt FROM trackings')?.cnt || 0;
-  const trackingsCerrados = dbGet("SELECT COUNT(*) as cnt FROM trackings WHERE estatus='cerrado'")?.cnt || 0;
-  const totalErrores = dbGet('SELECT COUNT(*) as cnt FROM errores')?.cnt || 0;
-  const totalDiscrepancias = dbGet('SELECT COUNT(*) as cnt FROM alertas_discrepancia')?.cnt || 0;
-  const totalPiezas = dbGet('SELECT SUM(cantidad_final) as total FROM trackings')?.total || 0;
+  const { fecha_desde, fecha_hasta, cliente_id } = req.query;
+
+  const whereParts = [];
+  const params = [];
+  if (fecha_desde) { whereParts.push("date(datetime(t.created_at,'localtime')) >= ?"); params.push(fecha_desde); }
+  if (fecha_hasta) { whereParts.push("date(datetime(t.created_at,'localtime')) <= ?"); params.push(fecha_hasta); }
+  if (cliente_id)  { whereParts.push("t.cliente_id = ?"); params.push(cliente_id); }
+  const where = whereParts.length ? ' WHERE ' + whereParts.join(' AND ') : '';
+
+  const totalTrackings    = dbGet(`SELECT COUNT(*) as cnt FROM trackings t${where}`, params)?.cnt || 0;
+  const trackingsCerrados = dbGet(`SELECT COUNT(*) as cnt FROM trackings t${where ? where + " AND t.estatus='cerrado'" : " WHERE t.estatus='cerrado'"}`, params)?.cnt || 0;
+  const totalPiezas       = dbGet(`SELECT SUM(t.cantidad_final) as total FROM trackings t${where}`, params)?.total || 0;
+  const totalErrores      = dbGet(`SELECT COUNT(*) as cnt FROM errores e JOIN trackings t ON e.tracking_id=t.id${where}`, params)?.cnt || 0;
+  const totalDiscrepancias= dbGet(`SELECT COUNT(*) as cnt FROM alertas_discrepancia a JOIN trackings t ON a.tracking_id=t.id${where}`, params)?.cnt || 0;
 
   res.json({ totalTrackings, trackingsCerrados, totalErrores, totalDiscrepancias, totalPiezas });
 });
@@ -807,6 +816,24 @@ app.get('/api/dashboard/hora-por-hora', (req, res) => {
 app.get('/api/dashboard/operadores', (req, res) => {
   const rows = dbAll("SELECT DISTINCT operador FROM trackings WHERE operador IS NOT NULL AND operador != '' ORDER BY operador");
   res.json(rows.map(r => r.operador));
+});
+
+app.get('/api/dashboard/ranking', (req, res) => {
+  const { fecha_desde, fecha_hasta, cliente_id } = req.query;
+  let sql = `
+    SELECT t.operador,
+           SUM(d.cantidad) as total_piezas,
+           COUNT(DISTINCT t.id) as total_trackings
+    FROM detalle_skus d
+    JOIN trackings t ON d.tracking_id = t.id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (fecha_desde) { sql += ' AND date(datetime(d.created_at, \'localtime\')) >= ?'; params.push(fecha_desde); }
+  if (fecha_hasta) { sql += ' AND date(datetime(d.created_at, \'localtime\')) <= ?'; params.push(fecha_hasta); }
+  if (cliente_id)  { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
+  sql += ' GROUP BY t.operador ORDER BY total_piezas DESC LIMIT 10';
+  res.json(dbAll(sql, params));
 });
 
 // Iniciar servidor

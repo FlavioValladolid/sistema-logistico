@@ -151,13 +151,18 @@ async function loadAll() {
   clientesData = clientes;
   skusData = skus;
 
-  // Populate selects
   const opts = clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
-  document.getElementById('filtro-cliente').innerHTML = '<option value="">— Todos los clientes —</option>' + opts;
+
+  // Preserve current filter selection before replacing options
+  const filtroEl = document.getElementById('filtro-cliente');
+  const prevCliente = filtroEl.value;
+  filtroEl.innerHTML = '<option value="">— Todos los clientes —</option>' + opts;
+  if (prevCliente) filtroEl.value = prevCliente;
+
   document.getElementById('sku-cliente').innerHTML = opts;
   document.getElementById('imp-cliente').innerHTML = '<option value="">— Seleccionar cliente —</option>' + opts;
 
-  renderTabla(skusData);
+  applyFilters();
 }
 
 function renderTabla(skus) {

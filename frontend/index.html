@@ -20,15 +20,21 @@ buildShell('Dashboard', 'DASHBOARD', `
 
 const content = document.getElementById('page-content');
 
+let resumenMode = 'todo';
+let resumenClienteId = '';
+
 async function loadDashboard() {
   try {
-    const [resumen, trackings] = await Promise.all([
+    const [resumen, trackings, clientes] = await Promise.all([
       API.get('/reportes/resumen'),
-      API.get('/trackings')
+      API.get('/trackings'),
+      API.get('/clientes')
     ]);
 
     const abiertos = trackings.filter(t => t.estatus === 'abierto').length;
     const cerrados = trackings.filter(t => t.estatus === 'cerrado').length;
+
+    const clienteOpts = clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
 
     content.innerHTML = `
       <div class="flex justify-between items-center mb-24">
@@ -41,28 +47,29 @@ async function loadDashboard() {
         </div>
       </div>
 
-      <div class="stat-grid">
-        <div class="stat-card" style="--accent-color:var(--accent-cyan)">
-          <div class="stat-label">Total Trackings</div>
-          <div class="stat-value">${formatNum(resumen.totalTrackings)}</div>
-          <div class="stat-sub">${abiertos} abiertos · ${cerrados} cerrados</div>
-        </div>
-        <div class="stat-card" style="--accent-color:var(--accent-green)">
-          <div class="stat-label">Piezas Inspeccionadas</div>
-          <div class="stat-value">${formatNum(resumen.totalPiezas)}</div>
-          <div class="stat-sub">Unidades totales procesadas</div>
-        </div>
-        <div class="stat-card" style="--accent-color:var(--accent-red)">
-          <div class="stat-label">Errores Registrados</div>
-          <div class="stat-value">${formatNum(resumen.totalErrores)}</div>
-          <div class="stat-sub">Calidad / Origen / Insumos</div>
-        </div>
-        <div class="stat-card" style="--accent-color:var(--accent-amber)">
-          <div class="stat-label">Discrepancias</div>
-          <div class="stat-value">${formatNum(resumen.totalDiscrepancias)}</div>
-          <div class="stat-sub">Alertas de inventario</div>
+      <div class="card" style="margin-bottom:16px;padding:10px 16px">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;gap:4px">
+            <button id="rs-btn-todo"   class="btn btn-primary btn-sm"   onclick="setResumenMode('todo')">Todo</button>
+            <button id="rs-btn-hoy"    class="btn btn-secondary btn-sm" onclick="setResumenMode('hoy')">Hoy</button>
+            <button id="rs-btn-ayer"   class="btn btn-secondary btn-sm" onclick="setResumenMode('ayer')">Ayer</button>
+            <button id="rs-btn-semana" class="btn btn-secondary btn-sm" onclick="setResumenMode('semana')">Semana</button>
+            <button id="rs-btn-mes"    class="btn btn-secondary btn-sm" onclick="setResumenMode('mes')">Mes</button>
+            <button id="rs-btn-rango"  class="btn btn-secondary btn-sm" onclick="setResumenMode('rango')">Rango</button>
+          </div>
+          <div id="rs-rango-inputs" style="display:none;gap:6px;align-items:center">
+            <input type="date" id="rs-desde" class="form-control" style="width:140px" onchange="loadResumen()">
+            <span style="color:var(--text-muted);font-size:12px">—</span>
+            <input type="date" id="rs-hasta" class="form-control" style="width:140px" onchange="loadResumen()">
+          </div>
+          <select id="rs-cliente" class="form-control" style="width:180px" onchange="resumenClienteId=this.value;loadResumen()">
+            <option value="">Todos los clientes</option>
+            ${clienteOpts}
+          </select>
         </div>
       </div>
+
+      <div id="stat-grid" class="stat-grid"></div>
 
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
 
@@ -151,12 +158,80 @@ async function loadDashboard() {
 
       </div>
     `;
-    // Build UPH section after main content
+
+    loadResumen();
     buildUphSection();
     initUph();
+    buildRankingSection();
+    initRanking();
   } catch (e) {
     content.innerHTML = `<div class="alert alert-error">Error cargando dashboard: ${e.message || 'Error desconocido'}</div>`;
   }
+}
+
+function setResumenMode(mode) {
+  resumenMode = mode;
+  ['todo','hoy','ayer','semana','mes','rango'].forEach(m => {
+    const btn = document.getElementById(`rs-btn-${m}`);
+    if (btn) btn.className = `btn btn-sm ${m === mode ? 'btn-primary' : 'btn-secondary'}`;
+  });
+  const rangoInputs = document.getElementById('rs-rango-inputs');
+  if (rangoInputs) rangoInputs.style.display = mode === 'rango' ? 'flex' : 'none';
+  loadResumen();
+}
+
+async function loadResumen() {
+  const grid = document.getElementById('stat-grid');
+  if (!grid) return;
+
+  let desde = '', hasta = '';
+  const now = new Date();
+  if (resumenMode === 'hoy') {
+    desde = hasta = isoDate(now);
+  } else if (resumenMode === 'ayer') {
+    const ayer = new Date(now); ayer.setDate(ayer.getDate() - 1);
+    desde = hasta = isoDate(ayer);
+  } else if (resumenMode === 'semana') {
+    const d = new Date(now); d.setDate(d.getDate() - 6);
+    desde = isoDate(d); hasta = isoDate(now);
+  } else if (resumenMode === 'mes') {
+    const d = new Date(now); d.setDate(d.getDate() - 29);
+    desde = isoDate(d); hasta = isoDate(now);
+  } else if (resumenMode === 'rango') {
+    desde = document.getElementById('rs-desde')?.value || '';
+    hasta = document.getElementById('rs-hasta')?.value || '';
+  }
+
+  const params = new URLSearchParams();
+  if (desde) params.append('fecha_desde', desde);
+  if (hasta) params.append('fecha_hasta', hasta);
+  if (resumenClienteId) params.append('cliente_id', resumenClienteId);
+
+  try {
+    const r = await API.get(`/reportes/resumen?${params}`);
+    grid.innerHTML = `
+      <div class="stat-card" style="--accent-color:var(--accent-cyan)">
+        <div class="stat-label">Total Trackings</div>
+        <div class="stat-value">${formatNum(r.totalTrackings)}</div>
+        <div class="stat-sub">${r.totalTrackings - r.trackingsCerrados} abiertos · ${r.trackingsCerrados} cerrados</div>
+      </div>
+      <div class="stat-card" style="--accent-color:var(--accent-green)">
+        <div class="stat-label">Piezas Inspeccionadas</div>
+        <div class="stat-value">${formatNum(r.totalPiezas)}</div>
+        <div class="stat-sub">Unidades totales procesadas</div>
+      </div>
+      <div class="stat-card" style="--accent-color:var(--accent-red)">
+        <div class="stat-label">Errores Registrados</div>
+        <div class="stat-value">${formatNum(r.totalErrores)}</div>
+        <div class="stat-sub">Calidad / Origen / Insumos</div>
+      </div>
+      <div class="stat-card" style="--accent-color:var(--accent-amber)">
+        <div class="stat-label">Discrepancias</div>
+        <div class="stat-value">${formatNum(r.totalDiscrepancias)}</div>
+        <div class="stat-sub">Alertas de inventario</div>
+      </div>
+    `;
+  } catch(e) {}
 }
 
 loadDashboard();
@@ -390,6 +465,139 @@ function renderUphChart(data, mode, operadorFiltro) {
       }
     }
   });
+}
+
+// ── Ranking de Operadores ─────────────────────────────────────────────────────
+
+let rankingMode = 'dia';
+
+function buildRankingSection() {
+  const section = document.createElement('div');
+  section.id = 'ranking-section';
+  section.style.cssText = 'margin-top:16px';
+  section.innerHTML = `
+    <div class="card">
+      <div class="card-header" style="flex-wrap:wrap;gap:10px">
+        <span class="card-title">🏆 Ranking de Operadores</span>
+        <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center">
+          <div style="display:flex;gap:4px">
+            <button id="rk-btn-dia"   class="btn btn-primary btn-sm"   onclick="setRankingMode('dia')">Hoy</button>
+            <button id="rk-btn-ayer"  class="btn btn-secondary btn-sm" onclick="setRankingMode('ayer')">Ayer</button>
+            <button id="rk-btn-rango" class="btn btn-secondary btn-sm" onclick="setRankingMode('rango')">Rango</button>
+            <button class="btn btn-ghost btn-sm" onclick="resetRanking()" title="Ver ranking de todo el tiempo">↻</button>
+          </div>
+          <div id="rk-rango-inputs" style="display:none;gap:6px;align-items:center">
+            <input type="date" id="rk-desde" class="form-control" style="width:140px" onchange="loadRanking()">
+            <span style="color:var(--text-muted);font-size:12px">—</span>
+            <input type="date" id="rk-hasta" class="form-control" style="width:140px" onchange="loadRanking()">
+          </div>
+          <select id="rk-cliente" class="form-control" style="width:170px" onchange="loadRanking()">
+            <option value="">Todos los clientes</option>
+          </select>
+        </div>
+      </div>
+      <div id="rk-body" style="padding:8px 0"></div>
+    </div>
+  `;
+  document.getElementById('page-content').appendChild(section);
+}
+
+function resetRanking() {
+  rankingMode = '';
+  ['dia','ayer','rango'].forEach(m => {
+    const btn = document.getElementById(`rk-btn-${m}`);
+    if (btn) btn.className = 'btn btn-sm btn-secondary';
+  });
+  document.getElementById('rk-rango-inputs').style.display = 'none';
+  loadRanking();
+}
+
+function setRankingMode(mode) {
+  rankingMode = mode;
+  ['dia','ayer','rango'].forEach(m => {
+    const btn = document.getElementById(`rk-btn-${m}`);
+    if (btn) btn.className = `btn btn-sm ${m === mode ? 'btn-primary' : 'btn-secondary'}`;
+  });
+  document.getElementById('rk-rango-inputs').style.display = mode === 'rango' ? 'flex' : 'none';
+  loadRanking();
+}
+
+async function initRanking() {
+  try {
+    const clientes = await API.get('/clientes');
+    const sel = document.getElementById('rk-cliente');
+    clientes.forEach(c => {
+      const o = document.createElement('option');
+      o.value = c.id; o.textContent = c.nombre;
+      sel.appendChild(o);
+    });
+  } catch(e) {}
+  loadRanking();
+}
+
+async function loadRanking() {
+  let desde, hasta;
+  if (rankingMode === 'dia') {
+    desde = hasta = isoDate(new Date());
+  } else if (rankingMode === 'ayer') {
+    const ayer = new Date(); ayer.setDate(ayer.getDate() - 1);
+    desde = hasta = isoDate(ayer);
+  } else {
+    desde = document.getElementById('rk-desde')?.value || '';
+    hasta = document.getElementById('rk-hasta')?.value || '';
+  }
+  const clienteId = document.getElementById('rk-cliente')?.value || '';
+  const params = new URLSearchParams();
+  if (desde) params.append('fecha_desde', desde);
+  if (hasta) params.append('fecha_hasta', hasta);
+  if (clienteId) params.append('cliente_id', clienteId);
+
+  const body = document.getElementById('rk-body');
+  if (!body) return;
+
+  try {
+    const data = await API.get(`/dashboard/ranking?${params}`);
+    if (!data || data.length === 0) {
+      body.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-state-icon">🏆</div>
+          <div class="empty-state-title">Sin datos en el período seleccionado</div>
+          <div class="empty-state-text">Registra operaciones para ver el ranking</div>
+        </div>`;
+      return;
+    }
+
+    const TROFEOS = ['🥇','🥈','🥉'];
+    const maxPiezas = data[0].total_piezas || 1;
+
+    body.innerHTML = `
+      <div style="display:flex;flex-direction:column;gap:0;padding:4px 8px 8px">
+        ${data.map((row, i) => {
+          const trofeo   = i < 3 ? TROFEOS[i] : null;
+          const pct      = Math.round((row.total_piezas / maxPiezas) * 100);
+          const barColor = i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : 'var(--accent-cyan)';
+          const numColor = i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : 'var(--text-muted)';
+          return `
+            <div style="display:grid;grid-template-columns:36px 1fr auto;gap:12px;align-items:center;padding:10px 4px;border-bottom:1px solid var(--border)">
+              <div style="text-align:center;font-size:${trofeo ? '22px' : '13px'};font-family:'IBM Plex Mono',monospace;color:${numColor};font-weight:700">
+                ${trofeo || `#${i + 1}`}
+              </div>
+              <div>
+                <div style="font-size:13px;font-weight:600;color:var(--text-primary);margin-bottom:5px">${row.operador}</div>
+                <div style="height:6px;background:var(--surface-2);border-radius:3px;overflow:hidden">
+                  <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width .4s ease"></div>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:3px">${row.total_trackings} tracking${row.total_trackings !== 1 ? 's' : ''}</div>
+              </div>
+              <div style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:${barColor};white-space:nowrap">
+                ${formatNum(row.total_piezas)}<span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:3px">pzas</span>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>`;
+  } catch(e) {
+    body.innerHTML = `<div class="alert alert-error" style="margin:8px">Error cargando ranking</div>`;
+  }
 }
 </script>
 </body>
