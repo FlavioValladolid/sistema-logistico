@@ -138,6 +138,13 @@ document.body.insertAdjacentHTML('beforeend', `
             <div class="disposicion-sub">Instrucción mandatoria — separar físicamente la pieza</div>
           </div>
         </div>
+        <div id="disposicion-retrabajo" class="disposicion-banner hidden" style="background:rgba(255,171,0,0.08);border-color:#ffab00">
+          <span class="disposicion-icon">🔧</span>
+          <div>
+            <div class="disposicion-text" style="color:#ffab00">ENVIAR A RETRABAJO</div>
+            <div class="disposicion-sub">La pieza irá a la cola de corrección antes de continuar.</div>
+          </div>
+        </div>
         <div id="disposicion-discrepancia" class="disposicion-banner hidden" style="background:rgba(68,138,255,0.08);border-color:var(--accent-blue)">
           <span class="disposicion-icon">📋</span>
           <div>
@@ -154,6 +161,15 @@ document.body.insertAdjacentHTML('beforeend', `
             <option value="Insumo">Insumos / Material — No coincide con catálogo</option>
             <option value="Otro">Otro</option>
           </select>
+        </div>
+
+        <!-- SECCIÓN RETRABAJOS (solo para clientes con módulo activo) -->
+        <div id="seccion-retrabajos-modal" class="hidden">
+          <div style="margin-bottom:8px;font-size:11px;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;color:var(--text-muted);text-transform:uppercase">Retrabajos requeridos</div>
+          <div id="rt-botones" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px"></div>
+          <div id="rt-otro-input" class="hidden" style="margin-top:8px">
+            <input type="text" class="form-control" id="rt-otro-texto" placeholder="Describe el retrabajo adicional...">
+          </div>
         </div>
 
         <div class="form-group">
@@ -236,6 +252,49 @@ document.body.insertAdjacentHTML('beforeend', `
         <button class="btn btn-primary" onclick="confirmarCierre()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg>
           Confirmar Cierre
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Mercancía no pertenece a cliente -->
+  <div id="modal-mercancia-ajena" class="modal-overlay">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <span class="modal-title">⛔ Mercancía no pertenece a cliente</span>
+        <button class="modal-close" onclick="closeModal('modal-mercancia-ajena')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="disposicion-banner" style="margin-bottom:16px">
+          <span class="disposicion-icon">📦</span>
+          <div>
+            <div class="disposicion-text">COLOCAR EN CAJA DE DAÑADOS</div>
+            <div class="disposicion-sub">Esta mercancía no corresponde al cliente — separar físicamente</div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Fotografía de Evidencia *</label>
+          <div class="photo-upload">
+            <input type="file" id="ma-foto" accept="image/*" capture="environment" onchange="previewMaFoto(this)">
+            <div class="photo-upload-icon">📷</div>
+            <div class="photo-upload-text">Toca para tomar foto de la mercancía</div>
+            <div class="photo-upload-hint">JPG, PNG — requerida para continuar</div>
+          </div>
+          <img id="ma-foto-preview" class="photo-preview hidden" alt="Vista previa">
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Descripción *</label>
+          <textarea class="form-control" id="ma-desc" rows="3"
+            placeholder="Describe qué tipo de mercancía es y por qué no corresponde a este cliente..."
+            style="resize:vertical"></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-mercancia-ajena')">Cancelar</button>
+        <button class="btn btn-danger" onclick="guardarMercanciaAjena()">
+          ⛔ Registrar y enviar a dañados
         </button>
       </div>
     </div>
@@ -453,8 +512,9 @@ function renderInspeccion() {
             </p>
           </div>
           ${!isClosed ? `
-            <div style="display:flex;gap:8px">
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
               <button class="btn btn-secondary btn-sm" onclick="abrirDiscrepancia()">⚠ Discrepancia</button>
+              <button class="btn btn-secondary btn-sm" style="border-color:rgba(255,61,61,.4);color:var(--accent-red)" onclick="abrirMercanciaAjena()">⛔ No pertenece a cliente</button>
               <button class="btn btn-primary btn-sm" onclick="cerrarTracking()">✓ Cerrar Tracking</button>
             </div>
           ` : `
@@ -648,6 +708,23 @@ function renderInspeccion() {
                 </div>
               ` : ''}
 
+              ${parseInt(grado) === 3 && parseInt(t.fotos_adicionales) > 0 ? `
+                <div style="margin-top:16px">
+                  <div class="section-title" style="margin-bottom:8px">📷 Fotos adicionales requeridas (${t.fotos_adicionales})</div>
+                  <div style="display:grid;grid-template-columns:repeat(${Math.min(parseInt(t.fotos_adicionales), 4)},1fr);gap:10px">
+                    ${Array.from({length: parseInt(t.fotos_adicionales)}, (_, i) => `
+                      <div class="foto-req-card">
+                        <div class="foto-req-label">Foto adicional ${i+1}</div>
+                        <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+                          📷 Seleccionar
+                          <input type="file" id="foto-adicional-${i+1}" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-adicional-${i+1}')">
+                        </label>
+                        <img id="prev-adicional-${i+1}" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              ` : ''}
 
               <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
                 <button class="btn btn-secondary" onclick="cancelarSKU()">Cancelar</button>
@@ -770,6 +847,7 @@ function renderSKUList() {
           <div class="sku-badges">
             <span class="badge badge-muted">×${d.cantidad}</span>
             ${d.foto_etiqueta ? `<span class="badge badge-blue">📷 Evidencia (3 fotos)</span>` : ''}
+            ${d.foto_adicional_1 ? `<span class="badge badge-blue">📷 +${[1,2,3,4].filter(n=>d[`foto_adicional_${n}`]).length} adicional(es)</span>` : ''}
             ${d.pais_origen_real ? `<span class="badge ${paisDiff?'badge-amber':'badge-muted'}">🌍 ${d.pais_origen_real}${paisDiff?' ⚠':''}</span>` : ''}
             ${d.calidad ? `<span class="badge ${isMalo?'badge-red':'badge-green'}">${isMalo?'✕ Mala':'✓ Buena'}</span>` : ''}
             ${paisDiff ? `<span class="badge badge-amber">País no coincide</span>` : ''}
@@ -777,10 +855,15 @@ function renderSKUList() {
             ${hasError ? `<span class="badge badge-red">⚠ ${errD.length} error(es)</span>` : ''}
           </div>
           ${d.foto_etiqueta ? `
-            <div style="display:flex;gap:6px;margin-top:6px">
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
               <img src="${d.foto_etiqueta}" title="Etiqueta" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">
               <img src="${d.foto_insumos}" title="Insumos/Origen" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">
               <img src="${d.foto_pieza}" title="Pieza completa" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">
+              ${[1,2,3,4].filter(n => d[`foto_adicional_${n}`]).map(n => `<img src="${d[`foto_adicional_${n}`]}" title="Foto adicional ${n}" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid rgba(68,138,255,.4)">`).join('')}
+            </div>
+          ` : d.foto_adicional_1 ? `
+            <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
+              ${[1,2,3,4].filter(n => d[`foto_adicional_${n}`]).map(n => `<img src="${d[`foto_adicional_${n}`]}" title="Foto adicional ${n}" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid rgba(68,138,255,.4)">`).join('')}
             </div>
           ` : ''}
         </div>
@@ -963,6 +1046,17 @@ async function registrarSKU() {
     if (!skuCode) { toast('Código SKU requerido', 'error'); return; }
   }
 
+  // Validar fotos adicionales (solo G3)
+  const fotosReq = parseInt(state.tracking.grado_confianza) === 3 ? (parseInt(state.tracking.fotos_adicionales) || 0) : 0;
+  if (fotosReq > 0) {
+    for (let i = 1; i <= fotosReq; i++) {
+      if (!document.getElementById(`foto-adicional-${i}`)?.files[0]) {
+        toast(`Se requiere la foto adicional ${i} de ${fotosReq}`, 'error');
+        return;
+      }
+    }
+  }
+
   try {
     // Si SKU no estaba en catálogo → guardarlo primero
     if (state.skuNoRegistrado) {
@@ -998,12 +1092,21 @@ async function registrarSKU() {
       await API.postForm(`/detalles/${res.id}/fotos-evidencia`, fd);
     }
 
+    // Subir fotos adicionales (G3)
+    if (fotosReq > 0) {
+      const fdA = new FormData();
+      for (let i = 1; i <= fotosReq; i++) {
+        fdA.append(`foto${i}`, document.getElementById(`foto-adicional-${i}`).files[0]);
+      }
+      await API.postForm(`/detalles/${res.id}/fotos-adicionales`, fdA);
+    }
+
     // Reload
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);
     state.detalles = await API.get(`/trackings/${state.tracking.id}/detalles`);
     state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
 
-    toast(`SKU ${skuCode} registrado${state.skuNoRegistrado ? ' (fotos de evidencia guardadas)' : ''}`);
+    toast(`SKU ${skuCode} registrado${state.skuNoRegistrado ? ' (fotos de evidencia guardadas)' : ''}${fotosReq > 0 ? ` + ${fotosReq} foto(s) adicional(es)` : ''}`);
 
     // Si hay problemas → abrir modal de error
     const hayProblema = (state.paisCoincide === false) || (state.insumosCoincide === false) || state.calidadActual === 'Mala';
@@ -1014,8 +1117,14 @@ async function registrarSKU() {
       if (state.paisCoincide === false) tipoSugerido = 'Origen';
       else if (state.insumosCoincide === false) tipoSugerido = 'Insumo';
       document.getElementById('error-tipo').value = tipoSugerido;
-      onTipoErrorChange(tipoSugerido);
 
+      // Reset retrabajos
+      retrabajosSel.clear();
+      const otroTexto = document.getElementById('rt-otro-texto');
+      if (otroTexto) otroTexto.value = '';
+
+      onTipoErrorChange(tipoSugerido);
+      renderRetrabajoBotones();
       openModal('modal-error');
     }
 
@@ -1067,10 +1176,89 @@ function previewFotoReq(input, previewId) {
   reader.readAsDataURL(file);
 }
 
+// Catálogo de retrabajos por tipo de mercancía (espejo del backend)
+const CATALOGO_RT = {
+  calzado:    ['Cambio de caja', 'Limpieza', 'Reparación de caja', 'Impresión de etiqueta'],
+  textil:     ['Cambio de etiqueta', 'Limpieza', 'Reparación de costura', 'Planchado', 'Re-empaque'],
+  traje_bano: ['Cambio de etiqueta', 'Limpieza', 'Re-empaque', 'Revisión de elástico'],
+  sombreros:  ['Cambio de etiqueta', 'Limpieza', 'Reparación de forma', 'Re-empaque'],
+};
+
+let retrabajosSel = new Set(); // retrabajos actualmente seleccionados
+
+function renderRetrabajoBotones() {
+  const tipo = (state.tracking?.tipo_mercancia || 'textil').toLowerCase();
+  const opciones = CATALOGO_RT[tipo] || CATALOGO_RT.textil;
+  const contenedor = document.getElementById('rt-botones');
+  if (!contenedor) return;
+
+  const btnStyle = (sel) =>
+    `display:inline-block;padding:6px 12px;border-radius:4px;font-size:12px;cursor:pointer;transition:all .15s;border:1px solid ${sel ? '#ffab00' : 'var(--border)'};background:${sel ? 'rgba(255,171,0,.15)' : 'var(--bg-elevated)'};color:${sel ? '#ffab00' : 'var(--text-secondary)'};font-weight:${sel ? '700' : '400'}`;
+
+  const botonesHtml = opciones.map(op => {
+    const sel = retrabajosSel.has(op);
+    return `<span style="${btnStyle(sel)}" onclick="toggleRetrabajo('${op.replace(/'/g, "\\'")}')">${op}</span>`;
+  }).join('');
+
+  const selOtro = retrabajosSel.has('__otro__');
+  const otroBtn = `<span style="${btnStyle(selOtro)}" onclick="toggleRetrabajo('__otro__')">+ Otro</span>`;
+
+  contenedor.innerHTML = botonesHtml + otroBtn;
+
+  // Mostrar/ocultar input de "otro"
+  const otroInput = document.getElementById('rt-otro-input');
+  if (otroInput) otroInput.classList.toggle('hidden', !selOtro);
+}
+
+function toggleRetrabajo(tipo) {
+  if (retrabajosSel.has(tipo)) {
+    retrabajosSel.delete(tipo);
+  } else {
+    retrabajosSel.add(tipo);
+  }
+  renderRetrabajoBotones();
+  actualizarBannerRetrabajo();
+}
+
+function actualizarBannerRetrabajo() {
+  const tipoError = document.getElementById('error-tipo')?.value || 'Calidad';
+  const esDanado = tipoError === 'Calidad' || tipoError === 'Otro';
+  const hayRetrabajo = retrabajosSel.size > 0;
+  const tieneModulo = parseInt(state.tracking?.modulo_retrabajo) === 1;
+
+  if (esDanado && tieneModulo) {
+    document.getElementById('disposicion-danados').classList.toggle('hidden', hayRetrabajo);
+    document.getElementById('disposicion-retrabajo').classList.toggle('hidden', !hayRetrabajo);
+  }
+}
+
 function onTipoErrorChange(tipo) {
   const esDanado = tipo === 'Calidad' || tipo === 'Otro';
-  document.getElementById('disposicion-danados').classList.toggle('hidden', !esDanado);
+  const tieneRetrabajo = parseInt(state.tracking?.modulo_retrabajo) === 1;
+
+  // Banners
   document.getElementById('disposicion-discrepancia').classList.toggle('hidden', esDanado);
+  if (esDanado && tieneRetrabajo) {
+    const hayRetrabajo = retrabajosSel.size > 0;
+    document.getElementById('disposicion-danados').classList.toggle('hidden', hayRetrabajo);
+    document.getElementById('disposicion-retrabajo').classList.toggle('hidden', !hayRetrabajo);
+  } else if (esDanado) {
+    document.getElementById('disposicion-danados').classList.remove('hidden');
+    document.getElementById('disposicion-retrabajo').classList.add('hidden');
+  } else {
+    document.getElementById('disposicion-danados').classList.add('hidden');
+    document.getElementById('disposicion-retrabajo').classList.add('hidden');
+  }
+
+  // Sección de retrabajos
+  const seccion = document.getElementById('seccion-retrabajos-modal');
+  if (seccion) {
+    seccion.classList.toggle('hidden', !(esDanado && tieneRetrabajo));
+    if (!esDanado) {
+      retrabajosSel.clear();
+      renderRetrabajoBotones();
+    }
+  }
 }
 
 async function guardarError() {
@@ -1078,6 +1266,9 @@ async function guardarError() {
   const desc = document.getElementById('error-desc').value.trim();
   const fotoInput = document.getElementById('error-foto');
   const detalleId = document.getElementById('error-detalle-id').value;
+  const tieneRetrabajo = parseInt(state.tracking?.modulo_retrabajo) === 1;
+  const esDanado = tipo === 'Calidad' || tipo === 'Otro';
+  const hayRetrabajos = tieneRetrabajo && esDanado && retrabajosSel.size > 0;
 
   if (!desc) { toast('La descripción es requerida', 'error'); return; }
   if (!fotoInput.files[0]) { toast('La fotografía de evidencia es requerida', 'error'); return; }
@@ -1090,6 +1281,23 @@ async function guardarError() {
 
   try {
     await API.postForm(`/trackings/${state.tracking.id}/errores`, fd);
+
+    if (hayRetrabajos) {
+      const detalle = state.detalles.find(d => d.id === detalleId);
+      const rtSeleccionados = [...retrabajosSel].filter(r => r !== '__otro__');
+      const rtOtroTexto = retrabajosSel.has('__otro__')
+        ? (document.getElementById('rt-otro-texto')?.value.trim() || '')
+        : '';
+
+      await API.post(`/trackings/${state.tracking.id}/retrabajos`, {
+        detalle_sku_id: detalleId,
+        sku_code: detalle?.sku_code || '',
+        descripcion_sku: detalle?.descripcion || '',
+        retrabajos_seleccionados: rtSeleccionados,
+        retrabajo_otro: rtOtroTexto || null,
+      });
+    }
+
     state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
     closeModal('modal-error');
 
@@ -1097,8 +1305,57 @@ async function guardarError() {
     document.getElementById('error-desc').value = '';
     document.getElementById('error-foto').value = '';
     document.getElementById('foto-preview').classList.add('hidden');
+    retrabajosSel.clear();
 
-    toast('Error registrado con evidencia');
+    const msg = hayRetrabajos
+      ? `Error registrado — ${retrabajosSel.size || [...retrabajosSel].length || 'varios'} retrabajo(s) asignado(s) ✓`
+      : 'Error registrado con evidencia';
+    toast(hayRetrabajos ? 'Error registrado — pieza enviada a retrabajo ✓' : 'Error registrado con evidencia');
+    renderInspeccion();
+  } catch(e) {
+    toast(e.error || 'Error al guardar', 'error');
+  }
+}
+
+// ========================
+// MERCANCÍA AJENA AL CLIENTE
+// ========================
+function abrirMercanciaAjena() {
+  document.getElementById('ma-desc').value = '';
+  document.getElementById('ma-foto').value = '';
+  document.getElementById('ma-foto-preview').classList.add('hidden');
+  openModal('modal-mercancia-ajena');
+}
+
+function previewMaFoto(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById('ma-foto-preview');
+    img.src = e.target.result;
+    img.classList.remove('hidden');
+  };
+  reader.readAsDataURL(file);
+}
+
+async function guardarMercanciaAjena() {
+  const desc = document.getElementById('ma-desc').value.trim();
+  const fotoInput = document.getElementById('ma-foto');
+
+  if (!desc) { toast('La descripción es requerida', 'error'); return; }
+  if (!fotoInput.files[0]) { toast('La fotografía de evidencia es requerida', 'error'); return; }
+
+  const fd = new FormData();
+  fd.append('tipo_error', 'Mercancía ajena');
+  fd.append('comentarios', desc);
+  fd.append('foto', fotoInput.files[0]);
+
+  try {
+    await API.postForm(`/trackings/${state.tracking.id}/errores`, fd);
+    state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
+    closeModal('modal-mercancia-ajena');
+    toast('Registrado — colocar mercancía en caja de dañados ✓');
     renderInspeccion();
   } catch(e) {
     toast(e.error || 'Error al guardar', 'error');
@@ -1138,6 +1395,13 @@ async function guardarDiscrepancia() {
 // CERRAR TRACKING
 // ========================
 function cerrarTracking() {
+  // Verificar que no esté vacío (debe tener SKUs o mercancía ajena registrada)
+  const tieneMercanciaAjena = state.errores.some(e => e.tipo_error === 'Mercancía ajena');
+  if (state.detalles.length === 0 && !tieneMercanciaAjena) {
+    toast('No se puede cerrar: registra al menos un SKU o marca el producto como "No corresponde al cliente"', 'error');
+    return;
+  }
+
   // Verificar errores sin foto
   const erroresSinFoto = state.errores.filter(e => !e.path_fotografia);
   if (erroresSinFoto.length > 0) {

@@ -9,6 +9,13 @@ const initSqlJs = require('sql.js');
 const app = express();
 const PORT = 3000;
 
+const CATALOGO_RETRABAJOS = {
+  calzado:    ['Cambio de caja', 'Limpieza', 'Reparación de caja', 'Impresión de etiqueta'],
+  textil:     ['Cambio de etiqueta', 'Limpieza', 'Reparación de costura', 'Planchado', 'Re-empaque'],
+  traje_bano: ['Cambio de etiqueta', 'Limpieza', 'Re-empaque', 'Revisión de elástico'],
+  sombreros:  ['Cambio de etiqueta', 'Limpieza', 'Reparación de forma', 'Re-empaque'],
+};
+
 // Middleware
 app.use(cors());
 app.use(express.json());
@@ -56,6 +63,16 @@ async function initDB() {
   `);
   try { db.run("ALTER TABLE clientes ADD COLUMN tipo_almacenamiento TEXT DEFAULT 'caja'"); } catch(e) {}
   try { db.run("ALTER TABLE clientes ADD COLUMN uph INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE clientes ADD COLUMN tipo_mercancia TEXT DEFAULT 'textil'"); } catch(e) {}
+  try { db.run("ALTER TABLE clientes ADD COLUMN fotos_adicionales INTEGER DEFAULT 0"); } catch(e) {}
+
+  // Materializar valores NULL de columnas migradas (sql.js omite undefined en JSON)
+  db.run("UPDATE clientes SET tipo_almacenamiento = 'caja'   WHERE tipo_almacenamiento IS NULL");
+  db.run("UPDATE clientes SET uph               = 0          WHERE uph IS NULL");
+  db.run("UPDATE clientes SET tipo_mercancia    = 'textil'   WHERE tipo_mercancia IS NULL");
+  db.run("UPDATE clientes SET fotos_adicionales = 0          WHERE fotos_adicionales IS NULL");
+
+  console.log('📋 Columnas clientes:', db.exec("PRAGMA table_info(clientes)")[0]?.values.map(r=>r[1]).join(', '));
 
   db.run(`
     CREATE TABLE IF NOT EXISTS skus (
@@ -116,6 +133,12 @@ async function initDB() {
   try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_etiqueta TEXT'); } catch(e) {}
   try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_insumos TEXT'); } catch(e) {}
   try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_pieza TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_1 TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_2 TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_3 TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_4 TEXT'); } catch(e) {}
+  // Materializar NULLs de columnas migradas en trackings
+  db.run("UPDATE trackings SET impresa = 0 WHERE impresa IS NULL");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS errores (
@@ -137,6 +160,25 @@ async function initDB() {
       cantidad_original INTEGER,
       cantidad_corregida INTEGER,
       created_at TEXT DEFAULT (datetime('now')),
+      FOREIGN KEY (tracking_id) REFERENCES trackings(id)
+    )
+  `);
+
+  // Recrear tabla retrabajos con nuevo esquema (DROP seguro: migración controlada)
+  db.run('DROP TABLE IF EXISTS retrabajos');
+  db.run(`
+    CREATE TABLE retrabajos (
+      id TEXT PRIMARY KEY,
+      tracking_id TEXT NOT NULL,
+      detalle_sku_id TEXT,
+      cliente_id TEXT NOT NULL,
+      sku_code TEXT,
+      descripcion_sku TEXT,
+      retrabajos_seleccionados TEXT DEFAULT '[]',
+      retrabajo_otro TEXT,
+      estatus TEXT DEFAULT 'Pendiente',
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT,
       FOREIGN KEY (tracking_id) REFERENCES trackings(id)
     )
   `);
@@ -231,22 +273,36 @@ app.get('/api/clientes/:id', (req, res) => {
 });
 
 app.post('/api/clientes', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales } = req.body;
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   const id = uuidv4();
-  dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph) VALUES (?,?,?,?,?,?,?,?)`,
-    [id, nombre, grado_confianza || 2, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0]);
+  const grado = parseInt(grado_confianza) || 2;
+  const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
+  console.log(`POST /clientes → nombre="${nombre}" grado=${grado} fotos_adicionales=${fa}`);
+  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa]);
+  if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos' });
   res.json({ id, mensaje: 'Cliente creado' });
 });
 
 app.put('/api/clientes/:id', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph } = req.body;
-  dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=? WHERE id=?`,
-    [nombre, grado_confianza, porcentaje_muestreo, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, req.params.id]);
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales } = req.body;
+  const grado = parseInt(grado_confianza) || 2;
+  const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
+  console.log(`PUT /clientes/${req.params.id} → grado=${grado} fotos_adicionales=${fa}`);
+  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=? WHERE id=?`,
+    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, req.params.id]);
+  if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos — revisa la consola del servidor' });
+  const updated = dbGet('SELECT * FROM clientes WHERE id=?', [req.params.id]);
+  console.log(`  → guardado: fotos_adicionales=${updated?.fotos_adicionales}`);
   res.json({ mensaje: 'Cliente actualizado' });
 });
 
 app.delete('/api/clientes/:id', (req, res) => {
+  const totalTrackings = dbGet('SELECT COUNT(*) as cnt FROM trackings WHERE cliente_id=?', [req.params.id]);
+  if ((totalTrackings?.cnt || 0) > 0) {
+    return res.status(400).json({ error: `No se puede eliminar: el cliente tiene ${totalTrackings.cnt} tracking(s) registrado(s).` });
+  }
   dbRun('DELETE FROM clientes WHERE id=?', [req.params.id]);
   res.json({ mensaje: 'Cliente eliminado' });
 });
@@ -322,7 +378,7 @@ app.delete('/api/skus/:id', (req, res) => {
 // --- TRACKINGS ---
 app.get('/api/trackings', (req, res) => {
   const rows = dbAll(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     ORDER BY t.created_at DESC
   `);
@@ -331,7 +387,7 @@ app.get('/api/trackings', (req, res) => {
 
 app.get('/api/trackings/:id', (req, res) => {
   const row = dbGet(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     WHERE t.id = ?
   `, [req.params.id]);
@@ -365,6 +421,13 @@ app.put('/api/trackings/:id', (req, res) => {
 app.post('/api/trackings/:id/cerrar', (req, res) => {
   const tracking = dbGet('SELECT * FROM trackings WHERE id=?', [req.params.id]);
   if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+
+  // Validar que no esté vacío (SKUs o mercancía ajena)
+  const totalSkus = dbGet('SELECT COUNT(*) as cnt FROM detalle_skus WHERE tracking_id=?', [req.params.id]);
+  const tieneMercanciaAjena = dbGet(`SELECT id FROM errores WHERE tracking_id=? AND tipo_error='Mercancía ajena' LIMIT 1`, [req.params.id]);
+  if ((totalSkus?.cnt || 0) === 0 && !tieneMercanciaAjena) {
+    return res.status(400).json({ error: 'No se puede cerrar un tracking vacío. Registra al menos un SKU o marca el producto como no correspondiente al cliente.' });
+  }
 
   // Validar errores sin foto
   const erroresSinFoto = dbAll(`
@@ -449,6 +512,29 @@ app.post('/api/detalles/:id/fotos-evidencia', upload.fields([
   res.json({ mensaje: 'Fotos guardadas' });
 });
 
+// Fotos adicionales para G3
+app.post('/api/detalles/:id/fotos-adicionales', upload.fields([
+  { name: 'foto1', maxCount: 1 },
+  { name: 'foto2', maxCount: 1 },
+  { name: 'foto3', maxCount: 1 },
+  { name: 'foto4', maxCount: 1 }
+]), (req, res) => {
+  const detalle = dbGet('SELECT id FROM detalle_skus WHERE id=?', [req.params.id]);
+  if (!detalle) return res.status(404).json({ error: 'Detalle no encontrado' });
+
+  const updates = [];
+  const vals = [];
+  for (let i = 1; i <= 4; i++) {
+    const f = req.files?.[`foto${i}`];
+    if (f) { updates.push(`foto_adicional_${i}=?`); vals.push('/uploads/' + f[0].filename); }
+  }
+
+  if (updates.length === 0) return res.status(400).json({ error: 'No se recibieron fotos' });
+  vals.push(req.params.id);
+  dbRun(`UPDATE detalle_skus SET ${updates.join(',')} WHERE id=?`, vals);
+  res.json({ mensaje: 'Fotos adicionales guardadas' });
+});
+
 // --- ERRORES ---
 app.get('/api/trackings/:id/errores', (req, res) => {
   const rows = dbAll('SELECT * FROM errores WHERE tracking_id=? ORDER BY created_at DESC', [req.params.id]);
@@ -464,6 +550,60 @@ app.post('/api/trackings/:id/errores', upload.single('foto'), (req, res) => {
     [id, req.params.id, detalle_sku_id || null, tipo_error, path_foto, comentarios]);
 
   res.json({ id, path_fotografia: path_foto, mensaje: 'Error registrado' });
+});
+
+// --- RETRABAJOS ---
+app.get('/api/catalogo/retrabajos/:tipo', (req, res) => {
+  const tipo = req.params.tipo.toLowerCase();
+  res.json(CATALOGO_RETRABAJOS[tipo] || []);
+});
+
+app.get('/api/retrabajos', (req, res) => {
+  const { estatus, cliente_id, tracking_id } = req.query;
+  let sql = `
+    SELECT r.*,
+           t.tracking_number, t.caja_id, t.operador,
+           c.nombre as cliente_nombre, c.tipo_mercancia,
+           MIN(e.path_fotografia) as foto_evidencia
+    FROM retrabajos r
+    JOIN trackings t ON r.tracking_id = t.id
+    JOIN clientes c ON r.cliente_id = c.id
+    LEFT JOIN errores e ON e.detalle_sku_id = r.detalle_sku_id AND e.tracking_id = r.tracking_id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (estatus)     { sql += ' AND r.estatus = ?';     params.push(estatus); }
+  if (cliente_id)  { sql += ' AND r.cliente_id = ?';  params.push(cliente_id); }
+  if (tracking_id) { sql += ' AND r.tracking_id = ?'; params.push(tracking_id); }
+  sql += ' GROUP BY r.id ORDER BY r.created_at DESC';
+  res.json(dbAll(sql, params));
+});
+
+app.get('/api/trackings/:id/retrabajos', (req, res) => {
+  const rows = dbAll('SELECT * FROM retrabajos WHERE tracking_id=? ORDER BY created_at', [req.params.id]);
+  res.json(rows);
+});
+
+app.post('/api/trackings/:id/retrabajos', (req, res) => {
+  const { detalle_sku_id, sku_code, descripcion_sku, retrabajos_seleccionados, retrabajo_otro } = req.body;
+  const tracking = dbGet('SELECT * FROM trackings WHERE id=?', [req.params.id]);
+  if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+
+  const id = uuidv4();
+  const rtJson = JSON.stringify(Array.isArray(retrabajos_seleccionados) ? retrabajos_seleccionados : []);
+  dbRun(`INSERT INTO retrabajos (id,tracking_id,detalle_sku_id,cliente_id,sku_code,descripcion_sku,retrabajos_seleccionados,retrabajo_otro,estatus)
+    VALUES (?,?,?,?,?,?,?,?,'Pendiente')`,
+    [id, req.params.id, detalle_sku_id || null, tracking.cliente_id,
+     sku_code || null, descripcion_sku || null, rtJson, retrabajo_otro || null]);
+
+  res.json({ id, mensaje: 'Retrabajo registrado' });
+});
+
+app.put('/api/retrabajos/:id', (req, res) => {
+  const { estatus } = req.body;
+  if (!estatus) return res.status(400).json({ error: 'estatus requerido' });
+  dbRun(`UPDATE retrabajos SET estatus=?, updated_at=datetime('now') WHERE id=?`, [estatus, req.params.id]);
+  res.json({ mensaje: 'Estatus actualizado' });
 });
 
 // --- DISCREPANCIAS ---
@@ -606,8 +746,37 @@ app.get('/api/reportes/manifiesto/:id', (req, res) => {
   const detalles = dbAll('SELECT * FROM detalle_skus WHERE tracking_id=? ORDER BY created_at', [req.params.id]);
   const errores = dbAll('SELECT * FROM errores WHERE tracking_id=? ORDER BY created_at', [req.params.id]);
   const discrepancias = dbAll('SELECT * FROM alertas_discrepancia WHERE tracking_id=?', [req.params.id]);
+  const retrabajos = dbAll(`
+    SELECT r.*, MIN(e.path_fotografia) as foto_evidencia
+    FROM retrabajos r
+    LEFT JOIN errores e ON e.detalle_sku_id = r.detalle_sku_id AND e.tracking_id = r.tracking_id
+    WHERE r.tracking_id=?
+    GROUP BY r.id
+    ORDER BY r.created_at
+  `, [req.params.id]);
 
-  res.json({ tracking, detalles, errores, discrepancias });
+  res.json({ tracking, detalles, errores, discrepancias, retrabajos });
+});
+
+// Reporte masivo de retrabajos
+app.get('/api/reportes/retrabajos', (req, res) => {
+  const { fecha_desde, fecha_hasta, cliente_id, estatus } = req.query;
+  let sql = `
+    SELECT r.*,
+           t.tracking_number, t.caja_id, t.operador,
+           c.nombre as cliente_nombre, c.tipo_mercancia
+    FROM retrabajos r
+    JOIN trackings t ON r.tracking_id = t.id
+    JOIN clientes c ON r.cliente_id = c.id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (fecha_desde) { sql += " AND date(r.created_at) >= ?"; params.push(fecha_desde); }
+  if (fecha_hasta) { sql += " AND date(r.created_at) <= ?"; params.push(fecha_hasta); }
+  if (cliente_id)  { sql += ' AND r.cliente_id = ?'; params.push(cliente_id); }
+  if (estatus)     { sql += ' AND r.estatus = ?'; params.push(estatus); }
+  sql += ' ORDER BY r.created_at DESC';
+  res.json(dbAll(sql, params));
 });
 
 // Dashboard: hora por hora
