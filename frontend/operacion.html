@@ -378,14 +378,6 @@ async function renderInicio() {
           </div>
         </div>
 
-        <div class="form-group" id="caja-group" style="display:none">
-          <label class="form-label">Caja / Pallet *</label>
-          <select class="form-control" id="ini-caja">
-            <option value="">— Seleccionar caja —</option>
-          </select>
-          <div id="caja-hint" class="form-hint"></div>
-        </div>
-
         <div class="form-group">
           <label class="form-label">Tracking Number *</label>
           <input type="text" class="form-control form-control-mono" id="ini-tracking" placeholder="TRK-2025-XXXXX" style="text-transform:uppercase">
@@ -420,17 +412,12 @@ async function renderInicio() {
   document.getElementById('fase-inspeccion').classList.add('hidden');
 }
 
-async function onClienteChange(sel) {
+function onClienteChange(sel) {
   const opt = sel.selectedOptions[0];
   const preview = document.getElementById('cliente-config-preview');
   const badges = document.getElementById('cliente-badges');
-  const cajaGroup = document.getElementById('caja-group');
 
-  if (!opt.value) {
-    preview.classList.add('hidden');
-    cajaGroup.style.display = 'none';
-    return;
-  }
+  if (!opt.value) { preview.classList.add('hidden'); return; }
 
   const grado = parseInt(opt.dataset.grado);
   const info = GRADO_INFO[grado];
@@ -448,27 +435,6 @@ async function onClienteChange(sel) {
     <span class="badge badge-muted">${esPallet ? '⬛ Pallet' : '📦 Caja'}</span>
   `;
   preview.classList.remove('hidden');
-
-  // Cargar cajas abiertas del cliente
-  cajaGroup.style.display = '';
-  const cajaSelect = document.getElementById('ini-caja');
-  const cajaHint = document.getElementById('caja-hint');
-  cajaSelect.innerHTML = '<option value="">— Cargando... —</option>';
-  try {
-    const cajas = await API.get(`/cajas?cliente_id=${opt.value}&estatus=Abierta`);
-    if (cajas.length === 0) {
-      cajaSelect.innerHTML = '<option value="">— Sin cajas disponibles —</option>';
-      cajaHint.innerHTML = `<span style="color:var(--accent-amber)">No hay cajas abiertas para este cliente. <a href="cajas.html" style="color:var(--accent-cyan)">Crear una en Cajas/Pallets →</a></span>`;
-    } else {
-      const tipoBadgeText = { 'Damage': 'DMG', 'Good Condition': 'GDC', 'Non-brand merchandise': 'NBM' };
-      cajaSelect.innerHTML = '<option value="">— Seleccionar caja —</option>' +
-        cajas.map(c => `<option value="${c.id}">[${tipoBadgeText[c.tipo]||c.tipo}] ${c.nombre}</option>`).join('');
-      cajaHint.innerHTML = '';
-    }
-  } catch(e) {
-    cajaSelect.innerHTML = '<option value="">— Error al cargar —</option>';
-    cajaHint.innerHTML = '';
-  }
 }
 
 async function iniciarTracking() {
@@ -477,15 +443,10 @@ async function iniciarTracking() {
   const cantidadRaw = document.getElementById('ini-cantidad').value;
   const cantidad = cantidadRaw !== '' ? parseInt(cantidadRaw) : 0;
   const operador = document.getElementById('ini-operador').value.trim() || 'Operador';
-  const cajaPalletId = document.getElementById('ini-caja')?.value || '';
   const alertEl = document.getElementById('alert-inicio');
 
   if (!clienteId || !trackingNum) {
     alertEl.innerHTML = '<div class="alert alert-error">Todos los campos marcados con * son requeridos</div>';
-    return;
-  }
-  if (!cajaPalletId) {
-    alertEl.innerHTML = '<div class="alert alert-error">Selecciona una Caja/Pallet para continuar. <a href="cajas.html" style="color:var(--accent-cyan)">Crear una →</a></div>';
     return;
   }
 
@@ -496,7 +457,6 @@ async function iniciarTracking() {
       cliente_id: clienteId,
       operador,
       cantidad_declarada: cantidad,
-      caja_pallet_id: cajaPalletId
     });
 
     state.tracking = await API.get(`/trackings/${res.id}`);
@@ -1439,15 +1399,13 @@ async function guardarDiscrepancia() {
 // ========================
 // CERRAR TRACKING
 // ========================
-function cerrarTracking() {
-  // Verificar que no esté vacío (debe tener SKUs o mercancía ajena registrada)
+async function cerrarTracking() {
   const tieneMercanciaAjena = state.errores.some(e => e.tipo_error === 'Mercancía ajena');
   if (state.detalles.length === 0 && !tieneMercanciaAjena) {
     toast('No se puede cerrar: registra al menos un SKU o marca el producto como "No corresponde al cliente"', 'error');
     return;
   }
 
-  // Verificar errores sin foto
   const erroresSinFoto = state.errores.filter(e => !e.path_fotografia);
   if (erroresSinFoto.length > 0) {
     toast(`Hay ${erroresSinFoto.length} error(es) sin fotografía de evidencia`, 'error');
@@ -1457,44 +1415,66 @@ function cerrarTracking() {
   const t = state.tracking;
   const modalBody = document.querySelector('#modal-cierre .modal-body');
 
-  if (t.caja_pallet_id) {
-    // Caja ya asignada desde Phase 1
-    modalBody.innerHTML = `
-      <p style="margin:0 0 16px;color:var(--text-secondary);font-size:14px">
-        Una vez cerrado no se podrán agregar más SKUs.
-      </p>
-      <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px">
-        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Caja / Pallet asignada</div>
-        <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;color:var(--accent-cyan)">${t.caja_id || '—'}</div>
-      </div>`;
-  } else {
-    // Tracking antiguo — pedir número de caja manualmente
-    const esPallet = t.tipo_almacenamiento === 'pallet';
-    modalBody.innerHTML = `
-      <p style="margin:0 0 16px;color:var(--text-secondary);font-size:14px">
-        Ingresa el número de identificación antes de cerrar. Una vez cerrado no se podrán agregar más SKUs.
-      </p>
-      <div class="form-group">
-        <label class="form-label">${esPallet ? 'Número de Pallet *' : 'Número de Caja *'}</label>
-        <input type="text" class="form-control form-control-mono" id="cierre-caja-input"
-          placeholder="${esPallet ? 'PALLET-001' : 'CAJA-001'}"
-          onkeydown="if(event.key==='Enter') confirmarCierre()">
-      </div>`;
+  const tieneDanado  = state.errores.some(e => e.tipo_error === 'Calidad' || e.tipo_error === 'Otro');
+  const tieneNoMarca = state.errores.some(e => e.tipo_error === 'Mercancía ajena');
+
+  let tieneRetrabajos = false;
+  if (tieneDanado) {
+    try {
+      const rts = await API.get(`/trackings/${t.id}/retrabajos`);
+      tieneRetrabajos = rts.length > 0;
+    } catch(e) {}
   }
+
+  // Piezas dañadas con retrabajo asignado se corrigen → Good Condition
+  const tipoCajaReq = (tieneDanado && !tieneRetrabajos) ? 'Damage'
+    : tieneNoMarca ? 'Non-brand merchandise'
+    : 'Good Condition';
+
+  const tipoCajaLabel = { 'Damage': 'Dañado (Damage)', 'Good Condition': 'Buen Estado (Good Condition)', 'Non-brand merchandise': 'Sin Marca (Non-brand)' }[tipoCajaReq];
+  const tipoCajaHint = (tieneDanado && tieneRetrabajos)
+    ? 'Piezas con retrabajo asignado — se clasifican como buen estado tras corrección'
+    : '';
+
+  const tipoBadgeText = { 'Damage': 'DMG', 'Good Condition': 'GDC', 'Non-brand merchandise': 'NBM' };
+  let optionsHtml = '<option value="">— Cargando... —</option>';
+  try {
+    const cajas = await API.get(`/cajas?cliente_id=${t.cliente_id}&estatus=Abierta&tipo=${encodeURIComponent(tipoCajaReq)}`);
+    if (cajas.length === 0) {
+      optionsHtml = `<option value="">— Sin cajas "${tipoBadgeText[tipoCajaReq]}" abiertas —</option>`;
+    } else {
+      optionsHtml = '<option value="">— Seleccionar caja —</option>' +
+        cajas.map(c => `<option value="${c.id}">[${tipoBadgeText[c.tipo]||c.tipo}] ${c.nombre}</option>`).join('');
+    }
+  } catch(e) {
+    optionsHtml = '<option value="">— Error al cargar —</option>';
+  }
+
+  modalBody.innerHTML = `
+    <p style="margin:0 0 12px;color:var(--text-secondary);font-size:14px">
+      Selecciona la caja/pallet donde se guardará esta inspección. Una vez cerrado no se podrán agregar más SKUs.
+    </p>
+    <div style="padding:8px 12px;background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.2);border-radius:var(--radius-sm);margin-bottom:14px;font-size:12px;color:var(--text-secondary)">
+      Tipo requerido: <strong style="color:var(--text-primary)">${tipoCajaLabel}</strong>
+      ${tipoCajaHint ? `<div style="margin-top:4px;color:var(--accent-amber)">${tipoCajaHint}</div>` : ''}
+    </div>
+    <div class="form-group">
+      <label class="form-label">Caja / Pallet *</label>
+      <select class="form-control form-control-mono" id="cierre-caja-select">
+        ${optionsHtml}
+      </select>
+      <div class="form-hint"><a href="cajas.html" target="_blank" style="color:var(--accent-cyan)">Administrar cajas →</a></div>
+    </div>`;
 
   openModal('modal-cierre');
 }
 
 async function confirmarCierre() {
   try {
-    const payload = {};
-    const inputEl = document.getElementById('cierre-caja-input');
-    if (inputEl) {
-      const cajaId = inputEl.value.trim();
-      if (!cajaId) { toast('El número de caja/pallet es requerido', 'error'); return; }
-      payload.caja_id = cajaId;
-    }
-    await API.post(`/trackings/${state.tracking.id}/cerrar`, payload);
+    const selectEl = document.getElementById('cierre-caja-select');
+    const cajaPalletId = selectEl?.value || '';
+    if (!cajaPalletId) { toast('Selecciona una caja/pallet para cerrar', 'error'); return; }
+    await API.post(`/trackings/${state.tracking.id}/cerrar`, { caja_pallet_id: cajaPalletId });
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);
     closeModal('modal-cierre');
     toast('Tracking cerrado exitosamente ✓');

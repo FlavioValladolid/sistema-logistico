@@ -504,7 +504,7 @@ app.get('/api/trackings/:id', (req, res) => {
 });
 
 app.post('/api/trackings', (req, res) => {
-  const { tracking_number, cliente_id, operador, cantidad_declarada, caja_pallet_id } = req.body;
+  const { tracking_number, cliente_id, operador, cantidad_declarada } = req.body;
   if (!tracking_number || !cliente_id) {
     return res.status(400).json({ error: 'tracking_number y cliente_id son requeridos' });
   }
@@ -512,18 +512,9 @@ app.post('/api/trackings', (req, res) => {
   const existing = dbGet('SELECT id FROM trackings WHERE tracking_number = ?', [tracking_number]);
   if (existing) return res.status(400).json({ error: 'Tracking number ya registrado' });
 
-  let cajaNombre = '';
-  if (caja_pallet_id) {
-    const caja = dbGet('SELECT * FROM cajas_pallets WHERE id = ?', [caja_pallet_id]);
-    if (!caja) return res.status(400).json({ error: 'Caja no encontrada' });
-    if (caja.cliente_id !== cliente_id) return res.status(400).json({ error: 'La caja no pertenece a este cliente' });
-    if (caja.estatus !== 'Abierta') return res.status(400).json({ error: 'La caja está cerrada' });
-    cajaNombre = caja.nombre;
-  }
-
   const id = uuidv4();
   dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final) VALUES (?,?,?,?,?,?,?,?)`,
-    [id, tracking_number, cliente_id, cajaNombre, caja_pallet_id || null, operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0]);
+    [id, tracking_number, cliente_id, '', null, operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0]);
   res.json({ id, mensaje: 'Tracking creado' });
 });
 
@@ -555,16 +546,32 @@ app.post('/api/trackings/:id/cerrar', (req, res) => {
     return res.status(400).json({ error: 'Hay errores sin fotografía de evidencia. No se puede cerrar.' });
   }
 
-  if (tracking.caja_pallet_id) {
-    // Caja ya asignada desde Phase 1, solo cerrar
-    dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now') WHERE id=?`, [req.params.id]);
-  } else {
-    const { caja_id } = req.body;
-    if (!caja_id || !caja_id.trim()) {
-      return res.status(400).json({ error: 'El número de caja/pallet es requerido para cerrar el tracking' });
-    }
-    dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now'), caja_id=? WHERE id=?`, [caja_id.trim(), req.params.id]);
+  const { caja_pallet_id } = req.body;
+  if (!caja_pallet_id) {
+    return res.status(400).json({ error: 'Selecciona una caja/pallet para cerrar el tracking' });
   }
+  const caja = dbGet('SELECT * FROM cajas_pallets WHERE id = ?', [caja_pallet_id]);
+  if (!caja) return res.status(400).json({ error: 'Caja no encontrada' });
+  if (caja.cliente_id !== tracking.cliente_id) return res.status(400).json({ error: 'La caja no pertenece a este cliente' });
+  if (caja.estatus !== 'Abierta') return res.status(400).json({ error: 'La caja está cerrada' });
+
+  // Validar que el tipo de caja corresponda al contenido del tracking
+  const erroresTracking = dbAll('SELECT tipo_error FROM errores WHERE tracking_id=?', [req.params.id]);
+  const tieneDanado  = erroresTracking.some(e => e.tipo_error === 'Calidad' || e.tipo_error === 'Otro');
+  const tieneNoMarca = erroresTracking.some(e => e.tipo_error === 'Mercancía ajena');
+  const tieneRetrabajos = (dbGet('SELECT COUNT(*) as cnt FROM retrabajos WHERE tracking_id=?', [req.params.id])?.cnt || 0) > 0;
+  // Piezas dañadas con retrabajo asignado se corrigen → Good Condition
+  const tipoRequerido = (tieneDanado && !tieneRetrabajos) ? 'Damage'
+    : tieneNoMarca ? 'Non-brand merchandise'
+    : 'Good Condition';
+
+  if (caja.tipo !== tipoRequerido) {
+    const labels = { 'Damage': 'Dañado (Damage)', 'Good Condition': 'Buen Estado (Good Condition)', 'Non-brand merchandise': 'Sin Marca (Non-brand)' };
+    return res.status(400).json({ error: `Este tracking debe guardarse en una caja de tipo "${labels[tipoRequerido]}" según su contenido. La caja seleccionada es "${labels[caja.tipo]}".` });
+  }
+
+  dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now'), caja_id=?, caja_pallet_id=? WHERE id=?`,
+    [caja.nombre, caja_pallet_id, req.params.id]);
   res.json({ mensaje: 'Tracking cerrado exitosamente' });
 });
 
