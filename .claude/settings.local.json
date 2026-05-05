@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git -C /Users/flaviovalladolid/Downloads/sistema-logistico ls-files)",
+      "Bash(git:*)"
+    ]
+  }
+}
