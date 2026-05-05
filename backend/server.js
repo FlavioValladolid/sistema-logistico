@@ -164,6 +164,21 @@ async function initDB() {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS cajas_pallets (
+      id TEXT PRIMARY KEY,
+      cliente_id TEXT NOT NULL,
+      nombre TEXT NOT NULL UNIQUE,
+      tipo TEXT NOT NULL,
+      consecutivo INTEGER NOT NULL,
+      estatus TEXT DEFAULT 'Abierta',
+      created_at TEXT DEFAULT (datetime('now')),
+      closed_at TEXT,
+      FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+    )
+  `);
+  try { db.run('ALTER TABLE trackings ADD COLUMN caja_pallet_id TEXT'); } catch(e) {}
+
   // Recrear tabla retrabajos con nuevo esquema (DROP seguro: migración controlada)
   db.run('DROP TABLE IF EXISTS retrabajos');
   db.run(`
@@ -256,6 +271,12 @@ function dbRun(sql, params = []) {
     console.error('DB Run Error:', e.message);
     return false;
   }
+}
+
+function generarNombreCaja(clienteNombre, tipo, consecutivo) {
+  const iniciales = clienteNombre.replace(/\s+/g, '').substring(0, 3).toUpperCase().padEnd(3, 'X');
+  const abr = { 'Damage': 'DMG', 'Good Condition': 'GDC', 'Non-brand merchandise': 'NBM' }[tipo] || 'UNK';
+  return `${iniciales}-${abr}-${String(consecutivo).padStart(3, '0')}`;
 }
 
 // ===================== RUTAS API =====================
@@ -375,6 +396,93 @@ app.delete('/api/skus/:id', (req, res) => {
   res.json({ mensaje: 'SKU eliminado' });
 });
 
+// --- CAJAS / PALLETS ---
+app.get('/api/cajas', (req, res) => {
+  const { cliente_id, tipo, estatus } = req.query;
+  let sql = `SELECT cp.*, c.nombre as cliente_nombre FROM cajas_pallets cp JOIN clientes c ON cp.cliente_id = c.id WHERE 1=1`;
+  const params = [];
+  if (cliente_id) { sql += ' AND cp.cliente_id = ?'; params.push(cliente_id); }
+  if (tipo)       { sql += ' AND cp.tipo = ?'; params.push(tipo); }
+  if (estatus)    { sql += ' AND cp.estatus = ?'; params.push(estatus); }
+  sql += ' ORDER BY cp.created_at DESC';
+  res.json(dbAll(sql, params));
+});
+
+app.get('/api/cajas/validar', (req, res) => {
+  const { cliente_id, caja_id } = req.query;
+  const caja = dbGet('SELECT * FROM cajas_pallets WHERE id = ?', [caja_id]);
+  if (!caja) return res.status(404).json({ error: 'Caja no encontrada' });
+  if (caja.cliente_id !== cliente_id) return res.status(400).json({ error: 'La caja no pertenece a este cliente' });
+  if (caja.estatus !== 'Abierta') return res.status(400).json({ error: 'La caja está cerrada' });
+  res.json({ valida: true, caja });
+});
+
+app.get('/api/cajas/:id/qr', (req, res) => {
+  const caja = dbGet('SELECT nombre FROM cajas_pallets WHERE id = ?', [req.params.id]);
+  if (!caja) return res.status(404).json({ error: 'Caja no encontrada' });
+  res.json({ qr_text: caja.nombre });
+});
+
+app.get('/api/cajas/:id', (req, res) => {
+  const row = dbGet(`SELECT cp.*, c.nombre as cliente_nombre FROM cajas_pallets cp JOIN clientes c ON cp.cliente_id = c.id WHERE cp.id = ?`, [req.params.id]);
+  if (!row) return res.status(404).json({ error: 'Caja no encontrada' });
+  res.json(row);
+});
+
+app.post('/api/cajas', (req, res) => {
+  const { cliente_id, tipo } = req.body;
+  if (!cliente_id || !tipo) return res.status(400).json({ error: 'cliente_id y tipo son requeridos' });
+  if (!['Damage', 'Good Condition', 'Non-brand merchandise'].includes(tipo))
+    return res.status(400).json({ error: 'Tipo no válido' });
+
+  const cliente = dbGet('SELECT * FROM clientes WHERE id = ?', [cliente_id]);
+  if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+
+  const lastCons = dbGet('SELECT MAX(consecutivo) as max FROM cajas_pallets WHERE cliente_id = ? AND tipo = ?', [cliente_id, tipo]);
+  const consecutivo = (lastCons?.max || 0) + 1;
+  const nombre = generarNombreCaja(cliente.nombre, tipo, consecutivo);
+
+  const id = uuidv4();
+  dbRun('INSERT INTO cajas_pallets (id,cliente_id,nombre,tipo,consecutivo,estatus) VALUES (?,?,?,?,?,?)',
+    [id, cliente_id, nombre, tipo, consecutivo, 'Abierta']);
+
+  const created = dbGet(`SELECT cp.*, c.nombre as cliente_nombre FROM cajas_pallets cp JOIN clientes c ON cp.cliente_id = c.id WHERE cp.id = ?`, [id]);
+  res.json(created);
+});
+
+app.put('/api/cajas/:id/cerrar', (req, res) => {
+  const caja = dbGet('SELECT * FROM cajas_pallets WHERE id = ?', [req.params.id]);
+  if (!caja) return res.status(404).json({ error: 'Caja no encontrada' });
+  if (caja.estatus === 'Cerrada') return res.status(400).json({ error: 'La caja ya está cerrada' });
+  dbRun("UPDATE cajas_pallets SET estatus='Cerrada', closed_at=datetime('now') WHERE id=?", [req.params.id]);
+  res.json({ mensaje: 'Caja cerrada' });
+});
+
+// Reporte por tipo de caja
+app.get('/api/reportes/tipo-caja', (req, res) => {
+  const { cliente_id, tipo, fecha_desde, fecha_hasta } = req.query;
+  let sql = `
+    SELECT cp.id, cp.nombre, cp.tipo, cp.consecutivo, cp.estatus,
+           cp.created_at, cp.closed_at,
+           c.nombre as cliente_nombre,
+           COUNT(DISTINCT t.id)         as num_trackings,
+           COUNT(DISTINCT d.id)         as num_skus,
+           COALESCE(SUM(d.cantidad), 0) as total_piezas
+    FROM cajas_pallets cp
+    JOIN clientes c ON cp.cliente_id = c.id
+    LEFT JOIN trackings t ON t.caja_pallet_id = cp.id
+    LEFT JOIN detalle_skus d ON d.tracking_id = t.id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (cliente_id)  { sql += ' AND cp.cliente_id = ?'; params.push(cliente_id); }
+  if (tipo)        { sql += ' AND cp.tipo = ?'; params.push(tipo); }
+  if (fecha_desde) { sql += " AND date(cp.created_at) >= ?"; params.push(fecha_desde); }
+  if (fecha_hasta) { sql += " AND date(cp.created_at) <= ?"; params.push(fecha_hasta); }
+  sql += ' GROUP BY cp.id ORDER BY cp.tipo, cp.created_at DESC';
+  res.json(dbAll(sql, params));
+});
+
 // --- TRACKINGS ---
 app.get('/api/trackings', (req, res) => {
   const rows = dbAll(`
@@ -396,7 +504,7 @@ app.get('/api/trackings/:id', (req, res) => {
 });
 
 app.post('/api/trackings', (req, res) => {
-  const { tracking_number, cliente_id, operador, cantidad_declarada } = req.body;
+  const { tracking_number, cliente_id, operador, cantidad_declarada, caja_pallet_id } = req.body;
   if (!tracking_number || !cliente_id) {
     return res.status(400).json({ error: 'tracking_number y cliente_id son requeridos' });
   }
@@ -404,9 +512,18 @@ app.post('/api/trackings', (req, res) => {
   const existing = dbGet('SELECT id FROM trackings WHERE tracking_number = ?', [tracking_number]);
   if (existing) return res.status(400).json({ error: 'Tracking number ya registrado' });
 
+  let cajaNombre = '';
+  if (caja_pallet_id) {
+    const caja = dbGet('SELECT * FROM cajas_pallets WHERE id = ?', [caja_pallet_id]);
+    if (!caja) return res.status(400).json({ error: 'Caja no encontrada' });
+    if (caja.cliente_id !== cliente_id) return res.status(400).json({ error: 'La caja no pertenece a este cliente' });
+    if (caja.estatus !== 'Abierta') return res.status(400).json({ error: 'La caja está cerrada' });
+    cajaNombre = caja.nombre;
+  }
+
   const id = uuidv4();
-  dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,operador,cantidad_declarada,cantidad_final) VALUES (?,?,?,?,?,?,?)`,
-    [id, tracking_number, cliente_id, '', operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0]);
+  dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final) VALUES (?,?,?,?,?,?,?,?)`,
+    [id, tracking_number, cliente_id, cajaNombre, caja_pallet_id || null, operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0]);
   res.json({ id, mensaje: 'Tracking creado' });
 });
 
@@ -438,12 +555,16 @@ app.post('/api/trackings/:id/cerrar', (req, res) => {
     return res.status(400).json({ error: 'Hay errores sin fotografía de evidencia. No se puede cerrar.' });
   }
 
-  const { caja_id } = req.body;
-  if (!caja_id || !caja_id.trim()) {
-    return res.status(400).json({ error: 'El número de caja/pallet es requerido para cerrar el tracking' });
+  if (tracking.caja_pallet_id) {
+    // Caja ya asignada desde Phase 1, solo cerrar
+    dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now') WHERE id=?`, [req.params.id]);
+  } else {
+    const { caja_id } = req.body;
+    if (!caja_id || !caja_id.trim()) {
+      return res.status(400).json({ error: 'El número de caja/pallet es requerido para cerrar el tracking' });
+    }
+    dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now'), caja_id=? WHERE id=?`, [caja_id.trim(), req.params.id]);
   }
-
-  dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now'), caja_id=? WHERE id=?`, [caja_id.trim(), req.params.id]);
   res.json({ mensaje: 'Tracking cerrado exitosamente' });
 });
 
@@ -657,6 +778,8 @@ app.get('/api/reportes/cajas', (req, res) => {
       t.cliente_id,
       MAX(c.nombre)                AS cliente_nombre,
       MAX(c.tipo_almacenamiento)   AS tipo_almacenamiento,
+      MAX(cp.tipo)                 AS tipo_caja,
+      MAX(cp.id)                   AS caja_pallet_id,
       COUNT(DISTINCT t.id)         AS num_trackings,
       GROUP_CONCAT(t.id, '|')      AS tracking_ids,
       GROUP_CONCAT(t.tracking_number, ', ') AS tracking_numbers,
@@ -666,6 +789,7 @@ app.get('/api/reportes/cajas', (req, res) => {
       MAX(t.impresa)               AS impresa
     FROM trackings t
     LEFT JOIN clientes c ON t.cliente_id = c.id
+    LEFT JOIN cajas_pallets cp ON cp.nombre = t.caja_id
     LEFT JOIN detalle_skus d ON d.tracking_id = t.id
     ${where}
     GROUP BY t.caja_id, t.cliente_id

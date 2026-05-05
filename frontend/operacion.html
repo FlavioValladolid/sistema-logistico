@@ -371,11 +371,19 @@ async function renderInicio() {
           <label class="form-label">Cliente / Proveedor *</label>
           <select class="form-control" id="ini-cliente" onchange="onClienteChange(this)">
             <option value="">— Seleccionar cliente —</option>
-            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}" data-almacenamiento="${c.tipo_almacenamiento || 'caja'}">${c.nombre}</option>`).join('')}
+            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}" data-almacenamiento="${c.tipo_almacenamiento || 'caja'}" data-nombre="${c.nombre}">${c.nombre}</option>`).join('')}
           </select>
           <div id="cliente-config-preview" class="mt-8 hidden">
             <div style="display:flex;gap:8px;flex-wrap:wrap" id="cliente-badges"></div>
           </div>
+        </div>
+
+        <div class="form-group" id="caja-group" style="display:none">
+          <label class="form-label">Caja / Pallet *</label>
+          <select class="form-control" id="ini-caja">
+            <option value="">— Seleccionar caja —</option>
+          </select>
+          <div id="caja-hint" class="form-hint"></div>
         </div>
 
         <div class="form-group">
@@ -412,11 +420,17 @@ async function renderInicio() {
   document.getElementById('fase-inspeccion').classList.add('hidden');
 }
 
-function onClienteChange(sel) {
+async function onClienteChange(sel) {
   const opt = sel.selectedOptions[0];
   const preview = document.getElementById('cliente-config-preview');
   const badges = document.getElementById('cliente-badges');
-  if (!opt.value) { preview.classList.add('hidden'); return; }
+  const cajaGroup = document.getElementById('caja-group');
+
+  if (!opt.value) {
+    preview.classList.add('hidden');
+    cajaGroup.style.display = 'none';
+    return;
+  }
 
   const grado = parseInt(opt.dataset.grado);
   const info = GRADO_INFO[grado];
@@ -434,6 +448,27 @@ function onClienteChange(sel) {
     <span class="badge badge-muted">${esPallet ? '⬛ Pallet' : '📦 Caja'}</span>
   `;
   preview.classList.remove('hidden');
+
+  // Cargar cajas abiertas del cliente
+  cajaGroup.style.display = '';
+  const cajaSelect = document.getElementById('ini-caja');
+  const cajaHint = document.getElementById('caja-hint');
+  cajaSelect.innerHTML = '<option value="">— Cargando... —</option>';
+  try {
+    const cajas = await API.get(`/cajas?cliente_id=${opt.value}&estatus=Abierta`);
+    if (cajas.length === 0) {
+      cajaSelect.innerHTML = '<option value="">— Sin cajas disponibles —</option>';
+      cajaHint.innerHTML = `<span style="color:var(--accent-amber)">No hay cajas abiertas para este cliente. <a href="cajas.html" style="color:var(--accent-cyan)">Crear una en Cajas/Pallets →</a></span>`;
+    } else {
+      const tipoBadgeText = { 'Damage': 'DMG', 'Good Condition': 'GDC', 'Non-brand merchandise': 'NBM' };
+      cajaSelect.innerHTML = '<option value="">— Seleccionar caja —</option>' +
+        cajas.map(c => `<option value="${c.id}">[${tipoBadgeText[c.tipo]||c.tipo}] ${c.nombre}</option>`).join('');
+      cajaHint.innerHTML = '';
+    }
+  } catch(e) {
+    cajaSelect.innerHTML = '<option value="">— Error al cargar —</option>';
+    cajaHint.innerHTML = '';
+  }
 }
 
 async function iniciarTracking() {
@@ -442,10 +477,15 @@ async function iniciarTracking() {
   const cantidadRaw = document.getElementById('ini-cantidad').value;
   const cantidad = cantidadRaw !== '' ? parseInt(cantidadRaw) : 0;
   const operador = document.getElementById('ini-operador').value.trim() || 'Operador';
+  const cajaPalletId = document.getElementById('ini-caja')?.value || '';
   const alertEl = document.getElementById('alert-inicio');
 
   if (!clienteId || !trackingNum) {
     alertEl.innerHTML = '<div class="alert alert-error">Todos los campos marcados con * son requeridos</div>';
+    return;
+  }
+  if (!cajaPalletId) {
+    alertEl.innerHTML = '<div class="alert alert-error">Selecciona una Caja/Pallet para continuar. <a href="cajas.html" style="color:var(--accent-cyan)">Crear una →</a></div>';
     return;
   }
 
@@ -455,7 +495,8 @@ async function iniciarTracking() {
       tracking_number: trackingNum,
       cliente_id: clienteId,
       operador,
-      cantidad_declarada: cantidad
+      cantidad_declarada: cantidad,
+      caja_pallet_id: cajaPalletId
     });
 
     state.tracking = await API.get(`/trackings/${res.id}`);
@@ -753,8 +794,12 @@ function renderInspeccion() {
           <span class="info-val" style="color:var(--accent-cyan)">${t.tracking_number}</span>
         </div>
         <div class="info-row">
-          <span class="info-key">${t.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja'}</span>
-          <span class="info-val">${t.caja_id || '<span style="color:var(--text-muted);font-style:italic">Al cerrar</span>'}</span>
+          <span class="info-key">Caja / Pallet</span>
+          <span class="info-val">
+            ${t.caja_id
+              ? `<span style="font-family:'IBM Plex Mono',monospace">${t.caja_id}</span>`
+              : '<span style="color:var(--text-muted);font-style:italic">Sin asignar</span>'}
+          </span>
         </div>
         <div class="info-row">
           <span class="info-key">Grado</span>
@@ -1409,28 +1454,51 @@ function cerrarTracking() {
     return;
   }
 
-  // Determinar si es pallet o caja
-  const esPallet = state.tracking.tipo_almacenamiento === 'pallet';
-  document.getElementById('cierre-caja-label').textContent = esPallet ? 'Número de Pallet *' : 'Número de Caja *';
-  document.getElementById('cierre-caja-input').placeholder = esPallet ? 'PALLET-001' : 'CAJA-001';
-  document.getElementById('cierre-caja-input').value = '';
+  const t = state.tracking;
+  const modalBody = document.querySelector('#modal-cierre .modal-body');
+
+  if (t.caja_pallet_id) {
+    // Caja ya asignada desde Phase 1
+    modalBody.innerHTML = `
+      <p style="margin:0 0 16px;color:var(--text-secondary);font-size:14px">
+        Una vez cerrado no se podrán agregar más SKUs.
+      </p>
+      <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px 16px">
+        <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px">Caja / Pallet asignada</div>
+        <div style="font-family:'IBM Plex Mono',monospace;font-size:18px;font-weight:700;color:var(--accent-cyan)">${t.caja_id || '—'}</div>
+      </div>`;
+  } else {
+    // Tracking antiguo — pedir número de caja manualmente
+    const esPallet = t.tipo_almacenamiento === 'pallet';
+    modalBody.innerHTML = `
+      <p style="margin:0 0 16px;color:var(--text-secondary);font-size:14px">
+        Ingresa el número de identificación antes de cerrar. Una vez cerrado no se podrán agregar más SKUs.
+      </p>
+      <div class="form-group">
+        <label class="form-label">${esPallet ? 'Número de Pallet *' : 'Número de Caja *'}</label>
+        <input type="text" class="form-control form-control-mono" id="cierre-caja-input"
+          placeholder="${esPallet ? 'PALLET-001' : 'CAJA-001'}"
+          onkeydown="if(event.key==='Enter') confirmarCierre()">
+      </div>`;
+  }
+
   openModal('modal-cierre');
 }
 
 async function confirmarCierre() {
-  const cajaId = document.getElementById('cierre-caja-input').value.trim();
-  if (!cajaId) {
-    toast('El número de caja/pallet es requerido', 'error');
-    return;
-  }
-
   try {
-    await API.post(`/trackings/${state.tracking.id}/cerrar`, { caja_id: cajaId });
+    const payload = {};
+    const inputEl = document.getElementById('cierre-caja-input');
+    if (inputEl) {
+      const cajaId = inputEl.value.trim();
+      if (!cajaId) { toast('El número de caja/pallet es requerido', 'error'); return; }
+      payload.caja_id = cajaId;
+    }
+    await API.post(`/trackings/${state.tracking.id}/cerrar`, payload);
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);
     closeModal('modal-cierre');
     toast('Tracking cerrado exitosamente ✓');
     renderInspeccion();
-    // Scroll al top para que el botón "Iniciar otra operación" sea visible
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch(e) {
     toast(e.error || 'Error al cerrar', 'error');
