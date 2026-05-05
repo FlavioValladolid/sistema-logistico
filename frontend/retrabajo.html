@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Retrabajos — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+  <style>
+    .est-badge {
+      display:inline-flex;align-items:center;gap:4px;
+      padding:3px 9px;border-radius:4px;
+      font-family:'IBM Plex Mono',monospace;font-size:10px;font-weight:700;
+      letter-spacing:.04em;text-transform:uppercase;white-space:nowrap;
+    }
+    .est-Pendiente  { background:rgba(255,171,0,.12); color:#ffab00; border:1px solid rgba(255,171,0,.35); }
+    .est-En_proceso { background:rgba(68,138,255,.12); color:#448aff; border:1px solid rgba(68,138,255,.35); }
+    .est-Completado { background:rgba(0,230,118,.12); color:#00e676; border:1px solid rgba(0,230,118,.35); }
+    .est-Rechazado  { background:rgba(255,61,61,.12);  color:#ff3d3d; border:1px solid rgba(255,61,61,.35); }
+
+    .rt-card {
+      background:var(--bg-elevated);border:1px solid var(--border);
+      border-radius:var(--radius-sm);padding:14px 16px;
+      display:grid;grid-template-columns:80px 1fr auto;gap:14px;align-items:start;
+    }
+    .rt-card.Completado { border-left:3px solid rgba(0,230,118,.5); }
+    .rt-card.Rechazado  { border-left:3px solid rgba(255,61,61,.4); }
+    .rt-card.Pendiente  { border-left:3px solid rgba(255,171,0,.5); }
+    .rt-card.En_proceso { border-left:3px solid rgba(68,138,255,.5); }
+
+    .rt-foto {
+      width:80px;height:80px;object-fit:cover;border-radius:var(--radius-sm);
+      border:1px solid var(--border);cursor:pointer;
+    }
+    .rt-foto-placeholder {
+      width:80px;height:80px;background:var(--bg-card);border:1px dashed var(--border);
+      border-radius:var(--radius-sm);display:flex;align-items:center;justify-content:center;
+      font-size:20px;color:var(--text-muted);
+    }
+    .rt-chip {
+      display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;
+      background:rgba(255,171,0,.1);border:1px solid rgba(255,171,0,.25);color:#ffab00;
+    }
+    .stat-mini {
+      background:var(--bg-elevated);border:1px solid var(--border);
+      border-radius:var(--radius-sm);padding:12px 16px;text-align:center;
+    }
+    .stat-mini-val { font-family:'IBM Plex Mono',monospace;font-size:24px;font-weight:700; }
+    .stat-mini-lbl { font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.08em;margin-top:2px; }
+
+    .est-btn {
+      padding:5px 12px;border-radius:4px;font-size:11px;cursor:pointer;border:1px solid var(--border);
+      background:var(--bg-elevated);color:var(--text-secondary);transition:all .15s;
+      font-family:'IBM Plex Mono',monospace;font-weight:600;
+    }
+    .est-btn:hover { border-color:var(--accent-green);color:var(--accent-green); }
+    .est-btn.active-Pendiente  { background:rgba(255,171,0,.15);border-color:#ffab00;color:#ffab00; }
+    .est-btn.active-En_proceso { background:rgba(68,138,255,.15);border-color:#448aff;color:#448aff; }
+    .est-btn.active-Completado { background:rgba(0,230,118,.15);border-color:#00e676;color:#00e676; }
+    .est-btn.active-Rechazado  { background:rgba(255,61,61,.15);border-color:#ff3d3d;color:#ff3d3d; }
+  </style>
+</head>
+<body>
+<script src="js/app.js"></script>
+<script src="js/shell.js"></script>
+<script>
+buildShell('Retrabajos', 'RETRABAJOS', '');
+
+const content = document.getElementById('page-content');
+
+const ESTATUS_LIST = ['Pendiente', 'En proceso', 'Completado', 'Rechazado'];
+const ESTATUS_ICONS = { Pendiente: '⏳', 'En proceso': '🔧', Completado: '✓', Rechazado: '✕' };
+
+let allRetrabajos = [];
+let filtroEstatus = '';
+let filtroCliente = '';
+let clientesConRt = [];
+
+async function init() {
+  try {
+    clientesConRt = (await API.get('/clientes')).filter(c => c.modulo_retrabajo);
+  } catch(e) {}
+  loadRetrabajos();
+}
+
+async function loadRetrabajos() {
+  try {
+    const params = new URLSearchParams();
+    if (filtroEstatus)  params.append('estatus', filtroEstatus);
+    if (filtroCliente)  params.append('cliente_id', filtroCliente);
+    allRetrabajos = await API.get(`/retrabajos?${params}`);
+    render();
+  } catch(e) {
+    content.innerHTML = `<div class="alert alert-error">Error: ${e.error || e.message}</div>`;
+  }
+}
+
+function estBadge(est) {
+  const cls = est.replace(' ', '_');
+  return `<span class="est-badge est-${cls}">${ESTATUS_ICONS[est] || '·'} ${est}</span>`;
+}
+
+function rtChips(row) {
+  let lista = [];
+  try { lista = JSON.parse(row.retrabajos_seleccionados || '[]'); } catch(e) {}
+  if (row.retrabajo_otro) lista.push(`Otro: ${row.retrabajo_otro}`);
+  if (!lista.length) return '<span style="color:var(--text-muted);font-size:11px">—</span>';
+  return lista.map(r => `<span class="rt-chip">${r}</span>`).join(' ');
+}
+
+function render() {
+  const pendientes  = allRetrabajos.filter(r => r.estatus === 'Pendiente').length;
+  const enProceso   = allRetrabajos.filter(r => r.estatus === 'En proceso').length;
+  const completados = allRetrabajos.filter(r => r.estatus === 'Completado').length;
+  const rechazados  = allRetrabajos.filter(r => r.estatus === 'Rechazado').length;
+
+  content.innerHTML = `
+    <div class="flex justify-between items-center mb-24">
+      <div>
+        <h1 class="page-title">Módulo de Retrabajos</h1>
+        <p class="page-subtitle">Piezas en cola de corrección — seguimiento y actualización de estatus</p>
+      </div>
+    </div>
+
+    <!-- Stats -->
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+      <div class="stat-mini" style="cursor:pointer;border-color:${filtroEstatus===''?'var(--accent-green)':'var(--border)'}" onclick="setFiltroEstatus('')">
+        <div class="stat-mini-val">${allRetrabajos.length}</div>
+        <div class="stat-mini-lbl">Total</div>
+      </div>
+      <div class="stat-mini" style="cursor:pointer;border-color:${filtroEstatus==='Pendiente'?'#ffab00':'var(--border)'}" onclick="setFiltroEstatus('Pendiente')">
+        <div class="stat-mini-val" style="color:#ffab00">${pendientes}</div>
+        <div class="stat-mini-lbl">Pendientes</div>
+      </div>
+      <div class="stat-mini" style="cursor:pointer;border-color:${filtroEstatus==='En proceso'?'#448aff':'var(--border)'}" onclick="setFiltroEstatus('En proceso')">
+        <div class="stat-mini-val" style="color:#448aff">${enProceso}</div>
+        <div class="stat-mini-lbl">En proceso</div>
+      </div>
+      <div class="stat-mini" style="cursor:pointer;border-color:${filtroEstatus==='Completado'?'var(--accent-green)':'var(--border)'}" onclick="setFiltroEstatus('Completado')">
+        <div class="stat-mini-val" style="color:var(--accent-green)">${completados}</div>
+        <div class="stat-mini-lbl">Completados</div>
+      </div>
+    </div>
+
+    <!-- Filtros -->
+    <div class="card" style="padding:12px 16px;margin-bottom:16px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+        <select class="form-control" id="fil-estatus" style="width:180px" onchange="onFiltroChange()">
+          <option value="">Todos los estatus</option>
+          ${ESTATUS_LIST.map(e => `<option value="${e}" ${filtroEstatus===e?'selected':''}>${ESTATUS_ICONS[e]} ${e}</option>`).join('')}
+        </select>
+        <select class="form-control" id="fil-cliente" style="width:210px" onchange="onFiltroChange()">
+          <option value="">Todos los clientes</option>
+          ${clientesConRt.map(c => `<option value="${c.id}" ${filtroCliente===c.id?'selected':''}>${c.nombre}</option>`).join('')}
+        </select>
+        <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-muted);margin-left:auto">
+          ${allRetrabajos.length} pieza(s)
+        </span>
+      </div>
+    </div>
+
+    <!-- Lista -->
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${allRetrabajos.length === 0 ? `
+        <div class="empty-state" style="padding:64px 32px">
+          <div class="empty-state-icon">🔄</div>
+          <div class="empty-state-title">Sin piezas en retrabajo</div>
+          <div class="empty-state-text">
+            Cuando marques calidad como "Mala" y selecciones retrabajos en un cliente con el módulo activo, aparecerán aquí.
+          </div>
+        </div>
+      ` : allRetrabajos.map(r => {
+        const cls = r.estatus.replace(' ', '_');
+        return `
+        <div class="rt-card ${cls}">
+          <!-- Foto de evidencia -->
+          <div>
+            ${r.foto_evidencia
+              ? `<img class="rt-foto" src="${r.foto_evidencia}" onclick="window.open('${r.foto_evidencia}','_blank')" title="Ver foto de evidencia">`
+              : `<div class="rt-foto-placeholder">📷</div>`}
+          </div>
+
+          <!-- Info -->
+          <div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;flex-wrap:wrap">
+              <span style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--accent-cyan)">${r.sku_code || '—'}</span>
+              ${estBadge(r.estatus)}
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">${r.descripcion_sku || '—'}</div>
+
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:8px">
+              ${rtChips(r)}
+            </div>
+
+            <div style="display:flex;gap:12px;flex-wrap:wrap">
+              <span class="badge badge-muted" title="Tracking">📦 ${r.tracking_number}</span>
+              <span class="badge badge-muted">${r.cliente_nombre}</span>
+              ${r.caja_id ? `<span class="badge badge-muted">🗃 ${r.caja_id}</span>` : ''}
+              ${r.operador ? `<span class="badge badge-muted">👷 ${r.operador}</span>` : ''}
+              <span class="badge badge-muted" title="Fecha">📅 ${formatDate(r.created_at)}</span>
+            </div>
+          </div>
+
+          <!-- Cambio de estatus -->
+          <div style="display:flex;flex-direction:column;gap:4px;min-width:110px">
+            ${ESTATUS_LIST.map(est => {
+              const cls2 = est.replace(' ', '_');
+              const activo = r.estatus === est;
+              return `<button class="est-btn ${activo ? 'active-'+cls2 : ''}"
+                onclick="cambiarEstatus('${r.id}', '${est}')"
+                ${activo ? 'disabled' : ''}>
+                ${ESTATUS_ICONS[est]} ${est}
+              </button>`;
+            }).join('')}
+          </div>
+        </div>`;
+      }).join('')}
+    </div>
+  `;
+}
+
+function setFiltroEstatus(est) {
+  filtroEstatus = est;
+  document.getElementById('fil-estatus') && (document.getElementById('fil-estatus').value = est);
+  loadRetrabajos();
+}
+
+function onFiltroChange() {
+  filtroEstatus  = document.getElementById('fil-estatus')?.value  || '';
+  filtroCliente  = document.getElementById('fil-cliente')?.value  || '';
+  loadRetrabajos();
+}
+
+async function cambiarEstatus(id, estatus) {
+  try {
+    await API.put(`/retrabajos/${id}`, { estatus });
+    toast(`Estatus actualizado: ${estatus}`);
+    loadRetrabajos();
+  } catch(e) {
+    toast(e.error || 'Error al actualizar', 'error');
+  }
+}
+
+init();
+</script>
+</body>
+</html>
