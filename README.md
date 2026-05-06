@@ -24,6 +24,9 @@ Luego abrir: **http://localhost:3000**
 - Porcentaje de muestreo (solo G2)
 - Módulos opcionales: Calidad y Retrabajos
 - UPH (Unidades por Hora) — meta de productividad por operador
+- **Información de Paquete (configurable por cliente):**
+  - Número de Orden: si está activo, se captura obligatoriamente al iniciar la operación
+  - Tipo de Retorno (RMA / RTS): si está activo, se selecciona obligatoriamente al iniciar; si es RTS se requiere razón de retorno
 
 **Catálogo de SKUs**
 - Registro de productos por cliente
@@ -35,7 +38,9 @@ Luego abrir: **http://localhost:3000**
 
 **Flujo de un Tracking:**
 
-1. **Inicio** — Se selecciona cliente, operador, número de tracking y cantidad declarada
+1. **Inicio** — Se selecciona cliente, operador, número de tracking y cantidad declarada. Si el cliente tiene configurados campos de información de paquete, se solicitan también:
+   - **Número de Orden** (si está activado en el cliente)
+   - **Tipo de Retorno**: RMA o RTS (si está activado). Para RTS se requiere ingresar la razón de retorno.
 2. **Escaneo de SKUs** — Validación por excepción según grado del cliente:
    - G1: Solo datos logísticos, sin inspección de producto
    - G2: Inspección estadística (porcentaje configurable, default 30%)
@@ -61,12 +66,15 @@ Luego abrir: **http://localhost:3000**
 - Listado agrupado por número de caja/pallet (no por tracking)
 - Filtros por cliente y rango de fechas
 - Selección múltiple con checkbox
-- Descarga CSV: Tracking, Box/Pallet, SKU, QTY, Country of Origin, Materials
+- Descarga CSV: Tracking, Box/Pallet, Order Number, Return Type, Return Reason, SKU, QTY, Country of Origin, Materials
 - Estatus "Impresa" que se activa automáticamente al descargar el CSV
 
 **Detalle de Caja:**
-- Ver todos los trackings asociados a una caja
+- Ver todos los trackings asociados a una caja con sus datos de orden y tipo de retorno
 - Acceso directo a corrección de cada tracking
+
+**Manifiesto de Tracking:**
+- Muestra número de orden, tipo de retorno y razón RTS cuando aplican
 
 ---
 
