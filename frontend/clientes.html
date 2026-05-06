@@ -124,6 +124,32 @@ const modalHtml = `
           </div>
         </div>
 
+        <div class="section-title" style="margin-top:20px">Información de Paquete</div>
+
+        <div style="display:flex;flex-direction:column;gap:14px">
+          <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
+            <div>
+              <div style="font-weight:600;font-size:13px">Número de Orden</div>
+              <div class="form-hint" style="margin:0">Al iniciar operación solicita capturar el número de orden del cliente</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="cliente-requiere-orden">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
+            <div>
+              <div style="font-weight:600;font-size:13px">Tipo de Retorno (RMA / RTS)</div>
+              <div class="form-hint" style="margin:0">Al iniciar operación solicita indicar si el paquete es RMA o RTS. Si es RTS, requiere razón de retorno.</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="cliente-requiere-tipo-retorno">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
         <div id="seccion-tipo-mercancia" class="hidden" style="margin-top:16px">
           <div class="section-title" style="margin-top:0">Tipo de Mercancía</div>
           <div class="form-group">
@@ -233,6 +259,7 @@ function renderTabla(clientes) {
             <th>Calidad</th>
             <th>Retrabajos</th>
             <th>Mercancía</th>
+            <th>Info Paquete</th>
             <th>Registrado</th>
             <th>Acciones</th>
           </tr>
@@ -263,6 +290,11 @@ function renderTabla(clientes) {
                 ${c.modulo_retrabajo ? `<span class="badge badge-muted">${{textil:'Textil',calzado:'Calzado',traje_bano:'Traje baño',sombreros:'Sombreros'}[c.tipo_mercancia]||'Textil'}</span>` : '—'}
                 ${parseInt(c.grado_confianza) === 3 && c.fotos_adicionales > 0 ? `<span class="badge badge-blue" style="margin-left:4px">📷 +${c.fotos_adicionales}</span>` : ''}
               </td>
+              <td>
+                ${c.requiere_orden ? '<span class="badge badge-green" style="margin-bottom:3px;display:inline-block"># Orden</span>' : ''}
+                ${c.requiere_tipo_retorno ? '<span class="badge badge-amber" style="display:inline-block">RMA/RTS</span>' : ''}
+                ${!c.requiere_orden && !c.requiere_tipo_retorno ? '<span style="color:var(--text-muted);font-size:12px">—</span>' : ''}
+              </td>
               <td class="td-mono text-muted">${formatDate(c.created_at).split(',')[0]}</td>
               <td>
                 <div class="td-actions">
@@ -289,6 +321,8 @@ function abrirNuevo() {
   document.getElementById('tipo-caja').checked = true;
   document.getElementById('cliente-tipo-mercancia').value = 'textil';
   document.getElementById('cliente-fotos-adicionales').value = '0';
+  document.getElementById('cliente-requiere-orden').checked = false;
+  document.getElementById('cliente-requiere-tipo-retorno').checked = false;
   document.getElementById('seccion-tipo-mercancia').classList.add('hidden');
   document.getElementById('seccion-fotos-adicionales').classList.add('hidden');
   document.getElementById('modal-cliente-title').textContent = 'Nuevo Cliente';
@@ -314,6 +348,8 @@ function editarCliente(id) {
   document.getElementById(tipo === 'pallet' ? 'tipo-pallet' : 'tipo-caja').checked = true;
   document.getElementById('cliente-tipo-mercancia').value = c.tipo_mercancia || 'textil';
   document.getElementById('cliente-fotos-adicionales').value = String(parseInt(c.fotos_adicionales) || 0);
+  document.getElementById('cliente-requiere-orden').checked = !!c.requiere_orden;
+  document.getElementById('cliente-requiere-tipo-retorno').checked = !!c.requiere_tipo_retorno;
   document.getElementById('seccion-tipo-mercancia').classList.toggle('hidden', !c.modulo_retrabajo);
   document.getElementById('seccion-fotos-adicionales').classList.toggle('hidden', parseInt(c.grado_confianza) !== 3);
   document.getElementById('modal-cliente-title').textContent = 'Editar Cliente';
@@ -337,6 +373,8 @@ async function guardarCliente() {
     uph: parseInt(document.getElementById('cliente-uph').value) || 0,
     tipo_mercancia: document.getElementById('cliente-tipo-mercancia').value || 'textil',
     fotos_adicionales: Math.max(0, parseInt(document.getElementById('cliente-fotos-adicionales')?.value) || 0),
+    requiere_orden: document.getElementById('cliente-requiere-orden').checked,
+    requiere_tipo_retorno: document.getElementById('cliente-requiere-tipo-retorno').checked,
   };
 
   try {

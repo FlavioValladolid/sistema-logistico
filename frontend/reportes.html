@@ -277,10 +277,14 @@ async function descargarCSV() {
 }
 
 function generarDescargaCSV(rows, filename) {
-  const header = ['Tracking', 'Box/Pallet', 'SKU', 'QTY', 'Country of Origin', 'Materials'];
+  const header = ['Tracking', 'Box/Pallet', 'Order Number', 'Return Type', 'Return Reason', 'SKU', 'QTY', 'Country of Origin', 'Materials'];
   const lines  = [header.join(',')];
   rows.forEach(r => lines.push([
-    `"${r.tracking_number}"`, `"${r.caja_id}"`, `"${r.sku_code}"`,
+    `"${r.tracking_number}"`, `"${r.caja_id}"`,
+    `"${(r.numero_orden || '').replace(/"/g,'""')}"`,
+    `"${r.tipo_retorno || ''}"`,
+    `"${(r.razon_retorno || '').replace(/"/g,'""')}"`,
+    `"${r.sku_code}"`,
     r.cantidad,
     `"${(r.pais_origen_real || '').replace(/"/g,'""')}"`,
     `"${(r.insumos_real || '').replace(/"/g,'""')}"`,
@@ -353,12 +357,17 @@ async function loadCajaDetalle(cajaId, clienteId) {
         </div>
         <div style="padding:12px 16px;display:flex;flex-wrap:wrap;gap:8px">
           ${trackings.map(t => `
-            <div class="tracking-chip">
-              <span style="color:var(--accent-cyan)">${t.tracking_number}</span>
-              <span style="color:var(--text-muted);font-size:10px">· ${formatNum(t.cantidad_final)} pzas</span>
-              <span>${gradoBadge(t.grado_confianza)}</span>
-              <a href="?tracking=${t.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">Ver</a>
-              <a href="operacion.html?id=${t.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">✏ Editar</a>
+            <div class="tracking-chip" style="flex-direction:column;align-items:flex-start;gap:4px">
+              <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+                <span style="color:var(--accent-cyan)">${t.tracking_number}</span>
+                <span style="color:var(--text-muted);font-size:10px">· ${formatNum(t.cantidad_final)} pzas</span>
+                <span>${gradoBadge(t.grado_confianza)}</span>
+                ${t.numero_orden ? `<span class="badge badge-green" style="font-size:10px"># ${t.numero_orden}</span>` : ''}
+                ${t.tipo_retorno ? `<span class="badge badge-amber" style="font-size:10px">${t.tipo_retorno}</span>` : ''}
+                <a href="?tracking=${t.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">Ver</a>
+                <a href="operacion.html?id=${t.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">✏ Editar</a>
+              </div>
+              ${t.razon_retorno ? `<div style="font-size:11px;color:var(--text-muted);padding-left:2px">RTS: ${t.razon_retorno}</div>` : ''}
             </div>
           `).join('')}
         </div>
@@ -512,6 +521,9 @@ async function loadManifiesto(trackingId) {
           <div class="mani-data-item"><div class="mani-data-label">Cant. Declarada</div><div class="mani-data-val">${formatNum(t.cantidad_declarada)}</div></div>
           <div class="mani-data-item"><div class="mani-data-label">Cant. Final</div><div class="mani-data-val" style="color:${t.cantidad_final !== t.cantidad_declarada ? 'var(--accent-amber)' : 'var(--accent-green)'}">${formatNum(t.cantidad_final)}</div></div>
           <div class="mani-data-item"><div class="mani-data-label">Inspeccionadas</div><div class="mani-data-val">${formatNum(totalPiezas)}</div></div>
+          ${t.numero_orden ? `<div class="mani-data-item" style="border-color:rgba(0,230,118,.3)"><div class="mani-data-label">Número de Orden</div><div class="mani-data-val" style="color:var(--accent-green)">${t.numero_orden}</div></div>` : ''}
+          ${t.tipo_retorno ? `<div class="mani-data-item" style="border-color:rgba(255,171,0,.3)"><div class="mani-data-label">Tipo de Retorno</div><div class="mani-data-val" style="color:#ffab00">${t.tipo_retorno}</div></div>` : ''}
+          ${t.razon_retorno ? `<div class="mani-data-item" style="grid-column:span 3"><div class="mani-data-label">Razón de Retorno (RTS)</div><div class="mani-data-val" style="font-size:12px;white-space:normal;line-height:1.4">${t.razon_retorno}</div></div>` : ''}
         </div>
 
         ${errores.length > 0 ? `

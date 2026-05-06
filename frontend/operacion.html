@@ -371,7 +371,7 @@ async function renderInicio() {
           <label class="form-label">Cliente / Proveedor *</label>
           <select class="form-control" id="ini-cliente" onchange="onClienteChange(this)">
             <option value="">— Seleccionar cliente —</option>
-            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}" data-almacenamiento="${c.tipo_almacenamiento || 'caja'}" data-nombre="${c.nombre}">${c.nombre}</option>`).join('')}
+            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}" data-almacenamiento="${c.tipo_almacenamiento || 'caja'}" data-nombre="${c.nombre}" data-requiere-orden="${c.requiere_orden || 0}" data-requiere-tipo-retorno="${c.requiere_tipo_retorno || 0}">${c.nombre}</option>`).join('')}
           </select>
           <div id="cliente-config-preview" class="mt-8 hidden">
             <div style="display:flex;gap:8px;flex-wrap:wrap" id="cliente-badges"></div>
@@ -396,6 +396,38 @@ async function renderInicio() {
           </div>
         </div>
 
+        <div id="seccion-numero-orden" class="form-group hidden">
+          <label class="form-label">Número de Orden *</label>
+          <input type="text" class="form-control form-control-mono" id="ini-numero-orden" placeholder="ORD-XXXXX" style="text-transform:uppercase">
+          <div class="form-hint">Número de orden del cliente para este envío</div>
+        </div>
+
+        <div id="seccion-tipo-retorno" class="hidden">
+          <div class="form-group">
+            <label class="form-label">Tipo de Retorno *</label>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+              <label id="btn-tipo-rma" onclick="onTipoRetornoChange('RMA')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-elevated);cursor:pointer">
+                <input type="radio" name="ini-tipo-retorno" id="ini-tipo-rma" value="RMA" style="accent-color:var(--accent-green)">
+                <div>
+                  <div style="font-weight:600;font-size:13px">RMA</div>
+                  <div class="form-hint" style="margin:0">Return Merchandise Authorization</div>
+                </div>
+              </label>
+              <label id="btn-tipo-rts" onclick="onTipoRetornoChange('RTS')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-elevated);cursor:pointer">
+                <input type="radio" name="ini-tipo-retorno" id="ini-tipo-rts" value="RTS" style="accent-color:var(--accent-green)">
+                <div>
+                  <div style="font-weight:600;font-size:13px">RTS</div>
+                  <div class="form-hint" style="margin:0">Return to Sender</div>
+                </div>
+              </label>
+            </div>
+          </div>
+          <div id="seccion-razon-retorno" class="form-group hidden">
+            <label class="form-label">Razón de Retorno *</label>
+            <textarea class="form-control" id="ini-razon-retorno" rows="3" placeholder="Describe la razón por la que se retorna al remitente..." style="resize:vertical"></textarea>
+          </div>
+        </div>
+
         <div id="alert-inicio"></div>
 
         <div style="display:flex;justify-content:flex-end;margin-top:8px">
@@ -417,7 +449,17 @@ function onClienteChange(sel) {
   const preview = document.getElementById('cliente-config-preview');
   const badges = document.getElementById('cliente-badges');
 
-  if (!opt.value) { preview.classList.add('hidden'); return; }
+  const secOrden = document.getElementById('seccion-numero-orden');
+  const secRetorno = document.getElementById('seccion-tipo-retorno');
+  const secRazon = document.getElementById('seccion-razon-retorno');
+
+  if (!opt.value) {
+    preview.classList.add('hidden');
+    secOrden?.classList.add('hidden');
+    secRetorno?.classList.add('hidden');
+    secRazon?.classList.add('hidden');
+    return;
+  }
 
   const grado = parseInt(opt.dataset.grado);
   const info = GRADO_INFO[grado];
@@ -426,6 +468,8 @@ function onClienteChange(sel) {
   const pct = opt.dataset.pct;
   const almacenamiento = opt.dataset.almacenamiento || 'caja';
   const esPallet = almacenamiento === 'pallet';
+  const requiereOrden = opt.dataset.requiereOrden === '1';
+  const requiereTipoRetorno = opt.dataset.requiereTipoRetorno === '1';
 
   badges.innerHTML = `
     <span class="grado-badge ${info.class}">${info.label}</span>
@@ -433,8 +477,36 @@ function onClienteChange(sel) {
     ${retrabajo ? '<span class="badge badge-amber">✓ Retrabajos</span>' : ''}
     ${grado === 2 ? `<span class="badge badge-muted">Muestreo ${pct}%</span>` : ''}
     <span class="badge badge-muted">${esPallet ? '⬛ Pallet' : '📦 Caja'}</span>
+    ${requiereOrden ? '<span class="badge badge-green"># Orden</span>' : ''}
+    ${requiereTipoRetorno ? '<span class="badge badge-amber">RMA/RTS</span>' : ''}
   `;
   preview.classList.remove('hidden');
+
+  if (secOrden) secOrden.classList.toggle('hidden', !requiereOrden);
+  if (secRetorno) {
+    secRetorno.classList.toggle('hidden', !requiereTipoRetorno);
+    if (!requiereTipoRetorno && secRazon) secRazon.classList.add('hidden');
+    // Reset radio on client change
+    if (requiereTipoRetorno) {
+      document.querySelectorAll('input[name="ini-tipo-retorno"]').forEach(r => r.checked = false);
+      onTipoRetornoChange(null);
+    }
+  }
+}
+
+function onTipoRetornoChange(tipo) {
+  const secRazon = document.getElementById('seccion-razon-retorno');
+  const btnRma = document.getElementById('btn-tipo-rma');
+  const btnRts = document.getElementById('btn-tipo-rts');
+  const esRts = tipo === 'RTS';
+  const esRma = tipo === 'RMA';
+
+  if (btnRma) btnRma.style.cssText = `display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:${esRma ? '2px solid var(--accent-green);background:rgba(0,230,118,0.08)' : '1px solid var(--border);background:var(--bg-elevated)'}`;
+  if (btnRts) btnRts.style.cssText = `display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:${esRts ? '2px solid var(--accent-green);background:rgba(0,230,118,0.08)' : '1px solid var(--border);background:var(--bg-elevated)'}`;
+  if (secRazon) secRazon.classList.toggle('hidden', !esRts);
+  if (!esRts && document.getElementById('ini-razon-retorno')) {
+    document.getElementById('ini-razon-retorno').value = '';
+  }
 }
 
 async function iniciarTracking() {
@@ -450,6 +522,27 @@ async function iniciarTracking() {
     return;
   }
 
+  const opt = document.getElementById('ini-cliente').selectedOptions[0];
+  const requiereOrden = opt?.dataset.requiereOrden === '1';
+  const requiereTipoRetorno = opt?.dataset.requiereTipoRetorno === '1';
+
+  const numeroOrden = document.getElementById('ini-numero-orden')?.value.trim().toUpperCase() || null;
+  const tipoRetorno = document.querySelector('input[name="ini-tipo-retorno"]:checked')?.value || null;
+  const razonRetorno = document.getElementById('ini-razon-retorno')?.value.trim() || null;
+
+  if (requiereOrden && !numeroOrden) {
+    alertEl.innerHTML = '<div class="alert alert-error">El Número de Orden es requerido para este cliente</div>';
+    return;
+  }
+  if (requiereTipoRetorno && !tipoRetorno) {
+    alertEl.innerHTML = '<div class="alert alert-error">Debes seleccionar el Tipo de Retorno (RMA o RTS)</div>';
+    return;
+  }
+  if (requiereTipoRetorno && tipoRetorno === 'RTS' && !razonRetorno) {
+    alertEl.innerHTML = '<div class="alert alert-error">La Razón de Retorno es requerida para RTS</div>';
+    return;
+  }
+
   try {
     alertEl.innerHTML = '';
     const res = await API.post('/trackings', {
@@ -457,6 +550,9 @@ async function iniciarTracking() {
       cliente_id: clienteId,
       operador,
       cantidad_declarada: cantidad,
+      numero_orden: requiereOrden ? numeroOrden : null,
+      tipo_retorno: requiereTipoRetorno ? tipoRetorno : null,
+      razon_retorno: requiereTipoRetorno && tipoRetorno === 'RTS' ? razonRetorno : null,
     });
 
     state.tracking = await API.get(`/trackings/${res.id}`);

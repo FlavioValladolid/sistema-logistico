@@ -58,6 +58,8 @@ async function initDB() {
       modulo_calidad INTEGER DEFAULT 0,
       modulo_retrabajo INTEGER DEFAULT 0,
       tipo_almacenamiento TEXT DEFAULT 'caja',
+      requiere_orden INTEGER DEFAULT 0,
+      requiere_tipo_retorno INTEGER DEFAULT 0,
       created_at TEXT DEFAULT (datetime('now'))
     )
   `);
@@ -65,12 +67,16 @@ async function initDB() {
   try { db.run("ALTER TABLE clientes ADD COLUMN uph INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE clientes ADD COLUMN tipo_mercancia TEXT DEFAULT 'textil'"); } catch(e) {}
   try { db.run("ALTER TABLE clientes ADD COLUMN fotos_adicionales INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE clientes ADD COLUMN requiere_orden INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE clientes ADD COLUMN requiere_tipo_retorno INTEGER DEFAULT 0"); } catch(e) {}
 
   // Materializar valores NULL de columnas migradas (sql.js omite undefined en JSON)
   db.run("UPDATE clientes SET tipo_almacenamiento = 'caja'   WHERE tipo_almacenamiento IS NULL");
   db.run("UPDATE clientes SET uph               = 0          WHERE uph IS NULL");
   db.run("UPDATE clientes SET tipo_mercancia    = 'textil'   WHERE tipo_mercancia IS NULL");
   db.run("UPDATE clientes SET fotos_adicionales = 0          WHERE fotos_adicionales IS NULL");
+  db.run("UPDATE clientes SET requiere_orden = 0            WHERE requiere_orden IS NULL");
+  db.run("UPDATE clientes SET requiere_tipo_retorno = 0     WHERE requiere_tipo_retorno IS NULL");
 
   console.log('📋 Columnas clientes:', db.exec("PRAGMA table_info(clientes)")[0]?.values.map(r=>r[1]).join(', '));
 
@@ -99,6 +105,9 @@ async function initDB() {
       cantidad_declarada INTEGER DEFAULT 0,
       cantidad_final INTEGER DEFAULT 0,
       estatus TEXT DEFAULT 'abierto',
+      numero_orden TEXT,
+      tipo_retorno TEXT,
+      razon_retorno TEXT,
       created_at TEXT DEFAULT (datetime('now')),
       closed_at TEXT,
       FOREIGN KEY (cliente_id) REFERENCES clientes(id)
@@ -130,6 +139,9 @@ async function initDB() {
 
   // Columna impresa en trackings
   try { db.run('ALTER TABLE trackings ADD COLUMN impresa INTEGER DEFAULT 0'); } catch(e) {}
+  try { db.run('ALTER TABLE trackings ADD COLUMN numero_orden TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE trackings ADD COLUMN tipo_retorno TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE trackings ADD COLUMN razon_retorno TEXT'); } catch(e) {}
   try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_etiqueta TEXT'); } catch(e) {}
   try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_insumos TEXT'); } catch(e) {}
   try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_pieza TEXT'); } catch(e) {}
@@ -294,25 +306,25 @@ app.get('/api/clientes/:id', (req, res) => {
 });
 
 app.post('/api/clientes', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno } = req.body;
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   const id = uuidv4();
   const grado = parseInt(grado_confianza) || 2;
   const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
   console.log(`POST /clientes → nombre="${nombre}" grado=${grado} fotos_adicionales=${fa}`);
-  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa]);
+  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos' });
   res.json({ id, mensaje: 'Cliente creado' });
 });
 
 app.put('/api/clientes/:id', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno } = req.body;
   const grado = parseInt(grado_confianza) || 2;
   const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
   console.log(`PUT /clientes/${req.params.id} → grado=${grado} fotos_adicionales=${fa}`);
-  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=? WHERE id=?`,
-    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, req.params.id]);
+  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=?,requiere_orden=?,requiere_tipo_retorno=? WHERE id=?`,
+    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, req.params.id]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos — revisa la consola del servidor' });
   const updated = dbGet('SELECT * FROM clientes WHERE id=?', [req.params.id]);
   console.log(`  → guardado: fotos_adicionales=${updated?.fotos_adicionales}`);
@@ -486,7 +498,7 @@ app.get('/api/reportes/tipo-caja', (req, res) => {
 // --- TRACKINGS ---
 app.get('/api/trackings', (req, res) => {
   const rows = dbAll(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     ORDER BY t.created_at DESC
   `);
@@ -495,7 +507,7 @@ app.get('/api/trackings', (req, res) => {
 
 app.get('/api/trackings/:id', (req, res) => {
   const row = dbGet(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     WHERE t.id = ?
   `, [req.params.id]);
@@ -504,7 +516,7 @@ app.get('/api/trackings/:id', (req, res) => {
 });
 
 app.post('/api/trackings', (req, res) => {
-  const { tracking_number, cliente_id, operador, cantidad_declarada } = req.body;
+  const { tracking_number, cliente_id, operador, cantidad_declarada, numero_orden, tipo_retorno, razon_retorno } = req.body;
   if (!tracking_number || !cliente_id) {
     return res.status(400).json({ error: 'tracking_number y cliente_id son requeridos' });
   }
@@ -513,8 +525,8 @@ app.post('/api/trackings', (req, res) => {
   if (existing) return res.status(400).json({ error: 'Tracking number ya registrado' });
 
   const id = uuidv4();
-  dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final) VALUES (?,?,?,?,?,?,?,?)`,
-    [id, tracking_number, cliente_id, '', null, operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0]);
+  dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final,numero_orden,tipo_retorno,razon_retorno) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, tracking_number, cliente_id, '', null, operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null]);
   res.json({ id, mensaje: 'Tracking creado' });
 });
 
@@ -854,7 +866,7 @@ app.post('/api/reportes/csv-detalles', (req, res) => {
 
   const ph = tracking_ids.map(() => '?').join(',');
   const rows = dbAll(`
-    SELECT t.tracking_number, t.caja_id,
+    SELECT t.tracking_number, t.caja_id, t.numero_orden, t.tipo_retorno, t.razon_retorno,
            d.sku_code, d.cantidad, d.pais_origen_real, d.insumos_real
     FROM detalle_skus d
     JOIN trackings t ON d.tracking_id = t.id
