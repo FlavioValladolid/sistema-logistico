@@ -371,36 +371,49 @@ function renderUphChart(data, mode, operadorFiltro) {
   canvas.style.display = '';
   emptyEl.style.display = 'none';
 
-  // Build labels: if mode=dia → hours 0-23; else date+hour combos
-  // Aggregate: sum unidades per label; target = SUM(uph * num_operadores) per label
+  const porDia = mode === 'semana' || mode === 'mes';
   const labelMap = new Map(); // label → { unidades, meta }
 
   data.forEach(row => {
-    let label;
-    if (mode === 'dia') {
-      label = `${String(row.hora).padStart(2,'0')}:00`;
-    } else {
-      label = `${row.fecha} ${String(row.hora).padStart(2,'0')}:00`;
-    }
+    // Hoy → agrega por hora; Semana/Mes → agrega por día
+    const label = porDia ? row.fecha : `${String(row.hora).padStart(2,'0')}:00`;
     const prev = labelMap.get(label) || { unidades: 0, meta: 0 };
     prev.unidades += (row.unidades || 0);
-    // Si hay un operador específico filtrado, la meta es UPH×1 (un solo operador)
     const ops = operadorFiltro ? 1 : (row.num_operadores || 1);
     prev.meta += (row.uph || 0) * ops;
     labelMap.set(label, prev);
   });
 
-  // If dia mode, fill all 0–23 hours for current day
   if (mode === 'dia') {
+    // Rellenar las 24 horas del día aunque no haya producción
     for (let h = 0; h < 24; h++) {
       const lbl = `${String(h).padStart(2,'0')}:00`;
       if (!labelMap.has(lbl)) labelMap.set(lbl, { unidades: 0, meta: 0 });
     }
+  } else {
+    // Rellenar todos los días del rango aunque no haya producción
+    const { desde, hasta } = getRangeFor(mode);
+    const cur = new Date(desde + 'T12:00:00');
+    const end = new Date(hasta + 'T12:00:00');
+    while (cur <= end) {
+      const key = isoDate(cur);
+      if (!labelMap.has(key)) labelMap.set(key, { unidades: 0, meta: 0 });
+      cur.setDate(cur.getDate() + 1);
+    }
   }
 
-  const sortedLabels = [...labelMap.keys()].sort();
-  const barData = sortedLabels.map(l => labelMap.get(l).unidades);
-  const lineData = sortedLabels.map(l => labelMap.get(l).meta);
+  const sortedKeys = [...labelMap.keys()].sort();
+  const barData  = sortedKeys.map(l => labelMap.get(l).unidades);
+  const lineData = sortedKeys.map(l => labelMap.get(l).meta);
+
+  // Etiquetas legibles: YYYY-MM-DD → DD/MM para semana/mes
+  const sortedLabels = porDia
+    ? sortedKeys.map(k => { const [,m,d] = k.split('-'); return `${d}/${m}`; })
+    : sortedKeys;
+
+  // Actualizar título de la card según modo
+  const titleEl = document.querySelector('#uph-section .card-title');
+  if (titleEl) titleEl.textContent = porDia ? 'Productividad por Día' : 'Productividad Hora por Hora';
 
   if (uphChart) uphChart.destroy();
 
@@ -412,7 +425,7 @@ function renderUphChart(data, mode, operadorFiltro) {
           type: 'bar',
           label: 'Unidades procesadas',
           data: barData,
-          backgroundColor: sortedLabels.map((l, i) => barData[i] >= lineData[i] && lineData[i] > 0
+          backgroundColor: sortedKeys.map((l, i) => barData[i] >= lineData[i] && lineData[i] > 0
             ? 'rgba(0,230,118,0.7)'
             : 'rgba(0,188,212,0.65)'),
           borderRadius: 4,
