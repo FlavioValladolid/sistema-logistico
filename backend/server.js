@@ -667,6 +667,23 @@ app.post('/api/detalles/:id/fotos-evidencia', upload.fields([
   res.json({ mensaje: 'Fotos guardadas' });
 });
 
+// Fotos adicionales G3 vía URL (foto ya subida desde móvil vía QR)
+app.post('/api/detalles/:id/fotos-adicionales-url', (req, res) => {
+  const detalle = dbGet('SELECT id FROM detalle_skus WHERE id=?', [req.params.id]);
+  if (!detalle) return res.status(404).json({ error: 'Detalle no encontrado' });
+
+  const updates = [];
+  const vals = [];
+  for (let i = 1; i <= 4; i++) {
+    const url = req.body[`url${i}`];
+    if (url) { updates.push(`foto_adicional_${i}=?`); vals.push(url); }
+  }
+  if (updates.length === 0) return res.status(400).json({ error: 'No se recibieron URLs' });
+  vals.push(req.params.id);
+  dbRun(`UPDATE detalle_skus SET ${updates.join(',')} WHERE id=?`, vals);
+  res.json({ mensaje: 'Fotos adicionales guardadas' });
+});
+
 // Fotos adicionales para G3
 app.post('/api/detalles/:id/fotos-adicionales', upload.fields([
   { name: 'foto1', maxCount: 1 },

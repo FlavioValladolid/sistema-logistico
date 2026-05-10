@@ -864,13 +864,40 @@ function renderInspeccion() {
                   <div class="section-title" style="margin-bottom:8px">📷 Fotos adicionales requeridas (${t.fotos_adicionales})</div>
                   <div style="display:grid;grid-template-columns:repeat(${Math.min(parseInt(t.fotos_adicionales), 4)},1fr);gap:10px">
                     ${Array.from({length: parseInt(t.fotos_adicionales)}, (_, i) => `
-                      <div class="foto-req-card">
+                      <div class="foto-req-card" id="fa-card-${i+1}">
                         <div class="foto-req-label">Foto adicional ${i+1}</div>
-                        <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
-                          📷 Seleccionar
-                          <input type="file" id="foto-adicional-${i+1}" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-adicional-${i+1}')">
-                        </label>
-                        <img id="prev-adicional-${i+1}" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+
+                        <div style="display:flex;gap:0;margin-bottom:6px;border:1px solid var(--border);border-radius:4px;overflow:hidden">
+                          <button id="fa-btn-local-${i+1}" class="foto-modo-btn active" onclick="setFotoAdicionalMode(${i+1},'local')" style="font-size:10px;padding:4px 0">📁 Local</button>
+                          <button id="fa-btn-qr-${i+1}" class="foto-modo-btn" onclick="setFotoAdicionalMode(${i+1},'qr')" style="font-size:10px;padding:4px 0">📱 QR</button>
+                        </div>
+
+                        <div id="fa-local-${i+1}">
+                          <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+                            📷 Seleccionar
+                            <input type="file" id="foto-adicional-${i+1}" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-adicional-${i+1}')">
+                          </label>
+                          <img id="prev-adicional-${i+1}" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                        </div>
+
+                        <div id="fa-qr-${i+1}" class="hidden">
+                          <div id="fa-qr-idle-${i+1}">
+                            <button class="btn btn-secondary btn-sm w-full" onclick="iniciarQRFotoAdicional(${i+1})" style="justify-content:center">📱 Generar QR</button>
+                          </div>
+                          <div id="fa-qr-activo-${i+1}" class="hidden" style="text-align:center">
+                            <div id="fa-qr-div-${i+1}" style="display:block;background:#fff;padding:5px;border-radius:5px;margin:4px 0;line-height:0"></div>
+                            <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">
+                              <span id="fa-qr-cd-${i+1}" style="font-family:'IBM Plex Mono',monospace;font-weight:700">10:00</span>
+                            </div>
+                            <div class="spinner" id="fa-qr-spinner-${i+1}" style="width:12px;height:12px;border-width:2px;margin:3px auto 2px"></div>
+                            <button class="btn btn-secondary btn-sm w-full hidden" id="fa-btn-nuevo-qr-${i+1}" onclick="iniciarQRFotoAdicional(${i+1})" style="font-size:10px;padding:4px">↻ Nuevo QR</button>
+                          </div>
+                          <div id="fa-qr-recibida-${i+1}" class="hidden" style="text-align:center">
+                            <div style="color:var(--accent-green);font-size:10px;font-weight:700;margin-bottom:4px">✅ Recibida</div>
+                            <img id="fa-qr-preview-${i+1}" style="width:100%;border-radius:4px;max-height:80px;object-fit:cover;border:1px solid var(--border)">
+                            <button class="btn btn-secondary btn-sm w-full" style="font-size:10px;padding:4px;margin-top:4px" onclick="resetQRFotoAdicional(${i+1})">↩ Cambiar</button>
+                          </div>
+                        </div>
                       </div>
                     `).join('')}
                   </div>
@@ -1098,6 +1125,7 @@ async function buscarSKU(code) {
 function cancelarSKU() {
   state.skuNoRegistrado = false;
   state.skuActual = null;
+  limpiarTodasFotosAdicionalesQR();
   document.getElementById('sku-form').classList.add('hidden');
   document.getElementById('seccion-no-registrado')?.classList.add('hidden');
   document.getElementById('seccion-verificacion')?.classList.remove('hidden');
@@ -1161,6 +1189,133 @@ function checkErrorRequerido() {
   document.getElementById('error-requerido-banner')?.classList.toggle('hidden', !hayProblema);
 }
 
+// ========================
+// FOTOS ADICIONALES QR
+// ========================
+let fotosAdicionalesQR = {}; // { [idx]: { mode, token, url, url_foto, pollInterval, countdownInterval, expiresMs } }
+
+function setFotoAdicionalMode(idx, mode) {
+  if (!fotosAdicionalesQR[idx]) fotosAdicionalesQR[idx] = {};
+  fotosAdicionalesQR[idx].mode = mode;
+  document.getElementById(`fa-btn-local-${idx}`)?.classList.toggle('active', mode === 'local');
+  document.getElementById(`fa-btn-qr-${idx}`)?.classList.toggle('active', mode === 'qr');
+  document.getElementById(`fa-local-${idx}`)?.classList.toggle('hidden', mode !== 'local');
+  document.getElementById(`fa-qr-${idx}`)?.classList.toggle('hidden', mode !== 'qr');
+  if (mode === 'local') limpiarQRFotoAdicional(idx);
+}
+
+async function iniciarQRFotoAdicional(idx) {
+  limpiarQRFotoAdicional(idx);
+  if (!fotosAdicionalesQR[idx]) fotosAdicionalesQR[idx] = {};
+
+  document.getElementById(`fa-qr-idle-${idx}`)?.classList.add('hidden');
+  document.getElementById(`fa-qr-activo-${idx}`)?.classList.remove('hidden');
+  document.getElementById(`fa-qr-recibida-${idx}`)?.classList.add('hidden');
+  document.getElementById(`fa-btn-nuevo-qr-${idx}`)?.classList.add('hidden');
+  document.getElementById(`fa-qr-spinner-${idx}`)?.classList.remove('hidden');
+
+  const qrDiv = document.getElementById(`fa-qr-div-${idx}`);
+  if (qrDiv) qrDiv.innerHTML = '';
+
+  try {
+    const sesion = await API.post('/foto-sesion', {
+      tracking_id: state.tracking?.id || null,
+      contexto: `foto-adicional-${idx}`,
+    });
+    const s = fotosAdicionalesQR[idx];
+    s.token = sesion.token;
+    s.url = sesion.url;
+
+    if (qrDiv) {
+      const qr = new QRCode(qrDiv, {
+        text: sesion.url,
+        width: 160,
+        height: 160,
+        colorDark: '#000000',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+      // Make QR responsive inside narrow card
+      setTimeout(() => {
+        const c = qrDiv.querySelector('canvas');
+        if (c) { c.style.width = '100%'; c.style.height = 'auto'; }
+        const img = qrDiv.querySelector('img');
+        if (img) { img.style.width = '100%'; img.style.height = 'auto'; }
+      }, 50);
+    }
+
+    s.expiresMs = Date.now() + 10 * 60 * 1000;
+    tickCountdownFA(idx);
+    s.countdownInterval = setInterval(() => tickCountdownFA(idx), 1000);
+    s.pollInterval = setInterval(() => pollQRFA(idx), 2000);
+  } catch(e) {
+    if (qrDiv) qrDiv.innerHTML = '<div style="color:var(--accent-red);font-size:10px;padding:8px">Error al generar</div>';
+    document.getElementById(`fa-btn-nuevo-qr-${idx}`)?.classList.remove('hidden');
+    document.getElementById(`fa-qr-spinner-${idx}`)?.classList.add('hidden');
+  }
+}
+
+function tickCountdownFA(idx) {
+  const s = fotosAdicionalesQR[idx];
+  if (!s) return;
+  const remaining = Math.max(0, s.expiresMs - Date.now());
+  const mins = Math.floor(remaining / 60000);
+  const secs = Math.floor((remaining % 60000) / 1000);
+  const el = document.getElementById(`fa-qr-cd-${idx}`);
+  if (el) {
+    el.textContent = `${mins}:${String(secs).padStart(2, '0')}`;
+    el.style.color = remaining < 120000 ? 'var(--accent-red)' : '';
+  }
+  if (remaining === 0) {
+    clearInterval(s.countdownInterval);
+    clearInterval(s.pollInterval);
+    document.getElementById(`fa-qr-spinner-${idx}`)?.classList.add('hidden');
+    document.getElementById(`fa-btn-nuevo-qr-${idx}`)?.classList.remove('hidden');
+  }
+}
+
+async function pollQRFA(idx) {
+  const s = fotosAdicionalesQR[idx];
+  if (!s?.token) return;
+  try {
+    const data = await API.get(`/foto-sesion/${s.token}`);
+    if (data.estatus === 'completada' && data.url_foto) {
+      clearInterval(s.pollInterval);
+      clearInterval(s.countdownInterval);
+      s.url_foto = data.url_foto;
+      document.getElementById(`fa-qr-activo-${idx}`)?.classList.add('hidden');
+      document.getElementById(`fa-qr-recibida-${idx}`)?.classList.remove('hidden');
+      const img = document.getElementById(`fa-qr-preview-${idx}`);
+      if (img) img.src = data.url_foto;
+    }
+  } catch(e) {}
+}
+
+function limpiarQRFotoAdicional(idx) {
+  const s = fotosAdicionalesQR[idx];
+  if (!s) return;
+  clearInterval(s.pollInterval);
+  clearInterval(s.countdownInterval);
+  s.pollInterval = null;
+  s.countdownInterval = null;
+}
+
+function resetQRFotoAdicional(idx) {
+  limpiarQRFotoAdicional(idx);
+  if (fotosAdicionalesQR[idx]) {
+    fotosAdicionalesQR[idx].token = null;
+    fotosAdicionalesQR[idx].url_foto = null;
+  }
+  document.getElementById(`fa-qr-activo-${idx}`)?.classList.add('hidden');
+  document.getElementById(`fa-qr-recibida-${idx}`)?.classList.add('hidden');
+  document.getElementById(`fa-qr-idle-${idx}`)?.classList.remove('hidden');
+}
+
+function limpiarTodasFotosAdicionalesQR() {
+  Object.keys(fotosAdicionalesQR).forEach(idx => limpiarQRFotoAdicional(Number(idx)));
+  fotosAdicionalesQR = {};
+}
+
 async function registrarSKU() {
   const cantidad = parseInt(document.getElementById('f-cantidad').value) || 1;
 
@@ -1201,13 +1356,21 @@ async function registrarSKU() {
     if (!skuCode) { toast('Código SKU requerido', 'error'); return; }
   }
 
-  // Validar fotos adicionales (solo G3)
+  // Validar fotos adicionales (solo G3) — acepta modo local o QR
   const fotosReq = parseInt(state.tracking.grado_confianza) === 3 ? (parseInt(state.tracking.fotos_adicionales) || 0) : 0;
   if (fotosReq > 0) {
     for (let i = 1; i <= fotosReq; i++) {
-      if (!document.getElementById(`foto-adicional-${i}`)?.files[0]) {
-        toast(`Se requiere la foto adicional ${i} de ${fotosReq}`, 'error');
-        return;
+      const modeFA = fotosAdicionalesQR[i]?.mode || 'local';
+      if (modeFA === 'qr') {
+        if (!fotosAdicionalesQR[i]?.url_foto) {
+          toast(`Espera a que el teléfono envíe la foto adicional ${i} de ${fotosReq}`, 'error');
+          return;
+        }
+      } else {
+        if (!document.getElementById(`foto-adicional-${i}`)?.files[0]) {
+          toast(`Se requiere la foto adicional ${i} de ${fotosReq}`, 'error');
+          return;
+        }
       }
     }
   }
@@ -1247,13 +1410,25 @@ async function registrarSKU() {
       await API.postForm(`/detalles/${res.id}/fotos-evidencia`, fd);
     }
 
-    // Subir fotos adicionales (G3)
+    // Subir fotos adicionales (G3) — modo local vía multipart, modo QR vía URL
     if (fotosReq > 0) {
       const fdA = new FormData();
+      const urlBody = {};
+      let hasLocal = false;
+      let hasQR = false;
       for (let i = 1; i <= fotosReq; i++) {
-        fdA.append(`foto${i}`, document.getElementById(`foto-adicional-${i}`).files[0]);
+        const modeFA = fotosAdicionalesQR[i]?.mode || 'local';
+        if (modeFA === 'qr') {
+          urlBody[`url${i}`] = fotosAdicionalesQR[i].url_foto;
+          hasQR = true;
+        } else {
+          fdA.append(`foto${i}`, document.getElementById(`foto-adicional-${i}`).files[0]);
+          hasLocal = true;
+        }
       }
-      await API.postForm(`/detalles/${res.id}/fotos-adicionales`, fdA);
+      if (hasLocal) await API.postForm(`/detalles/${res.id}/fotos-adicionales`, fdA);
+      if (hasQR) await API.post(`/detalles/${res.id}/fotos-adicionales-url`, urlBody);
+      limpiarTodasFotosAdicionalesQR();
     }
 
     // Reload
