@@ -9,6 +9,13 @@ const initSqlJs = require('sql.js');
 const app = express();
 const PORT = 3000;
 
+// Returns current local time as "YYYY-MM-DD HH:MM:SS" for SQLite TEXT columns
+function localNow() {
+  const d = new Date();
+  const p = n => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 const CATALOGO_RETRABAJOS = {
   calzado:    ['Cambio de caja', 'Limpieza', 'Reparación de caja', 'Impresión de etiqueta'],
   textil:     ['Cambio de etiqueta', 'Limpieza', 'Reparación de costura', 'Planchado', 'Re-empaque'],
@@ -60,7 +67,7 @@ async function initDB() {
       tipo_almacenamiento TEXT DEFAULT 'caja',
       requiere_orden INTEGER DEFAULT 0,
       requiere_tipo_retorno INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `);
   try { db.run("ALTER TABLE clientes ADD COLUMN tipo_almacenamiento TEXT DEFAULT 'caja'"); } catch(e) {}
@@ -108,7 +115,7 @@ async function initDB() {
       numero_orden TEXT,
       tipo_retorno TEXT,
       razon_retorno TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
       closed_at TEXT,
       FOREIGN KEY (cliente_id) REFERENCES clientes(id)
     )
@@ -132,7 +139,7 @@ async function initDB() {
       foto_etiqueta TEXT,
       foto_insumos TEXT,
       foto_pieza TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
       FOREIGN KEY (tracking_id) REFERENCES trackings(id)
     )
   `);
@@ -160,7 +167,7 @@ async function initDB() {
       tipo_error TEXT NOT NULL,
       path_fotografia TEXT,
       comentarios TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
       FOREIGN KEY (tracking_id) REFERENCES trackings(id)
     )
   `);
@@ -171,7 +178,7 @@ async function initDB() {
       tracking_id TEXT NOT NULL,
       cantidad_original INTEGER,
       cantidad_corregida INTEGER,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
       FOREIGN KEY (tracking_id) REFERENCES trackings(id)
     )
   `);
@@ -184,7 +191,7 @@ async function initDB() {
       tipo TEXT NOT NULL,
       consecutivo INTEGER NOT NULL,
       estatus TEXT DEFAULT 'Abierta',
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
       closed_at TEXT,
       FOREIGN KEY (cliente_id) REFERENCES clientes(id)
     )
@@ -202,7 +209,7 @@ async function initDB() {
       retrabajos_seleccionados TEXT DEFAULT '[]',
       retrabajo_otro TEXT,
       estatus TEXT DEFAULT 'Pendiente',
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
       updated_at TEXT,
       FOREIGN KEY (tracking_id) REFERENCES trackings(id)
     )
@@ -219,7 +226,7 @@ async function initDB() {
       contexto TEXT,
       estatus TEXT DEFAULT 'pendiente',
       url_foto TEXT,
-      created_at TEXT DEFAULT (datetime('now')),
+      created_at TEXT DEFAULT (datetime('now', 'localtime')),
       expires_at TEXT NOT NULL
     )
   `);
@@ -241,10 +248,30 @@ async function initDB() {
       url_foto_producto_completo TEXT,
       operador TEXT,
       dado_de_alta INTEGER DEFAULT 0,
-      created_at TEXT DEFAULT (datetime('now'))
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `);
   try { db.run('ALTER TABLE detalle_skus ADD COLUMN es_nuevo INTEGER DEFAULT 0'); } catch(e) {}
+
+  // Config table for migration markers
+  db.run(`CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)`);
+
+  // One-time migration: convert all UTC timestamps stored before the localtime fix
+  const migDone = db.exec("SELECT value FROM config WHERE key='utc_to_local_v1'");
+  if (!migDone[0]?.values?.length) {
+    const tsTables = [
+      'clientes', 'skus', 'cajas_pallets', 'trackings',
+      'detalle_skus', 'skus_nuevos', 'errores', 'retrabajos', 'alertas_discrepancia'
+    ];
+    tsTables.forEach(t => {
+      try { db.run(`UPDATE ${t} SET created_at = datetime(created_at, 'localtime') WHERE created_at IS NOT NULL`); } catch(e) {}
+    });
+    try { db.run("UPDATE trackings SET closed_at = datetime(closed_at, 'localtime') WHERE closed_at IS NOT NULL"); } catch(e) {}
+    try { db.run("UPDATE cajas_pallets SET closed_at = datetime(closed_at, 'localtime') WHERE closed_at IS NOT NULL"); } catch(e) {}
+    try { db.run("UPDATE retrabajos SET updated_at = datetime(updated_at, 'localtime') WHERE updated_at IS NOT NULL"); } catch(e) {}
+    db.run("INSERT INTO config (key,value) VALUES ('utc_to_local_v1','done')");
+    console.log('✅ Migración UTC→local completada');
+  }
 
   saveDB();
 
@@ -270,8 +297,8 @@ function seedData() {
   ];
 
   clientes.forEach(c => {
-    db.run(`INSERT INTO clientes VALUES (?,?,?,?,?,?,datetime('now'))`,
-      [c.id, c.nombre, c.grado, c.pct, c.calidad, c.retrabajo]);
+    db.run(`INSERT INTO clientes VALUES (?,?,?,?,?,?,?)`,
+      [c.id, c.nombre, c.grado, c.pct, c.calidad, c.retrabajo, localNow()]);
 
     // SKUs demo por cliente
     const skusDemo = [
@@ -348,8 +375,8 @@ app.post('/api/clientes', (req, res) => {
   const grado = parseInt(grado_confianza) || 2;
   const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
   console.log(`POST /clientes → nombre="${nombre}" grado=${grado} fotos_adicionales=${fa}`);
-  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0]);
+  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, localNow()]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos' });
   res.json({ id, mensaje: 'Cliente creado' });
 });
@@ -405,8 +432,8 @@ app.post('/api/skus', (req, res) => {
   const existing = dbGet('SELECT id FROM skus WHERE sku_code=? AND cliente_id=?', [code, cliente_id]);
   if (existing) return res.json({ id: existing.id, mensaje: 'SKU ya existe' });
   const id = uuidv4();
-  dbRun(`INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code) VALUES (?,?,?,?,?,?,?)`,
-    [id, cliente_id, code, descripcion, pais_origen, insumos, upc_code || null]);
+  dbRun(`INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+    [id, cliente_id, code, descripcion, pais_origen, insumos, upc_code || null, localNow()]);
   res.json({ id, mensaje: 'SKU creado' });
 });
 
@@ -423,12 +450,13 @@ app.post('/api/skus/importar', (req, res) => {
     const existe = dbGet('SELECT id FROM skus WHERE sku_code=? AND cliente_id=?', [sku_code, cliente_id]);
     if (existe) { omitidos++; return; }
     const id = uuidv4();
-    dbRun('INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code) VALUES (?,?,?,?,?,?,?)', [
+    dbRun('INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code,created_at) VALUES (?,?,?,?,?,?,?,?)', [
       id, cliente_id, sku_code,
       (s.descripcion || '').trim(),
       (s.pais_origen || '').trim(),
       (s.insumos || '').trim(),
-      (s.upc_code || '').trim() || null
+      (s.upc_code || '').trim() || null,
+      localNow()
     ]);
     insertados++;
   });
@@ -494,8 +522,8 @@ app.post('/api/cajas', (req, res) => {
   const nombre = generarNombreCaja(cliente.nombre, tipo, consecutivo);
 
   const id = uuidv4();
-  dbRun('INSERT INTO cajas_pallets (id,cliente_id,nombre,tipo,consecutivo,estatus) VALUES (?,?,?,?,?,?)',
-    [id, cliente_id, nombre, tipo, consecutivo, 'Abierta']);
+  dbRun('INSERT INTO cajas_pallets (id,cliente_id,nombre,tipo,consecutivo,estatus,created_at) VALUES (?,?,?,?,?,?,?)',
+    [id, cliente_id, nombre, tipo, consecutivo, 'Abierta', localNow()]);
 
   const created = dbGet(`SELECT cp.*, c.nombre as cliente_nombre FROM cajas_pallets cp JOIN clientes c ON cp.cliente_id = c.id WHERE cp.id = ?`, [id]);
   res.json(created);
@@ -505,7 +533,7 @@ app.put('/api/cajas/:id/cerrar', (req, res) => {
   const caja = dbGet('SELECT * FROM cajas_pallets WHERE id = ?', [req.params.id]);
   if (!caja) return res.status(404).json({ error: 'Caja no encontrada' });
   if (caja.estatus === 'Cerrada') return res.status(400).json({ error: 'La caja ya está cerrada' });
-  dbRun("UPDATE cajas_pallets SET estatus='Cerrada', closed_at=datetime('now') WHERE id=?", [req.params.id]);
+  dbRun("UPDATE cajas_pallets SET estatus='Cerrada', closed_at=datetime('now', 'localtime') WHERE id=?", [req.params.id]);
   res.json({ mensaje: 'Caja cerrada' });
 });
 
@@ -564,8 +592,8 @@ app.post('/api/trackings', (req, res) => {
   if (existing) return res.status(400).json({ error: 'Tracking number ya registrado' });
 
   const id = uuidv4();
-  dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final,numero_orden,tipo_retorno,razon_retorno) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, tracking_number, cliente_id, '', null, operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null]);
+  dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final,numero_orden,tipo_retorno,razon_retorno,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, tracking_number, cliente_id, '', null, operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null, localNow()]);
   res.json({ id, mensaje: 'Tracking creado' });
 });
 
@@ -621,7 +649,7 @@ app.post('/api/trackings/:id/cerrar', (req, res) => {
     return res.status(400).json({ error: `Este tracking debe guardarse en una caja de tipo "${labels[tipoRequerido]}" según su contenido. La caja seleccionada es "${labels[caja.tipo]}".` });
   }
 
-  dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now'), caja_id=?, caja_pallet_id=? WHERE id=?`,
+  dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now', 'localtime'), caja_id=?, caja_pallet_id=? WHERE id=?`,
     [caja.nombre, caja_pallet_id, req.params.id]);
   res.json({ mensaje: 'Tracking cerrado exitosamente' });
 });
@@ -663,24 +691,24 @@ app.post('/api/trackings/:id/detalles', (req, res) => {
 
   const id = uuidv4();
   const esNuevoFlag = es_nuevo ? 1 : 0;
-  dbRun(`INSERT INTO detalle_skus (id,tracking_id,sku_code,descripcion,cantidad,pais_origen_catalogo,pais_origen_real,pais_coincide,insumos_catalogo,insumos_real,insumos_coincide,calidad,es_nuevo)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+  dbRun(`INSERT INTO detalle_skus (id,tracking_id,sku_code,descripcion,cantidad,pais_origen_catalogo,pais_origen_real,pais_coincide,insumos_catalogo,insumos_real,insumos_coincide,calidad,es_nuevo,created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, req.params.id, sku_code, descripcion, cantidad || 1,
      pais_origen_catalogo, pais_origen_real || pais_origen_catalogo,
      pais_coincide !== false ? 1 : 0,
      insumos_catalogo, insumos_real || insumos_catalogo,
      insumos_coincide !== false ? 1 : 0,
-     calidad || 'Buena', esNuevoFlag]);
+     calidad || 'Buena', esNuevoFlag, localNow()]);
 
   if (es_nuevo) {
     const nid = uuidv4();
-    dbRun(`INSERT INTO skus_nuevos (id,tracking_id,detalle_sku_id,cliente_id,sku_code,upc,descripcion,pais_origen,insumos,operador)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    dbRun(`INSERT INTO skus_nuevos (id,tracking_id,detalle_sku_id,cliente_id,sku_code,upc,descripcion,pais_origen,insumos,operador,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
       [nid, req.params.id, id, tracking.cliente_id, sku_code,
        upc_code || null, descripcion || null,
        pais_origen_real || pais_origen_catalogo || null,
        insumos_real || insumos_catalogo || null,
-       tracking.operador || null]);
+       tracking.operador || null, localNow()]);
   }
 
   // Actualizar cantidad_final
@@ -805,8 +833,8 @@ app.post('/api/trackings/:id/errores', upload.single('foto'), (req, res) => {
   const id = uuidv4();
   const path_foto = req.file ? `/uploads/${req.file.filename}` : null;
 
-  dbRun(`INSERT INTO errores (id,tracking_id,detalle_sku_id,tipo_error,path_fotografia,comentarios) VALUES (?,?,?,?,?,?)`,
-    [id, req.params.id, detalle_sku_id || null, tipo_error, path_foto, comentarios]);
+  dbRun(`INSERT INTO errores (id,tracking_id,detalle_sku_id,tipo_error,path_fotografia,comentarios,created_at) VALUES (?,?,?,?,?,?,?)`,
+    [id, req.params.id, detalle_sku_id || null, tipo_error, path_foto, comentarios, localNow()]);
 
   res.json({ id, path_fotografia: path_foto, mensaje: 'Error registrado' });
 });
@@ -850,10 +878,10 @@ app.post('/api/trackings/:id/retrabajos', (req, res) => {
 
   const id = uuidv4();
   const rtJson = JSON.stringify(Array.isArray(retrabajos_seleccionados) ? retrabajos_seleccionados : []);
-  dbRun(`INSERT INTO retrabajos (id,tracking_id,detalle_sku_id,cliente_id,sku_code,descripcion_sku,retrabajos_seleccionados,retrabajo_otro,estatus)
-    VALUES (?,?,?,?,?,?,?,?,'Pendiente')`,
+  dbRun(`INSERT INTO retrabajos (id,tracking_id,detalle_sku_id,cliente_id,sku_code,descripcion_sku,retrabajos_seleccionados,retrabajo_otro,estatus,created_at)
+    VALUES (?,?,?,?,?,?,?,?,'Pendiente',?)`,
     [id, req.params.id, detalle_sku_id || null, tracking.cliente_id,
-     sku_code || null, descripcion_sku || null, rtJson, retrabajo_otro || null]);
+     sku_code || null, descripcion_sku || null, rtJson, retrabajo_otro || null, localNow()]);
 
   res.json({ id, mensaje: 'Retrabajo registrado' });
 });
@@ -861,7 +889,7 @@ app.post('/api/trackings/:id/retrabajos', (req, res) => {
 app.put('/api/retrabajos/:id', (req, res) => {
   const { estatus } = req.body;
   if (!estatus) return res.status(400).json({ error: 'estatus requerido' });
-  dbRun(`UPDATE retrabajos SET estatus=?, updated_at=datetime('now') WHERE id=?`, [estatus, req.params.id]);
+  dbRun(`UPDATE retrabajos SET estatus=?, updated_at=datetime('now', 'localtime') WHERE id=?`, [estatus, req.params.id]);
   res.json({ mensaje: 'Estatus actualizado' });
 });
 
@@ -874,8 +902,8 @@ app.delete('/api/retrabajos/:id', (req, res) => {
 app.post('/api/trackings/:id/discrepancia', (req, res) => {
   const { cantidad_original, cantidad_corregida } = req.body;
   const id = uuidv4();
-  dbRun(`INSERT INTO alertas_discrepancia (id,tracking_id,cantidad_original,cantidad_corregida) VALUES (?,?,?,?)`,
-    [id, req.params.id, cantidad_original, cantidad_corregida]);
+  dbRun(`INSERT INTO alertas_discrepancia (id,tracking_id,cantidad_original,cantidad_corregida,created_at) VALUES (?,?,?,?,?)`,
+    [id, req.params.id, cantidad_original, cantidad_corregida, localNow()]);
   dbRun(`UPDATE trackings SET cantidad_final=? WHERE id=?`, [cantidad_corregida, req.params.id]);
   res.json({ id, mensaje: 'Discrepancia registrada' });
 });
@@ -891,8 +919,8 @@ app.get('/api/reportes/resumen', (req, res) => {
 
   const whereParts = [];
   const params = [];
-  if (fecha_desde) { whereParts.push("date(datetime(t.created_at,'localtime')) >= ?"); params.push(fecha_desde); }
-  if (fecha_hasta) { whereParts.push("date(datetime(t.created_at,'localtime')) <= ?"); params.push(fecha_hasta); }
+  if (fecha_desde) { whereParts.push("date(t.created_at) >= ?"); params.push(fecha_desde); }
+  if (fecha_hasta) { whereParts.push("date(t.created_at) <= ?"); params.push(fecha_hasta); }
   if (cliente_id)  { whereParts.push("t.cliente_id = ?"); params.push(cliente_id); }
   const where = whereParts.length ? ' WHERE ' + whereParts.join(' AND ') : '';
 
@@ -1059,8 +1087,8 @@ app.get('/api/reportes/retrabajos', (req, res) => {
 app.get('/api/dashboard/hora-por-hora', (req, res) => {
   const { fecha_desde, fecha_hasta, operador, cliente_id } = req.query;
   let sql = `
-    SELECT strftime('%Y-%m-%d', datetime(d.created_at, 'localtime')) as fecha,
-           CAST(strftime('%H', datetime(d.created_at, 'localtime')) AS INTEGER) as hora,
+    SELECT strftime('%Y-%m-%d', d.created_at) as fecha,
+           CAST(strftime('%H', d.created_at) AS INTEGER) as hora,
            t.cliente_id,
            c.nombre as cliente_nombre,
            COALESCE(c.uph, 0) as uph,
@@ -1072,8 +1100,8 @@ app.get('/api/dashboard/hora-por-hora', (req, res) => {
     WHERE 1=1
   `;
   const params = [];
-  if (fecha_desde) { sql += ' AND date(datetime(d.created_at, \'localtime\')) >= ?'; params.push(fecha_desde); }
-  if (fecha_hasta) { sql += ' AND date(datetime(d.created_at, \'localtime\')) <= ?'; params.push(fecha_hasta); }
+  if (fecha_desde) { sql += ' AND date(d.created_at) >= ?'; params.push(fecha_desde); }
+  if (fecha_hasta) { sql += ' AND date(d.created_at) <= ?'; params.push(fecha_hasta); }
   if (operador)    { sql += ' AND t.operador = ?'; params.push(operador); }
   if (cliente_id)  { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
   sql += ' GROUP BY fecha, hora, t.cliente_id ORDER BY fecha, hora';
@@ -1096,8 +1124,8 @@ app.get('/api/dashboard/ranking', (req, res) => {
     WHERE 1=1
   `;
   const params = [];
-  if (fecha_desde) { sql += ' AND date(datetime(d.created_at, \'localtime\')) >= ?'; params.push(fecha_desde); }
-  if (fecha_hasta) { sql += ' AND date(datetime(d.created_at, \'localtime\')) <= ?'; params.push(fecha_hasta); }
+  if (fecha_desde) { sql += ' AND date(d.created_at) >= ?'; params.push(fecha_desde); }
+  if (fecha_hasta) { sql += ' AND date(d.created_at) <= ?'; params.push(fecha_hasta); }
   if (cliente_id)  { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
   sql += ' GROUP BY t.operador ORDER BY total_piezas DESC LIMIT 10';
   res.json(dbAll(sql, params));
@@ -1297,8 +1325,8 @@ app.post('/api/trackings/:id/errores-url', (req, res) => {
   const { detalle_sku_id, tipo_error, comentarios, path_fotografia } = req.body;
   if (!path_fotografia) return res.status(400).json({ error: 'path_fotografia requerido' });
   const id = uuidv4();
-  dbRun(`INSERT INTO errores (id,tracking_id,detalle_sku_id,tipo_error,path_fotografia,comentarios) VALUES (?,?,?,?,?,?)`,
-    [id, req.params.id, detalle_sku_id || null, tipo_error, path_fotografia, comentarios]);
+  dbRun(`INSERT INTO errores (id,tracking_id,detalle_sku_id,tipo_error,path_fotografia,comentarios,created_at) VALUES (?,?,?,?,?,?,?)`,
+    [id, req.params.id, detalle_sku_id || null, tipo_error, path_fotografia, comentarios, localNow()]);
   res.json({ id, path_fotografia, mensaje: 'Error registrado' });
 });
 
