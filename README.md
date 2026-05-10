@@ -24,6 +24,8 @@ Luego abrir: **http://localhost:3000**
 - Porcentaje de muestreo (solo G2)
 - Módulos opcionales: Calidad y Retrabajos
 - UPH (Unidades por Hora) — meta de productividad por operador
+- Tipo de mercancía: Textil, Calzado, Traje de baño, Sombreros
+- Fotos adicionales requeridas por pieza (solo G3, hasta 4)
 - **Información de Paquete (configurable por cliente):**
   - Número de Orden: si está activo, se captura obligatoriamente al iniciar la operación
   - Tipo de Retorno (RMA / RTS): si está activo, se selecciona obligatoriamente al iniciar; si es RTS se requiere razón de retorno
@@ -45,7 +47,7 @@ Luego abrir: **http://localhost:3000**
    - G1: Solo datos logísticos, sin inspección de producto
    - G2: Inspección estadística (porcentaje configurable, default 30%)
    - G3: Inspección al 100%, validación exhaustiva
-3. **Cierre** — Se captura el número de Caja o Pallet y se cierra el tracking
+3. **Cierre** — Se selecciona la Caja o Pallet de destino y se cierra el tracking. El sistema valida que el tipo de caja corresponda al contenido (Good Condition / Damage / Non-brand merchandise)
 
 **SKUs no registrados en catálogo:**
 - El sistema detecta automáticamente si el SKU no existe para ese cliente
@@ -57,6 +59,69 @@ Luego abrir: **http://localhost:3000**
 - El tracking no puede cerrarse si hay errores sin fotografía de evidencia
 - Cualquier discrepancia entre cantidad declarada e inspeccionada genera una alerta automática
 - Los productos con error deben marcarse físicamente con etiqueta "Caja de Dañados"
+- La caja/pallet de cierre debe corresponder al tipo de contenido del tracking
+
+---
+
+### Captura de Fotos — Sistema Híbrido Web-Móvil
+
+Todas las secciones que requieren fotografía ofrecen dos modos de captura:
+
+**📁 Subir archivo**
+Selección directa desde el equipo (o cámara si se accede desde un dispositivo móvil).
+
+**📱 Foto con teléfono (QR)**
+1. El operador hace clic en "Generar QR"
+2. Aparece un código QR con una sesión de 10 minutos
+3. El operador escanea el QR con su teléfono
+4. La página móvil abre la cámara del dispositivo directamente
+5. El operador toma la foto y la envía
+6. La imagen aparece automáticamente en la estación de trabajo (polling cada 2 s)
+7. Contador regresivo visible; en rojo cuando quedan menos de 2 minutos
+8. Botón "Generar nuevo QR" si la sesión expira antes de recibir la foto
+
+**Secciones que soportan captura QR:**
+- Fotografía de evidencia en el modal de registro de errores
+- Fotos adicionales requeridas por pieza (G3) — cada tarjeta tiene su propio QR independiente; los modos pueden mezclarse (p. ej. foto 1 y 3 desde teléfono, foto 2 desde archivo)
+
+---
+
+### Errores y Evidencia
+
+Al detectar discrepancias o calidad deficiente se abre el modal de error:
+
+- **Tipo de error:** Calidad, Origen, Insumo, Mercancía ajena, Otro
+- **Fotografía de evidencia:** obligatoria (modo archivo o QR)
+- **Descripción detallada:** texto libre
+- Si el cliente tiene el módulo de Retrabajos activo y el tipo es Calidad u Otro, se muestran los retrabajos disponibles según el tipo de mercancía
+
+**Retrabajos disponibles por tipo de mercancía:**
+
+| Mercancía | Opciones |
+|-----------|----------|
+| Textil | Cambio de etiqueta, Limpieza, Reparación de costura, Planchado, Re-empaque |
+| Calzado | Cambio de caja, Limpieza, Reparación de caja, Impresión de etiqueta |
+| Traje de baño | Cambio de etiqueta, Limpieza, Re-empaque, Revisión de elástico |
+| Sombreros | Cambio de etiqueta, Limpieza, Reparación de forma, Re-empaque |
+
+---
+
+### Cajas y Pallets
+
+- Creación automática al cerrar un tracking (se selecciona la caja destino)
+- Tipos: Good Condition, Damage, Non-brand merchandise
+- El sistema valida que el tipo de caja coincida con el contenido del tracking
+- Historial completo de cajas por cliente con trackings asociados
+
+---
+
+### Retrabajos
+
+- Listado centralizado de piezas pendientes de retrabajo
+- Filtros por cliente, tracking y estatus (Pendiente / En proceso / Completado)
+- Vinculación con el tracking y SKU de origen
+- Foto de evidencia del error asociado
+- Actualización de estatus desde la vista de retrabajos
 
 ---
 
@@ -71,9 +136,10 @@ Luego abrir: **http://localhost:3000**
 
 **Detalle de Caja:**
 - Ver todos los trackings asociados a una caja con sus datos de orden y tipo de retorno
-- Acceso directo a corrección de cada tracking
+- Acceso directo a inspección de cada tracking
 
 **Manifiesto de Tracking:**
+- Resumen completo: SKUs, errores con foto, retrabajos, discrepancias
 - Muestra número de orden, tipo de retorno y razón RTS cuando aplican
 
 ---
@@ -86,14 +152,19 @@ Luego abrir: **http://localhost:3000**
 - Errores registrados
 - Discrepancias de inventario
 
-**Gráfica Hora por Hora (Productividad):**
-- Barras: unidades procesadas por hora
-- Línea: meta UPH × número de operadores activos en esa hora
-- Barra verde = meta alcanzada o superada; barra cyan = por debajo de meta
-- Tooltip con % de eficiencia por hora
+**Gráfica de Productividad:**
+- Barras: unidades procesadas
+- Línea: meta UPH × número de operadores activos
+- Barra verde = meta alcanzada; barra cyan = por debajo de meta
+- Tooltip con % de eficiencia
 - Filtros: Hoy / Semana / Mes, por cliente, por operador
+- Agregación dinámica según filtro temporal:
+  - **Hoy** → agrupado por hora (00:00–23:00)
+  - **Semana / Mes** → agrupado por día (DD/MM)
 - Cuando se filtra por operador específico, la meta es UPH × 1 (individual)
-- Horas en zona horaria local del servidor
+
+**Ranking de operadores:**
+- Top 10 por total de piezas inspeccionadas en el período seleccionado
 
 ---
 
@@ -103,7 +174,7 @@ Luego abrir: **http://localhost:3000**
 |-------|--------|------------|
 | G1 | Flujo Rápido | Solo datos logísticos, sin validación de producto |
 | G2 | Muestreo Estadístico | Porcentaje configurable (default 30%) |
-| G3 | Control Total | 100% de piezas, validación exhaustiva |
+| G3 | Control Total | 100% de piezas, validación exhaustiva + fotos adicionales |
 
 Para G1, si no se captura país de origen ni composición durante la inspección, el sistema los completa automáticamente desde el catálogo de SKUs.
 
@@ -116,8 +187,10 @@ Para G1, si no se captura país de origen ni composición durante la inspección
 | Backend | Node.js + Express |
 | Base de datos | SQLite via sql.js (persistido en `database.bin`) |
 | Frontend | HTML / CSS / JavaScript vanilla |
+| Tipografía | Inter (UI) + IBM Plex Mono (datos) |
 | Gráficas | Chart.js 4 |
 | Fotos | Multer (almacenadas en `/uploads`) |
+| QR | QRCodeJS (CDN) |
 
 ---
 
@@ -126,19 +199,36 @@ Para G1, si no se captura país de origen ni composición durante la inspección
 ```
 sistema-logistico/
 ├── backend/
-│   ├── server.js         # API REST + lógica de negocio
+│   ├── server.js         # API REST + lógica de negocio + página móvil QR
 │   ├── database.bin      # Base de datos SQLite (se crea automáticamente)
 │   └── node_modules/
 ├── frontend/
-│   ├── index.html        # Dashboard + gráfica hora por hora
+│   ├── index.html        # Dashboard + gráfica de productividad
 │   ├── clientes.html     # Administración de clientes
 │   ├── skus.html         # Catálogo de SKUs
 │   ├── trackings.html    # Lista y filtrado de trackings
-│   ├── operacion.html    # Módulo de inspección
+│   ├── operacion.html    # Módulo de inspección (con captura QR)
 │   ├── reportes.html     # Reportes por caja/pallet y manifiestos
-│   ├── css/main.css      # Estilos globales
+│   ├── retrabajos.html   # Gestión de retrabajos
+│   ├── css/main.css      # Estilos globales (dark/light mode)
 │   └── js/
 │       ├── app.js        # API client + utilidades compartidas
 │       └── shell.js      # Layout y navegación compartida
 └── uploads/              # Fotografías de evidencia
 ```
+
+## Endpoints principales
+
+| Método | Ruta | Descripción |
+|--------|------|-------------|
+| POST | `/api/foto-sesion` | Crea sesión QR de 10 min, devuelve token + URL |
+| GET | `/api/foto-sesion/:token` | Consulta estatus de sesión (polling) |
+| POST | `/api/foto-sesion/:token/upload` | Recibe foto desde móvil (uso único) |
+| GET | `/foto/:token` | Página móvil standalone para captura de foto |
+| GET | `/api/trackings` | Lista todos los trackings |
+| POST | `/api/trackings` | Crea nuevo tracking |
+| POST | `/api/trackings/:id/cerrar` | Cierra tracking con validaciones |
+| POST | `/api/trackings/:id/errores` | Registra error con foto (multipart) |
+| POST | `/api/trackings/:id/errores-url` | Registra error con foto ya subida (QR) |
+| POST | `/api/detalles/:id/fotos-adicionales` | Sube fotos adicionales G3 (multipart) |
+| POST | `/api/detalles/:id/fotos-adicionales-url` | Guarda fotos adicionales G3 por URL (QR) |
