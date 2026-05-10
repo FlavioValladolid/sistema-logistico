@@ -409,6 +409,7 @@ let state = {
   cliente: null,
   detalles: [],
   errores: [],
+  retrabajos: [],
   skuActual: null,
   paisCoincide: true,
   insumosCoincide: true,
@@ -425,12 +426,14 @@ async function init() {
       const tracking = await API.get(`/trackings/${trackingIdParam}`);
       state.tracking = tracking;
       state.cliente = tracking;
-      const [detalles, errores] = await Promise.all([
+      const [detalles, errores, retrabajos] = await Promise.all([
         API.get(`/trackings/${trackingIdParam}/detalles`),
-        API.get(`/trackings/${trackingIdParam}/errores`)
+        API.get(`/trackings/${trackingIdParam}/errores`),
+        API.get(`/trackings/${trackingIdParam}/retrabajos`)
       ]);
       state.detalles = detalles;
       state.errores = errores;
+      state.retrabajos = retrabajos;
       state.fase = 'inspeccion';
       renderInspeccion();
     } catch(e) {
@@ -693,6 +696,14 @@ function renderInspeccion() {
   const pctAvance = muestreoTarget > 0 ? Math.min(Math.round(totalInspeccionado / muestreoTarget * 100), 100) : 100;
   const erroresCount = state.errores.length;
   const discrepancia = t.cantidad_final !== t.cantidad_declarada && t.cantidad_declarada > 0;
+
+  const tieneDanado   = state.errores.some(e => e.tipo_error === 'Calidad' || e.tipo_error === 'Otro');
+  const tieneNoMarca  = state.errores.some(e => e.tipo_error === 'Mercancía ajena');
+  const tieneRetrabajo = state.retrabajos.length > 0;
+  // Piezas dañadas con retrabajo se corrigen → Good Condition (igual que lógica de cierre)
+  const esDanado = tieneDanado && !tieneRetrabajo;
+  const tipoContenido = esDanado ? 'Damaged' : tieneNoMarca ? 'Non-brand merchandise' : 'Good Condition';
+  const tipoBadgeClass = esDanado ? 'badge-red' : tieneNoMarca ? 'badge-amber' : 'badge-green';
 
   const el = document.getElementById('fase-inspeccion');
   el.innerHTML = `
@@ -1098,6 +1109,10 @@ function renderInspeccion() {
           <span class="info-val" style="color:${erroresCount>0?'var(--accent-red)':'inherit'}">${erroresCount}</span>
         </div>
         <div class="info-row">
+          <span class="info-key">Tipo</span>
+          <span class="badge ${tipoBadgeClass}" style="font-size:10px;font-family:'IBM Plex Mono',monospace">${tipoContenido}</span>
+        </div>
+        <div class="info-row">
           <span class="info-key">Estado</span>
           <span class="badge ${isClosed?'badge-green':'badge-amber'}">${isClosed?'✓ Cerrado':'⟳ Abierto'}</span>
         </div>
@@ -1141,16 +1156,17 @@ function renderErroresGenerales() {
   return `
     <div style="margin-top:16px">
       <div class="section-title">Evidencia — Errores Generales</div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:8px">
         ${generales.map(e => `
-          <div style="position:relative;line-height:0;flex-shrink:0">
+          <div style="display:flex;flex-direction:column;align-items:center;gap:4px;flex-shrink:0;width:76px">
             <img src="${e.path_fotografia}" class="foto-thumb"
-              title="${e.tipo_error} — clic para ampliar"
+              title="${e.tipo_error}${e.comentarios ? ' — ' + e.comentarios : ''} — clic para ampliar"
               onclick="verFoto('${e.path_fotografia}','','_err_gral')"
-              style="height:64px;width:64px;object-fit:cover;border-radius:6px;border:1.5px solid rgba(220,38,38,.5);display:block">
-            <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(180,20,20,.88);color:#fff;font-size:9px;text-align:center;padding:3px;border-radius:0 0 5px 5px;font-weight:700;font-family:'IBM Plex Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              style="height:64px;width:76px;object-fit:cover;border-radius:6px;border:1.5px solid rgba(220,38,38,.5);display:block">
+            <div style="font-size:10px;color:var(--accent-red);font-weight:700;font-family:'IBM Plex Mono',monospace;text-align:center;line-height:1.2;width:100%;word-break:break-word">
               ${e.tipo_error}
             </div>
+            ${e.comentarios ? `<div style="font-size:9px;color:var(--text-muted);text-align:center;line-height:1.3;width:100%;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${e.comentarios}</div>` : ''}
           </div>
         `).join('')}
       </div>
@@ -1175,6 +1191,7 @@ function renderSKUList() {
     const isMalo = d.calidad === 'Mala';
     const paisDiff = !d.pais_coincide;
     const insDiff = !d.insumos_coincide;
+    const tieneRetrabajo = state.retrabajos.some(r => r.detalle_sku_id === d.id);
 
     // Build photo group for this detalle (for lightbox navigation)
     const grupo = [];
@@ -1199,6 +1216,7 @@ function renderSKUList() {
           </div>
           <div class="sku-badges">
             <span class="badge badge-muted">×${d.cantidad}</span>
+            ${tieneRetrabajo ? `<span class="badge badge-amber" style="font-weight:700">🔧 Retrabajada</span>` : ''}
             ${d.foto_etiqueta ? `<span class="badge badge-amber" style="font-family:'IBM Plex Mono',monospace;font-size:9px">★ Nuevo en catálogo</span><span class="badge badge-blue">📷 Evidencia (3 fotos)</span>` : ''}
             ${d.foto_adicional_1 ? `<span class="badge badge-blue">📷 +${[1,2,3,4].filter(n=>d[`foto_adicional_${n}`]).length} adicional(es)</span>` : ''}
             ${d.pais_origen_real ? `<span class="badge ${paisDiff?'badge-amber':'badge-muted'}">🌍 ${d.pais_origen_real}${paisDiff?' ⚠':''}</span>` : ''}
@@ -1223,16 +1241,17 @@ function renderSKUList() {
           ${errD.some(e => e.path_fotografia) ? `
             <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(220,38,38,.2)">
               <div style="font-size:9px;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;color:var(--accent-red);font-weight:700;margin-bottom:5px;text-transform:uppercase">Evidencia de errores</div>
-              <div style="display:flex;gap:5px;flex-wrap:wrap">
+              <div style="display:flex;gap:8px;flex-wrap:wrap">
                 ${errD.filter(e => e.path_fotografia).map(e => `
-                  <div style="position:relative;line-height:0;flex-shrink:0">
+                  <div style="display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;width:68px">
                     <img src="${e.path_fotografia}" class="foto-thumb"
-                      title="${e.tipo_error} — clic para ampliar"
+                      title="${e.tipo_error}${e.comentarios ? ' — ' + e.comentarios : ''} — clic para ampliar"
                       onclick="verFoto('${e.path_fotografia}','','${d.id}')"
-                      style="height:48px;width:48px;object-fit:cover;border-radius:5px;border:1.5px solid rgba(220,38,38,.45);display:block">
-                    <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(180,20,20,.88);color:#fff;font-size:8px;text-align:center;padding:2px 2px;border-radius:0 0 3px 3px;font-weight:700;font-family:'IBM Plex Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                      ${e.tipo_error.length > 9 ? e.tipo_error.substring(0,9) + '…' : e.tipo_error}
+                      style="height:60px;width:68px;object-fit:cover;border-radius:5px;border:1.5px solid rgba(220,38,38,.55);display:block">
+                    <div style="font-size:9px;color:var(--accent-red);font-weight:700;font-family:'IBM Plex Mono',monospace;text-align:center;line-height:1.2;width:100%;word-break:break-word">
+                      ${e.tipo_error}
                     </div>
+                    ${e.comentarios ? `<div style="font-size:8px;color:var(--text-muted);text-align:center;line-height:1.3;width:100%;overflow:hidden;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">${e.comentarios}</div>` : ''}
                   </div>
                 `).join('')}
               </div>
@@ -1776,6 +1795,7 @@ async function registrarSKU() {
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);
     state.detalles = await API.get(`/trackings/${state.tracking.id}/detalles`);
     state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
+    state.retrabajos = await API.get(`/trackings/${state.tracking.id}/retrabajos`);
 
     toast(`SKU ${skuCode} registrado${state.skuNoRegistrado ? ' (fotos de evidencia guardadas)' : ''}${fotosReq > 0 ? ` + ${fotosReq} foto(s) adicional(es)` : ''}`);
 
@@ -2097,6 +2117,7 @@ async function guardarError() {
     }
 
     state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
+    state.retrabajos = await API.get(`/trackings/${state.tracking.id}/retrabajos`);
 
     limpiarQR();
     setFotoMode('local');
