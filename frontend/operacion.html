@@ -816,30 +816,109 @@ function renderInspeccion() {
                 <div style="margin-bottom:8px">
                   <div class="section-title" style="margin-bottom:8px">Fotografías de evidencia (obligatorias)</div>
                   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+
+                    <!-- ① Etiqueta del producto -->
                     <div class="foto-req-card">
                       <div class="foto-req-label">① Etiqueta del producto</div>
-                      <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
-                        📷 Seleccionar
-                        <input type="file" id="foto-etiqueta-req" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-etiqueta')">
-                      </label>
-                      <img id="prev-etiqueta" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                      <div style="display:flex;gap:0;margin-bottom:6px;border:1px solid var(--border);border-radius:4px;overflow:hidden">
+                        <button id="fev-btn-local-etiqueta" class="foto-modo-btn active" onclick="setFotoEvidenciaMode('etiqueta','local')" style="font-size:10px;padding:4px 0">📁 Local</button>
+                        <button id="fev-btn-qr-etiqueta" class="foto-modo-btn" onclick="setFotoEvidenciaMode('etiqueta','qr')" style="font-size:10px;padding:4px 0">📱 QR</button>
+                      </div>
+                      <div id="fev-local-etiqueta">
+                        <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+                          📷 Seleccionar
+                          <input type="file" id="foto-etiqueta-req" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-etiqueta')">
+                        </label>
+                        <img id="prev-etiqueta" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                      </div>
+                      <div id="fev-qr-etiqueta" class="hidden">
+                        <div id="fev-qr-idle-etiqueta">
+                          <button class="btn btn-secondary btn-sm w-full" onclick="iniciarQRFotoEvidencia('etiqueta')" style="justify-content:center">📱 Generar QR</button>
+                        </div>
+                        <div id="fev-qr-activo-etiqueta" class="hidden" style="text-align:center">
+                          <div id="fev-qr-div-etiqueta" style="display:block;background:#fff;padding:5px;border-radius:5px;margin:4px 0;line-height:0"></div>
+                          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">
+                            <span id="fev-qr-cd-etiqueta" style="font-family:'IBM Plex Mono',monospace;font-weight:700">10:00</span>
+                          </div>
+                          <div class="spinner" id="fev-qr-spinner-etiqueta" style="width:12px;height:12px;border-width:2px;margin:3px auto 2px"></div>
+                          <button class="btn btn-secondary btn-sm w-full hidden" id="fev-btn-nuevo-qr-etiqueta" onclick="iniciarQRFotoEvidencia('etiqueta')" style="font-size:10px;padding:4px">↻ Nuevo QR</button>
+                        </div>
+                        <div id="fev-qr-recibida-etiqueta" class="hidden" style="text-align:center">
+                          <div style="color:var(--accent-green);font-size:10px;font-weight:700;margin-bottom:4px">✅ Recibida</div>
+                          <img id="fev-qr-preview-etiqueta" style="width:100%;border-radius:4px;max-height:80px;object-fit:cover;border:1px solid var(--border)">
+                          <button class="btn btn-secondary btn-sm w-full" style="font-size:10px;padding:4px;margin-top:4px" onclick="resetQRFotoEvidencia('etiqueta')">↩ Cambiar</button>
+                        </div>
+                      </div>
                     </div>
+
+                    <!-- ② Insumos / País de origen -->
                     <div class="foto-req-card">
                       <div class="foto-req-label">② Insumos / País de origen</div>
-                      <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
-                        📷 Seleccionar
-                        <input type="file" id="foto-insumos-req" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-insumos')">
-                      </label>
-                      <img id="prev-insumos" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                      <div style="display:flex;gap:0;margin-bottom:6px;border:1px solid var(--border);border-radius:4px;overflow:hidden">
+                        <button id="fev-btn-local-insumos" class="foto-modo-btn active" onclick="setFotoEvidenciaMode('insumos','local')" style="font-size:10px;padding:4px 0">📁 Local</button>
+                        <button id="fev-btn-qr-insumos" class="foto-modo-btn" onclick="setFotoEvidenciaMode('insumos','qr')" style="font-size:10px;padding:4px 0">📱 QR</button>
+                      </div>
+                      <div id="fev-local-insumos">
+                        <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+                          📷 Seleccionar
+                          <input type="file" id="foto-insumos-req" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-insumos')">
+                        </label>
+                        <img id="prev-insumos" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                      </div>
+                      <div id="fev-qr-insumos" class="hidden">
+                        <div id="fev-qr-idle-insumos">
+                          <button class="btn btn-secondary btn-sm w-full" onclick="iniciarQRFotoEvidencia('insumos')" style="justify-content:center">📱 Generar QR</button>
+                        </div>
+                        <div id="fev-qr-activo-insumos" class="hidden" style="text-align:center">
+                          <div id="fev-qr-div-insumos" style="display:block;background:#fff;padding:5px;border-radius:5px;margin:4px 0;line-height:0"></div>
+                          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">
+                            <span id="fev-qr-cd-insumos" style="font-family:'IBM Plex Mono',monospace;font-weight:700">10:00</span>
+                          </div>
+                          <div class="spinner" id="fev-qr-spinner-insumos" style="width:12px;height:12px;border-width:2px;margin:3px auto 2px"></div>
+                          <button class="btn btn-secondary btn-sm w-full hidden" id="fev-btn-nuevo-qr-insumos" onclick="iniciarQRFotoEvidencia('insumos')" style="font-size:10px;padding:4px">↻ Nuevo QR</button>
+                        </div>
+                        <div id="fev-qr-recibida-insumos" class="hidden" style="text-align:center">
+                          <div style="color:var(--accent-green);font-size:10px;font-weight:700;margin-bottom:4px">✅ Recibida</div>
+                          <img id="fev-qr-preview-insumos" style="width:100%;border-radius:4px;max-height:80px;object-fit:cover;border:1px solid var(--border)">
+                          <button class="btn btn-secondary btn-sm w-full" style="font-size:10px;padding:4px;margin-top:4px" onclick="resetQRFotoEvidencia('insumos')">↩ Cambiar</button>
+                        </div>
+                      </div>
                     </div>
+
+                    <!-- ③ Pieza completa -->
                     <div class="foto-req-card">
                       <div class="foto-req-label">③ Pieza completa</div>
-                      <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
-                        📷 Seleccionar
-                        <input type="file" id="foto-pieza-req" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-pieza')">
-                      </label>
-                      <img id="prev-pieza" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                      <div style="display:flex;gap:0;margin-bottom:6px;border:1px solid var(--border);border-radius:4px;overflow:hidden">
+                        <button id="fev-btn-local-pieza" class="foto-modo-btn active" onclick="setFotoEvidenciaMode('pieza','local')" style="font-size:10px;padding:4px 0">📁 Local</button>
+                        <button id="fev-btn-qr-pieza" class="foto-modo-btn" onclick="setFotoEvidenciaMode('pieza','qr')" style="font-size:10px;padding:4px 0">📱 QR</button>
+                      </div>
+                      <div id="fev-local-pieza">
+                        <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+                          📷 Seleccionar
+                          <input type="file" id="foto-pieza-req" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'prev-pieza')">
+                        </label>
+                        <img id="prev-pieza" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+                      </div>
+                      <div id="fev-qr-pieza" class="hidden">
+                        <div id="fev-qr-idle-pieza">
+                          <button class="btn btn-secondary btn-sm w-full" onclick="iniciarQRFotoEvidencia('pieza')" style="justify-content:center">📱 Generar QR</button>
+                        </div>
+                        <div id="fev-qr-activo-pieza" class="hidden" style="text-align:center">
+                          <div id="fev-qr-div-pieza" style="display:block;background:#fff;padding:5px;border-radius:5px;margin:4px 0;line-height:0"></div>
+                          <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">
+                            <span id="fev-qr-cd-pieza" style="font-family:'IBM Plex Mono',monospace;font-weight:700">10:00</span>
+                          </div>
+                          <div class="spinner" id="fev-qr-spinner-pieza" style="width:12px;height:12px;border-width:2px;margin:3px auto 2px"></div>
+                          <button class="btn btn-secondary btn-sm w-full hidden" id="fev-btn-nuevo-qr-pieza" onclick="iniciarQRFotoEvidencia('pieza')" style="font-size:10px;padding:4px">↻ Nuevo QR</button>
+                        </div>
+                        <div id="fev-qr-recibida-pieza" class="hidden" style="text-align:center">
+                          <div style="color:var(--accent-green);font-size:10px;font-weight:700;margin-bottom:4px">✅ Recibida</div>
+                          <img id="fev-qr-preview-pieza" style="width:100%;border-radius:4px;max-height:80px;object-fit:cover;border:1px solid var(--border)">
+                          <button class="btn btn-secondary btn-sm w-full" style="font-size:10px;padding:4px;margin-top:4px" onclick="resetQRFotoEvidencia('pieza')">↩ Cambiar</button>
+                        </div>
+                      </div>
                     </div>
+
                   </div>
                 </div>
               </div>
@@ -1075,7 +1154,7 @@ function renderSKUList() {
           </div>
           <div class="sku-badges">
             <span class="badge badge-muted">×${d.cantidad}</span>
-            ${d.foto_etiqueta ? `<span class="badge badge-blue">📷 Evidencia (3 fotos)</span>` : ''}
+            ${d.foto_etiqueta ? `<span class="badge badge-amber" style="font-family:'IBM Plex Mono',monospace;font-size:9px">★ Nuevo en catálogo</span><span class="badge badge-blue">📷 Evidencia (3 fotos)</span>` : ''}
             ${d.foto_adicional_1 ? `<span class="badge badge-blue">📷 +${[1,2,3,4].filter(n=>d[`foto_adicional_${n}`]).length} adicional(es)</span>` : ''}
             ${d.pais_origen_real ? `<span class="badge ${paisDiff?'badge-amber':'badge-muted'}">🌍 ${d.pais_origen_real}${paisDiff?' ⚠':''}</span>` : ''}
             ${d.calidad ? `<span class="badge ${isMalo?'badge-red':'badge-green'}">${isMalo?'✕ Mala':'✓ Buena'}</span>` : ''}
@@ -1169,7 +1248,8 @@ async function buscarSKU(code) {
         document.getElementById('nr-insumos').value = '';
         const manual = document.getElementById('nr-pais-manual');
         if (manual) { manual.value = ''; manual.style.display = 'none'; }
-        // Limpiar previews de fotos
+        // Limpiar previews y estado QR de fotos de evidencia
+        limpiarTodasFotosEvidenciaQR();
         ['prev-etiqueta','prev-insumos','prev-pieza'].forEach(id => {
           const img = document.getElementById(id);
           if (img) { img.src = ''; img.classList.add('hidden'); }
@@ -1177,6 +1257,13 @@ async function buscarSKU(code) {
         ['foto-etiqueta-req','foto-insumos-req','foto-pieza-req'].forEach(id => {
           const inp = document.getElementById(id);
           if (inp) inp.value = '';
+        });
+        // Resetear botones de modo a "local"
+        ['etiqueta','insumos','pieza'].forEach(slot => {
+          document.getElementById(`fev-btn-local-${slot}`)?.classList.add('active');
+          document.getElementById(`fev-btn-qr-${slot}`)?.classList.remove('active');
+          document.getElementById(`fev-local-${slot}`)?.classList.remove('hidden');
+          document.getElementById(`fev-qr-${slot}`)?.classList.add('hidden');
         });
       }
     }
@@ -1192,6 +1279,7 @@ function cancelarSKU() {
   state.skuNoRegistrado = false;
   state.skuActual = null;
   limpiarTodasFotosAdicionalesQR();
+  limpiarTodasFotosEvidenciaQR();
   document.getElementById('sku-form').classList.add('hidden');
   document.getElementById('seccion-no-registrado')?.classList.add('hidden');
   document.getElementById('seccion-verificacion')?.classList.remove('hidden');
@@ -1382,6 +1470,127 @@ function limpiarTodasFotosAdicionalesQR() {
   fotosAdicionalesQR = {};
 }
 
+// ── Fotos de evidencia QR (SKU nuevo: etiqueta / insumos / pieza) ──
+let fotosEvidenciaQR = {}; // { [slot]: { mode, token, url_foto, pollInterval, countdownInterval, expiresMs } }
+
+function setFotoEvidenciaMode(slot, mode) {
+  if (!fotosEvidenciaQR[slot]) fotosEvidenciaQR[slot] = {};
+  fotosEvidenciaQR[slot].mode = mode;
+  document.getElementById(`fev-btn-local-${slot}`)?.classList.toggle('active', mode === 'local');
+  document.getElementById(`fev-btn-qr-${slot}`)?.classList.toggle('active', mode === 'qr');
+  document.getElementById(`fev-local-${slot}`)?.classList.toggle('hidden', mode !== 'local');
+  document.getElementById(`fev-qr-${slot}`)?.classList.toggle('hidden', mode !== 'qr');
+  if (mode === 'local') limpiarQRFotoEvidencia(slot);
+}
+
+async function iniciarQRFotoEvidencia(slot) {
+  limpiarQRFotoEvidencia(slot);
+  if (!fotosEvidenciaQR[slot]) fotosEvidenciaQR[slot] = {};
+
+  document.getElementById(`fev-qr-idle-${slot}`)?.classList.add('hidden');
+  document.getElementById(`fev-qr-activo-${slot}`)?.classList.remove('hidden');
+  document.getElementById(`fev-qr-recibida-${slot}`)?.classList.add('hidden');
+  document.getElementById(`fev-btn-nuevo-qr-${slot}`)?.classList.add('hidden');
+  document.getElementById(`fev-qr-spinner-${slot}`)?.classList.remove('hidden');
+
+  const qrDiv = document.getElementById(`fev-qr-div-${slot}`);
+  if (qrDiv) qrDiv.innerHTML = '';
+
+  try {
+    const sesion = await API.post('/foto-sesion', {
+      tracking_id: state.tracking?.id || null,
+      contexto: `foto-evidencia-${slot}`,
+    });
+    const s = fotosEvidenciaQR[slot];
+    s.token = sesion.token;
+
+    if (qrDiv) {
+      new QRCode(qrDiv, {
+        text: sesion.url,
+        width: 160, height: 160,
+        colorDark: '#000000', colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M,
+      });
+      setTimeout(() => {
+        const c = qrDiv.querySelector('canvas');
+        if (c) { c.style.width = '100%'; c.style.height = 'auto'; }
+        const img = qrDiv.querySelector('img');
+        if (img) { img.style.width = '100%'; img.style.height = 'auto'; }
+      }, 50);
+    }
+
+    s.expiresMs = Date.now() + 10 * 60 * 1000;
+    tickCountdownFEV(slot);
+    s.countdownInterval = setInterval(() => tickCountdownFEV(slot), 1000);
+    s.pollInterval = setInterval(() => pollQRFEV(slot), 2000);
+  } catch(e) {
+    if (qrDiv) qrDiv.innerHTML = '<div style="color:var(--accent-red);font-size:10px;padding:8px">Error al generar</div>';
+    document.getElementById(`fev-btn-nuevo-qr-${slot}`)?.classList.remove('hidden');
+    document.getElementById(`fev-qr-spinner-${slot}`)?.classList.add('hidden');
+  }
+}
+
+function tickCountdownFEV(slot) {
+  const s = fotosEvidenciaQR[slot];
+  if (!s) return;
+  const remaining = Math.max(0, s.expiresMs - Date.now());
+  const mins = Math.floor(remaining / 60000);
+  const secs = Math.floor((remaining % 60000) / 1000);
+  const el = document.getElementById(`fev-qr-cd-${slot}`);
+  if (el) {
+    el.textContent = `${mins}:${String(secs).padStart(2, '0')}`;
+    el.style.color = remaining < 120000 ? 'var(--accent-red)' : '';
+  }
+  if (remaining === 0) {
+    clearInterval(s.countdownInterval);
+    clearInterval(s.pollInterval);
+    document.getElementById(`fev-qr-spinner-${slot}`)?.classList.add('hidden');
+    document.getElementById(`fev-btn-nuevo-qr-${slot}`)?.classList.remove('hidden');
+  }
+}
+
+async function pollQRFEV(slot) {
+  const s = fotosEvidenciaQR[slot];
+  if (!s?.token) return;
+  try {
+    const data = await API.get(`/foto-sesion/${s.token}`);
+    if (data.estatus === 'completada' && data.url_foto) {
+      clearInterval(s.pollInterval);
+      clearInterval(s.countdownInterval);
+      s.url_foto = data.url_foto;
+      document.getElementById(`fev-qr-activo-${slot}`)?.classList.add('hidden');
+      document.getElementById(`fev-qr-recibida-${slot}`)?.classList.remove('hidden');
+      const img = document.getElementById(`fev-qr-preview-${slot}`);
+      if (img) img.src = data.url_foto;
+    }
+  } catch(e) {}
+}
+
+function limpiarQRFotoEvidencia(slot) {
+  const s = fotosEvidenciaQR[slot];
+  if (!s) return;
+  clearInterval(s.pollInterval);
+  clearInterval(s.countdownInterval);
+  s.pollInterval = null;
+  s.countdownInterval = null;
+}
+
+function resetQRFotoEvidencia(slot) {
+  limpiarQRFotoEvidencia(slot);
+  if (fotosEvidenciaQR[slot]) {
+    fotosEvidenciaQR[slot].token = null;
+    fotosEvidenciaQR[slot].url_foto = null;
+  }
+  document.getElementById(`fev-qr-activo-${slot}`)?.classList.add('hidden');
+  document.getElementById(`fev-qr-recibida-${slot}`)?.classList.add('hidden');
+  document.getElementById(`fev-qr-idle-${slot}`)?.classList.remove('hidden');
+}
+
+function limpiarTodasFotosEvidenciaQR() {
+  Object.keys(fotosEvidenciaQR).forEach(slot => limpiarQRFotoEvidencia(slot));
+  fotosEvidenciaQR = {};
+}
+
 async function registrarSKU() {
   const cantidad = parseInt(document.getElementById('f-cantidad').value) || 1;
 
@@ -1401,12 +1610,20 @@ async function registrarSKU() {
     if (!paisReal) { toast('El país de origen es requerido', 'error'); return; }
     if (!insReal)  { toast('Los insumos / composición son requeridos', 'error'); return; }
 
-    const fEtiqueta = document.getElementById('foto-etiqueta-req')?.files[0];
-    const fInsumos  = document.getElementById('foto-insumos-req')?.files[0];
-    const fPieza    = document.getElementById('foto-pieza-req')?.files[0];
-    if (!fEtiqueta || !fInsumos || !fPieza) {
-      toast('Se requieren las 3 fotografías de evidencia (etiqueta, insumos/origen, pieza completa)', 'error');
-      return;
+    const slotInputIds = { etiqueta: 'foto-etiqueta-req', insumos: 'foto-insumos-req', pieza: 'foto-pieza-req' };
+    for (const [slot, inputId] of Object.entries(slotInputIds)) {
+      const mode = fotosEvidenciaQR[slot]?.mode || 'local';
+      if (mode === 'qr') {
+        if (!fotosEvidenciaQR[slot]?.url_foto) {
+          toast(`Espera a que el teléfono envíe la foto de evidencia (${slot})`, 'error');
+          return;
+        }
+      } else {
+        if (!document.getElementById(inputId)?.files[0]) {
+          toast('Se requieren las 3 fotografías de evidencia (etiqueta, insumos/origen, pieza completa)', 'error');
+          return;
+        }
+      }
     }
   } else {
     // Leer desde campos normales
@@ -1467,13 +1684,26 @@ async function registrarSKU() {
       calidad: state.calidadActual,
     });
 
-    // Subir fotos de evidencia si el SKU no estaba en catálogo
+    // Subir fotos de evidencia si el SKU no estaba en catálogo (soporta local + QR mixto)
     if (state.skuNoRegistrado) {
-      const fd = new FormData();
-      fd.append('etiqueta', document.getElementById('foto-etiqueta-req').files[0]);
-      fd.append('insumos',  document.getElementById('foto-insumos-req').files[0]);
-      fd.append('pieza',    document.getElementById('foto-pieza-req').files[0]);
-      await API.postForm(`/detalles/${res.id}/fotos-evidencia`, fd);
+      const fdEv = new FormData();
+      const urlEv = {};
+      let hasLocalEv = false;
+      let hasQREv = false;
+      const slotInputIds2 = { etiqueta: 'foto-etiqueta-req', insumos: 'foto-insumos-req', pieza: 'foto-pieza-req' };
+      for (const [slot, inputId] of Object.entries(slotInputIds2)) {
+        const mode = fotosEvidenciaQR[slot]?.mode || 'local';
+        if (mode === 'qr') {
+          urlEv[`url_${slot}`] = fotosEvidenciaQR[slot].url_foto;
+          hasQREv = true;
+        } else {
+          fdEv.append(slot, document.getElementById(inputId).files[0]);
+          hasLocalEv = true;
+        }
+      }
+      if (hasLocalEv) await API.postForm(`/detalles/${res.id}/fotos-evidencia`, fdEv);
+      if (hasQREv)   await API.post(`/detalles/${res.id}/fotos-evidencia-url`, urlEv);
+      limpiarTodasFotosEvidenciaQR();
     }
 
     // Subir fotos adicionales (G3) — modo local vía multipart, modo QR vía URL

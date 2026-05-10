@@ -667,6 +667,23 @@ app.post('/api/detalles/:id/fotos-evidencia', upload.fields([
   res.json({ mensaje: 'Fotos guardadas' });
 });
 
+// Fotos de evidencia para SKU no registrado vía URL (QR)
+app.post('/api/detalles/:id/fotos-evidencia-url', (req, res) => {
+  const detalle = dbGet('SELECT id FROM detalle_skus WHERE id=?', [req.params.id]);
+  if (!detalle) return res.status(404).json({ error: 'Detalle no encontrado' });
+
+  const updates = [];
+  const vals = [];
+  if (req.body.url_etiqueta) { updates.push('foto_etiqueta=?'); vals.push(req.body.url_etiqueta); }
+  if (req.body.url_insumos)  { updates.push('foto_insumos=?');  vals.push(req.body.url_insumos); }
+  if (req.body.url_pieza)    { updates.push('foto_pieza=?');    vals.push(req.body.url_pieza); }
+
+  if (updates.length === 0) return res.status(400).json({ error: 'No se recibieron URLs' });
+  vals.push(req.params.id);
+  dbRun(`UPDATE detalle_skus SET ${updates.join(',')} WHERE id=?`, vals);
+  res.json({ mensaje: 'Fotos de evidencia guardadas' });
+});
+
 // Fotos adicionales G3 vía URL (foto ya subida desde móvil vía QR)
 app.post('/api/detalles/:id/fotos-adicionales-url', (req, res) => {
   const detalle = dbGet('SELECT id FROM detalle_skus WHERE id=?', [req.params.id]);
