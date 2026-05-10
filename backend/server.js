@@ -225,6 +225,27 @@ async function initDB() {
   `);
   db.run("DELETE FROM foto_sesiones WHERE expires_at < datetime('now')");
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS skus_nuevos (
+      id TEXT PRIMARY KEY,
+      tracking_id TEXT NOT NULL,
+      detalle_sku_id TEXT,
+      cliente_id TEXT NOT NULL,
+      sku_code TEXT NOT NULL,
+      upc TEXT,
+      descripcion TEXT,
+      pais_origen TEXT,
+      insumos TEXT,
+      url_foto_etiqueta TEXT,
+      url_foto_insumos_origen TEXT,
+      url_foto_producto_completo TEXT,
+      operador TEXT,
+      dado_de_alta INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now'))
+    )
+  `);
+  try { db.run('ALTER TABLE detalle_skus ADD COLUMN es_nuevo INTEGER DEFAULT 0'); } catch(e) {}
+
   saveDB();
 
   // Datos demo
@@ -613,7 +634,7 @@ app.post('/api/trackings/:id/detalles', (req, res) => {
     sku_code, descripcion, cantidad,
     pais_origen_catalogo, pais_origen_real, pais_coincide,
     insumos_catalogo, insumos_real, insumos_coincide,
-    calidad
+    calidad, es_nuevo, upc_code
   } = req.body;
 
   const tracking = dbGet('SELECT * FROM trackings WHERE id=?', [req.params.id]);
@@ -621,14 +642,26 @@ app.post('/api/trackings/:id/detalles', (req, res) => {
   if (tracking.estatus === 'cerrado') return res.status(400).json({ error: 'Tracking cerrado' });
 
   const id = uuidv4();
-  dbRun(`INSERT INTO detalle_skus (id,tracking_id,sku_code,descripcion,cantidad,pais_origen_catalogo,pais_origen_real,pais_coincide,insumos_catalogo,insumos_real,insumos_coincide,calidad)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+  const esNuevoFlag = es_nuevo ? 1 : 0;
+  dbRun(`INSERT INTO detalle_skus (id,tracking_id,sku_code,descripcion,cantidad,pais_origen_catalogo,pais_origen_real,pais_coincide,insumos_catalogo,insumos_real,insumos_coincide,calidad,es_nuevo)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     [id, req.params.id, sku_code, descripcion, cantidad || 1,
      pais_origen_catalogo, pais_origen_real || pais_origen_catalogo,
      pais_coincide !== false ? 1 : 0,
      insumos_catalogo, insumos_real || insumos_catalogo,
      insumos_coincide !== false ? 1 : 0,
-     calidad || 'Buena']);
+     calidad || 'Buena', esNuevoFlag]);
+
+  if (es_nuevo) {
+    const nid = uuidv4();
+    dbRun(`INSERT INTO skus_nuevos (id,tracking_id,detalle_sku_id,cliente_id,sku_code,upc,descripcion,pais_origen,insumos,operador)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`,
+      [nid, req.params.id, id, tracking.cliente_id, sku_code,
+       upc_code || null, descripcion || null,
+       pais_origen_real || pais_origen_catalogo || null,
+       insumos_real || insumos_catalogo || null,
+       tracking.operador || null]);
+  }
 
   // Actualizar cantidad_final
   const total = dbGet('SELECT SUM(cantidad) as total FROM detalle_skus WHERE tracking_id=?', [req.params.id]);
@@ -1225,6 +1258,135 @@ app.post('/api/trackings/:id/errores-url', (req, res) => {
   dbRun(`INSERT INTO errores (id,tracking_id,detalle_sku_id,tipo_error,path_fotografia,comentarios) VALUES (?,?,?,?,?,?)`,
     [id, req.params.id, detalle_sku_id || null, tipo_error, path_fotografia, comentarios]);
   res.json({ id, path_fotografia, mensaje: 'Error registrado' });
+});
+
+// ── Subida genérica de foto ───────────────────────────────────────────────────
+app.post('/api/subir-foto', upload.single('foto'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No se recibió foto' });
+  res.json({ url: `/uploads/${req.file.filename}` });
+});
+
+// ── SKUs Nuevos en Catálogo ────────────────────────────────────────────────────
+
+function buildSkusNuevosWhere(query) {
+  const { cliente_id, fecha_inicio, fecha_fin, solo_sin_completar } = query;
+  const where = ['1=1'];
+  const vals = [];
+  if (cliente_id) { where.push('n.cliente_id=?'); vals.push(cliente_id); }
+  if (fecha_inicio) { where.push("date(n.created_at)>=?"); vals.push(fecha_inicio); }
+  if (fecha_fin) { where.push("date(n.created_at)<=?"); vals.push(fecha_fin); }
+  if (solo_sin_completar === '1') {
+    where.push(`(
+      COALESCE(n.url_foto_etiqueta, d.foto_etiqueta) IS NULL
+      OR COALESCE(n.url_foto_insumos_origen, d.foto_insumos) IS NULL
+      OR COALESCE(n.url_foto_producto_completo, d.foto_pieza) IS NULL
+    )`);
+  }
+  return { where: where.join(' AND '), vals };
+}
+
+app.get('/api/skus-nuevos/pendientes', (req, res) => {
+  const row = dbGet(`
+    SELECT COUNT(*) as cnt FROM skus_nuevos n
+    LEFT JOIN detalle_skus d ON n.detalle_sku_id=d.id
+    WHERE n.dado_de_alta=0
+    AND (
+      COALESCE(n.url_foto_etiqueta, d.foto_etiqueta) IS NULL
+      OR COALESCE(n.url_foto_insumos_origen, d.foto_insumos) IS NULL
+      OR COALESCE(n.url_foto_producto_completo, d.foto_pieza) IS NULL
+    )
+  `, []);
+  res.json({ count: row?.cnt || 0 });
+});
+
+app.get('/api/skus-nuevos/exportar/csv', (req, res) => {
+  const { where, vals } = buildSkusNuevosWhere(req.query);
+  const rows = dbAll(`
+    SELECT n.id, n.tracking_id, n.detalle_sku_id, n.cliente_id, n.sku_code, n.upc,
+      n.descripcion, n.pais_origen, n.insumos, n.operador, n.dado_de_alta, n.created_at,
+      COALESCE(n.url_foto_etiqueta, d.foto_etiqueta)             as url_foto_etiqueta,
+      COALESCE(n.url_foto_insumos_origen, d.foto_insumos)        as url_foto_insumos_origen,
+      COALESCE(n.url_foto_producto_completo, d.foto_pieza)       as url_foto_producto_completo,
+      c.nombre as cliente_nombre, t.tracking_number
+    FROM skus_nuevos n
+    LEFT JOIN clientes c ON n.cliente_id=c.id
+    LEFT JOIN trackings t ON n.tracking_id=t.id
+    LEFT JOIN detalle_skus d ON n.detalle_sku_id=d.id
+    WHERE ${where} ORDER BY n.created_at DESC
+  `, vals);
+  const esc = v => v ? `"${String(v).replace(/"/g,'""')}"` : '""';
+  const headers = ['Fecha','Cliente','Tracking #','SKU Code','UPC','Descripción','País de Origen','Insumos','URL Fotografía Etiqueta','URL Fotografía Insumos / País de Origen','URL Fotografía Producto Completo','Operador'];
+  const lines = [
+    headers.map(h => `"${h}"`).join(','),
+    ...rows.map(r => [
+      esc(r.created_at?.substring(0,10)), esc(r.cliente_nombre), esc(r.tracking_number),
+      esc(r.sku_code), esc(r.upc), esc(r.descripcion), esc(r.pais_origen), esc(r.insumos),
+      esc(r.url_foto_etiqueta), esc(r.url_foto_insumos_origen), esc(r.url_foto_producto_completo),
+      esc(r.operador),
+    ].join(','))
+  ];
+  const fecha = new Date().toISOString().substring(0,10);
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="skus-nuevos-${fecha}.csv"`);
+  res.send('﻿' + lines.join('\r\n'));
+});
+
+app.get('/api/skus-nuevos', (req, res) => {
+  const { where, vals } = buildSkusNuevosWhere(req.query);
+  const rows = dbAll(`
+    SELECT n.id, n.tracking_id, n.detalle_sku_id, n.cliente_id, n.sku_code, n.upc,
+      n.descripcion, n.pais_origen, n.insumos, n.operador, n.dado_de_alta, n.created_at,
+      COALESCE(n.url_foto_etiqueta, d.foto_etiqueta)             as url_foto_etiqueta,
+      COALESCE(n.url_foto_insumos_origen, d.foto_insumos)        as url_foto_insumos_origen,
+      COALESCE(n.url_foto_producto_completo, d.foto_pieza)       as url_foto_producto_completo,
+      c.nombre as cliente_nombre, t.tracking_number
+    FROM skus_nuevos n
+    LEFT JOIN clientes c ON n.cliente_id=c.id
+    LEFT JOIN trackings t ON n.tracking_id=t.id
+    LEFT JOIN detalle_skus d ON n.detalle_sku_id=d.id
+    WHERE ${where} ORDER BY n.created_at DESC
+  `, vals);
+  res.json(rows);
+});
+
+app.get('/api/skus-nuevos/:id', (req, res) => {
+  const row = dbGet(`
+    SELECT n.id, n.tracking_id, n.detalle_sku_id, n.cliente_id, n.sku_code, n.upc,
+      n.descripcion, n.pais_origen, n.insumos, n.operador, n.dado_de_alta, n.created_at,
+      COALESCE(n.url_foto_etiqueta, d.foto_etiqueta)             as url_foto_etiqueta,
+      COALESCE(n.url_foto_insumos_origen, d.foto_insumos)        as url_foto_insumos_origen,
+      COALESCE(n.url_foto_producto_completo, d.foto_pieza)       as url_foto_producto_completo,
+      c.nombre as cliente_nombre, t.tracking_number
+    FROM skus_nuevos n
+    LEFT JOIN clientes c ON n.cliente_id=c.id
+    LEFT JOIN trackings t ON n.tracking_id=t.id
+    LEFT JOIN detalle_skus d ON n.detalle_sku_id=d.id
+    WHERE n.id=?
+  `, [req.params.id]);
+  if (!row) return res.status(404).json({ error: 'No encontrado' });
+  res.json(row);
+});
+
+app.put('/api/skus-nuevos/:id', (req, res) => {
+  const { upc, descripcion, pais_origen, insumos, url_foto_etiqueta, url_foto_insumos_origen, url_foto_producto_completo, dado_de_alta } = req.body;
+  const updates = [], vals = [];
+  if (upc !== undefined)                      { updates.push('upc=?');                       vals.push(upc || null); }
+  if (descripcion !== undefined)              { updates.push('descripcion=?');                vals.push(descripcion || null); }
+  if (pais_origen !== undefined)              { updates.push('pais_origen=?');                vals.push(pais_origen || null); }
+  if (insumos !== undefined)                  { updates.push('insumos=?');                    vals.push(insumos || null); }
+  if (url_foto_etiqueta !== undefined)        { updates.push('url_foto_etiqueta=?');          vals.push(url_foto_etiqueta || null); }
+  if (url_foto_insumos_origen !== undefined)  { updates.push('url_foto_insumos_origen=?');    vals.push(url_foto_insumos_origen || null); }
+  if (url_foto_producto_completo !== undefined){ updates.push('url_foto_producto_completo=?'); vals.push(url_foto_producto_completo || null); }
+  if (dado_de_alta !== undefined)             { updates.push('dado_de_alta=?');               vals.push(dado_de_alta ? 1 : 0); }
+  if (!updates.length) return res.status(400).json({ error: 'Nada que actualizar' });
+  vals.push(req.params.id);
+  dbRun(`UPDATE skus_nuevos SET ${updates.join(',')} WHERE id=?`, vals);
+  res.json({ mensaje: 'Actualizado' });
+});
+
+app.delete('/api/skus-nuevos/:id', (req, res) => {
+  dbRun('DELETE FROM skus_nuevos WHERE id=?', [req.params.id]);
+  res.json({ mensaje: 'Eliminado' });
 });
 
 // Iniciar servidor

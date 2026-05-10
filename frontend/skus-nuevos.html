@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SKUs Nuevos en Catálogo — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+  <style>
+    .foto-check { font-size:16px;line-height:1 }
+    .foto-check.ok  { color:var(--accent-green) }
+    .foto-check.no  { color:var(--text-muted) }
+    .fila-incompleta { background:rgba(255,171,0,.04) }
+    th { font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-muted);font-weight:600;white-space:nowrap }
+    td { font-size:12px;vertical-align:middle }
+    .sku-tbl { width:100%;border-collapse:collapse }
+    .sku-tbl th, .sku-tbl td { padding:8px 10px;border-bottom:1px solid var(--border) }
+    .sku-tbl tbody tr:hover { background:var(--bg-elevated) }
+    .dado-de-alta-row { opacity:.5 }
+    .btn-xs { padding:3px 8px;font-size:11px }
+    .foto-slot { display:flex;flex-direction:column;gap:6px }
+    .foto-slot-preview { position:relative;display:inline-block }
+    .foto-slot-preview img { max-height:120px;max-width:100%;object-fit:contain;border-radius:6px;border:1px solid var(--border);display:block }
+    .foto-slot-preview .quitar-btn { position:absolute;top:4px;right:4px;background:rgba(0,0,0,.65);color:#fff;border:none;border-radius:50%;width:22px;height:22px;font-size:13px;cursor:pointer;line-height:22px;text-align:center;padding:0 }
+    .foto-mini { width:40px;height:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer;display:block }
+  </style>
+</head>
+<body>
+<script src="js/app.js"></script>
+<script src="js/shell.js"></script>
+<script>
+buildShell('SKUs Nuevos en Catálogo', 'SKUs NUEVOS', `
+  <button class="btn btn-secondary btn-sm" onclick="exportarCSV()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Exportar CSV
+  </button>
+`);
+
+const urlP = new URLSearchParams(window.location.search);
+const content = document.getElementById('page-content');
+
+// ─── MODAL DE EDICIÓN ────────────────────────────────────────────────────────
+document.body.insertAdjacentHTML('beforeend', `
+  <div id="modal-editar" class="modal-overlay">
+    <div class="modal" style="max-width:560px">
+      <div class="modal-header">
+        <span class="modal-title">✏️ Editar SKU Nuevo</span>
+        <button class="modal-close" onclick="closeModal('modal-editar')">×</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+        <input type="hidden" id="edit-id">
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">SKU Code</label>
+            <input class="form-control form-control-mono" id="edit-sku" readonly style="opacity:.6">
+          </div>
+          <div class="form-group">
+            <label class="form-label">UPC</label>
+            <input class="form-control form-control-mono" id="edit-upc" placeholder="Código UPC / barcode">
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Descripción</label>
+          <input class="form-control" id="edit-desc" placeholder="Descripción del producto">
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">País de Origen</label>
+            <input class="form-control" id="edit-pais" placeholder="Ej: México, China...">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Insumos / Composición</label>
+            <input class="form-control" id="edit-insumos" placeholder="Ej: 100% Cotton">
+          </div>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div class="form-group" style="margin:0">
+            <label class="form-label" style="margin-bottom:6px">① Etiqueta</label>
+            <div id="foto-slot-etiqueta" class="foto-slot"></div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label" style="margin-bottom:6px">② Insumos / Origen</label>
+            <div id="foto-slot-insumos" class="foto-slot"></div>
+          </div>
+          <div class="form-group" style="margin:0">
+            <label class="form-label" style="margin-bottom:6px">③ Producto completo</label>
+            <div id="foto-slot-producto" class="foto-slot"></div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-editar')">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarEdicion()">Guardar</button>
+      </div>
+    </div>
+  </div>
+`);
+
+// ─── ESTADO ──────────────────────────────────────────────────────────────────
+let clientes = [];
+let datos = [];
+let editFotos = { etiqueta: null, insumos: null, producto: null };
+
+// ─── INIT ─────────────────────────────────────────────────────────────────────
+async function init() {
+  clientes = await API.get('/clientes');
+  renderFiltros();
+  if (urlP.get('solo_sin_completar') === '1') {
+    document.getElementById('f-incompletos').checked = true;
+  }
+  await buscar();
+}
+
+function renderFiltros() {
+  const opts = clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
+  document.getElementById('f-cliente').innerHTML = `<option value="">Todos los clientes</option>${opts}`;
+}
+
+// ─── BUSCAR ───────────────────────────────────────────────────────────────────
+async function buscar() {
+  const params = new URLSearchParams();
+  const fi  = document.getElementById('f-desde').value;
+  const ff  = document.getElementById('f-hasta').value;
+  const cl  = document.getElementById('f-cliente').value;
+  const inc = document.getElementById('f-incompletos').checked;
+  if (fi)  params.set('fecha_inicio', fi);
+  if (ff)  params.set('fecha_fin', ff);
+  if (cl)  params.set('cliente_id', cl);
+  if (inc) params.set('solo_sin_completar', '1');
+
+  const tbody = document.getElementById('tbl-body');
+  if (tbody) tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;padding:24px;color:var(--text-muted)">Cargando...</td></tr>`;
+
+  datos = await API.get(`/skus-nuevos?${params}`);
+  renderTabla();
+}
+
+// ─── TABLA ────────────────────────────────────────────────────────────────────
+function fotoIcon(url) {
+  if (!url) return `<span class="foto-check no">—</span>`;
+  return `<img src="${url}" class="foto-mini" onclick="verFoto('${url}','','')" title="Ver foto">`;
+}
+
+function renderTabla() {
+  const tbody = document.getElementById('tbl-body');
+  if (!tbody) return;
+  if (!datos.length) {
+    tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;padding:32px;color:var(--text-muted)">Sin resultados</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = datos.map(r => {
+    const incompleto = !r.url_foto_etiqueta || !r.url_foto_insumos_origen || !r.url_foto_producto_completo;
+    const rowClass = r.dado_de_alta ? 'dado-de-alta-row' : (incompleto ? 'fila-incompleta' : '');
+    const fecha = r.created_at?.substring(0, 10) || '—';
+    return `
+      <tr class="${rowClass}">
+        <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-muted)">${fecha}</td>
+        <td>${r.cliente_nombre || '—'}</td>
+        <td style="font-family:'IBM Plex Mono',monospace">
+          <a href="operacion.html?id=${r.tracking_id}" style="color:var(--accent-cyan)">${r.tracking_number || '—'}</a>
+        </td>
+        <td style="font-family:'IBM Plex Mono',monospace;font-weight:700">${r.sku_code}</td>
+        <td style="font-family:'IBM Plex Mono',monospace">${r.upc || '<span style="color:var(--text-muted)">—</span>'}</td>
+        <td style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.descripcion || ''}">${r.descripcion || '—'}</td>
+        <td>${r.pais_origen || '—'}</td>
+        <td style="max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.insumos || ''}">${r.insumos || '—'}</td>
+        <td style="text-align:center">${fotoIcon(r.url_foto_etiqueta)}</td>
+        <td style="text-align:center">${fotoIcon(r.url_foto_insumos_origen)}</td>
+        <td style="text-align:center">${fotoIcon(r.url_foto_producto_completo)}</td>
+        <td>${r.dado_de_alta
+          ? `<span class="badge badge-green">✓ Alta</span>`
+          : incompleto
+            ? `<span class="badge badge-amber">Pendiente</span>`
+            : `<span class="badge badge-blue">Completo</span>`
+        }</td>
+        <td style="font-size:11px;color:var(--text-muted)">${r.operador || '—'}</td>
+        <td>
+          <div style="display:flex;gap:4px">
+            <button class="btn btn-secondary btn-sm btn-xs" onclick="abrirEditar('${r.id}')">✏️ Editar</button>
+            ${!r.dado_de_alta ? `<button class="btn btn-secondary btn-sm btn-xs" onclick="darDeAlta('${r.id}')" style="color:var(--accent-green)">★ Alta</button>` : ''}
+            <button class="btn btn-secondary btn-sm btn-xs" onclick="eliminar('${r.id}')" style="color:var(--accent-red)">✕</button>
+          </div>
+        </td>
+      </tr>
+    `;
+  }).join('');
+}
+
+// ─── SLOTS DE FOTO ────────────────────────────────────────────────────────────
+function renderFotoSlot(slot) {
+  const el = document.getElementById(`foto-slot-${slot}`);
+  if (!el) return;
+  const url = editFotos[slot];
+
+  if (url) {
+    el.innerHTML = `
+      <div class="foto-slot-preview">
+        <img src="${url}" onclick="verFoto('${url}','','')" title="Clic para ampliar">
+        <button class="quitar-btn" onclick="quitarFoto('${slot}')">×</button>
+      </div>
+      <label class="btn btn-secondary btn-sm" style="cursor:pointer;justify-content:center;font-size:11px">
+        📷 Cambiar
+        <input type="file" accept="image/*" capture="environment" style="display:none" onchange="subirFoto(this,'${slot}')">
+      </label>
+    `;
+  } else {
+    el.innerHTML = `
+      <label class="btn btn-secondary w-full" style="cursor:pointer;justify-content:center;font-size:12px;padding:10px">
+        📷 Seleccionar foto
+        <input type="file" accept="image/*" capture="environment" style="display:none" onchange="subirFoto(this,'${slot}')">
+      </label>
+    `;
+  }
+}
+
+async function subirFoto(input, slot) {
+  const file = input.files[0];
+  if (!file) return;
+  const el = document.getElementById(`foto-slot-${slot}`);
+  el.innerHTML = `<div style="color:var(--text-muted);font-size:12px;padding:12px;text-align:center">Subiendo...</div>`;
+  try {
+    const fd = new FormData();
+    fd.append('foto', file);
+    const result = await API.postForm('/subir-foto', fd);
+    editFotos[slot] = result.url;
+    renderFotoSlot(slot);
+  } catch(e) {
+    toast('Error al subir foto', 'error');
+    renderFotoSlot(slot);
+  }
+}
+
+function quitarFoto(slot) {
+  editFotos[slot] = null;
+  renderFotoSlot(slot);
+}
+
+// ─── MODAL EDITAR ─────────────────────────────────────────────────────────────
+function abrirEditar(id) {
+  const r = datos.find(x => x.id === id);
+  if (!r) return;
+  document.getElementById('edit-id').value    = r.id;
+  document.getElementById('edit-sku').value   = r.sku_code;
+  document.getElementById('edit-upc').value   = r.upc || '';
+  document.getElementById('edit-desc').value  = r.descripcion || '';
+  document.getElementById('edit-pais').value  = r.pais_origen || '';
+  document.getElementById('edit-insumos').value = r.insumos || '';
+
+  editFotos = {
+    etiqueta: r.url_foto_etiqueta       || null,
+    insumos:  r.url_foto_insumos_origen  || null,
+    producto: r.url_foto_producto_completo || null,
+  };
+  ['etiqueta', 'insumos', 'producto'].forEach(renderFotoSlot);
+
+  openModal('modal-editar');
+}
+
+async function guardarEdicion() {
+  const id = document.getElementById('edit-id').value;
+  const body = {
+    upc:                        document.getElementById('edit-upc').value.trim()     || null,
+    descripcion:                document.getElementById('edit-desc').value.trim()    || null,
+    pais_origen:                document.getElementById('edit-pais').value.trim()    || null,
+    insumos:                    document.getElementById('edit-insumos').value.trim() || null,
+    url_foto_etiqueta:          editFotos.etiqueta,
+    url_foto_insumos_origen:    editFotos.insumos,
+    url_foto_producto_completo: editFotos.producto,
+  };
+  try {
+    await API.put(`/skus-nuevos/${id}`, body);
+    closeModal('modal-editar');
+    toast('Guardado ✓');
+    await buscar();
+  } catch(e) {
+    toast(e.error || 'Error al guardar', 'error');
+  }
+}
+
+// ─── DAR DE ALTA EN CATÁLOGO ──────────────────────────────────────────────────
+async function darDeAlta(id) {
+  const r = datos.find(x => x.id === id);
+  if (!r) return;
+  if (!r.sku_code)    { toast('Falta SKU code', 'error'); return; }
+  if (!r.descripcion) { toast('Falta descripción — edita el registro primero', 'error'); return; }
+  if (!r.pais_origen) { toast('Falta país de origen — edita el registro primero', 'error'); return; }
+  if (!r.insumos)     { toast('Faltan insumos / composición — edita el registro primero', 'error'); return; }
+
+  const ok = await confirm(`¿Dar de alta "${r.sku_code}" en el catálogo del cliente?`, 'Dar de alta en catálogo');
+  if (!ok) return;
+
+  try {
+    await API.post('/skus', {
+      cliente_id:  r.cliente_id,
+      sku_code:    r.sku_code,
+      upc_code:    r.upc || null,
+      descripcion: r.descripcion,
+      pais_origen: r.pais_origen,
+      insumos:     r.insumos,
+    });
+    await API.put(`/skus-nuevos/${id}`, { dado_de_alta: true });
+    toast(`SKU ${r.sku_code} agregado al catálogo ✓`);
+    await buscar();
+  } catch(e) {
+    toast(e.error || 'Error al dar de alta', 'error');
+  }
+}
+
+// ─── ELIMINAR ─────────────────────────────────────────────────────────────────
+async function eliminar(id) {
+  const r = datos.find(x => x.id === id);
+  const ok = await confirm(`¿Eliminar el registro de "${r?.sku_code}"?`, 'Eliminar SKU Nuevo');
+  if (!ok) return;
+  try {
+    await API.del(`/skus-nuevos/${id}`);
+    toast('Eliminado');
+    await buscar();
+  } catch(e) {
+    toast(e.error || 'Error', 'error');
+  }
+}
+
+// ─── EXPORTAR CSV ─────────────────────────────────────────────────────────────
+function exportarCSV() {
+  const params = new URLSearchParams();
+  const fi  = document.getElementById('f-desde').value;
+  const ff  = document.getElementById('f-hasta').value;
+  const cl  = document.getElementById('f-cliente').value;
+  const inc = document.getElementById('f-incompletos').checked;
+  if (fi)  params.set('fecha_inicio', fi);
+  if (ff)  params.set('fecha_fin', ff);
+  if (cl)  params.set('cliente_id', cl);
+  if (inc) params.set('solo_sin_completar', '1');
+  window.open(`/api/skus-nuevos/exportar/csv?${params}`, '_blank');
+}
+
+// ─── RENDER PÁGINA ────────────────────────────────────────────────────────────
+content.innerHTML = `
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px">
+    <div>
+      <h1 class="page-title">SKUs Nuevos en Catálogo</h1>
+      <p class="page-subtitle">SKUs detectados durante la inspección que no existían en el catálogo</p>
+    </div>
+  </div>
+
+  <div class="card" style="margin-bottom:16px;padding:14px 16px">
+    <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end">
+      <div class="form-group" style="margin:0">
+        <label class="form-label" style="font-size:10px">Fecha inicio</label>
+        <input type="date" id="f-desde" class="form-control" style="width:150px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label" style="font-size:10px">Fecha fin</label>
+        <input type="date" id="f-hasta" class="form-control" style="width:150px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label class="form-label" style="font-size:10px">Cliente</label>
+        <select id="f-cliente" class="form-control" style="width:180px"></select>
+      </div>
+      <label style="display:flex;align-items:center;gap:6px;font-size:12px;cursor:pointer;white-space:nowrap">
+        <input type="checkbox" id="f-incompletos" style="width:15px;height:15px;accent-color:var(--accent-amber)">
+        Solo sin completar
+      </label>
+      <button class="btn btn-primary btn-sm" onclick="buscar()">Buscar</button>
+    </div>
+  </div>
+
+  <div class="card" style="padding:0;overflow:hidden">
+    <div style="overflow-x:auto">
+      <table class="sku-tbl">
+        <thead>
+          <tr style="background:var(--bg-elevated)">
+            <th>Fecha</th>
+            <th>Cliente</th>
+            <th>Tracking #</th>
+            <th>SKU Code</th>
+            <th>UPC</th>
+            <th>Descripción</th>
+            <th>País Origen</th>
+            <th>Insumos</th>
+            <th style="text-align:center">Etiqueta</th>
+            <th style="text-align:center">Insumos/País</th>
+            <th style="text-align:center">Producto</th>
+            <th>Estatus</th>
+            <th>Operador</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="tbl-body">
+          <tr><td colspan="14" style="text-align:center;padding:32px;color:var(--text-muted)">Cargando...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+`;
+
+init();
+</script>
+</body>
+</html>

@@ -208,7 +208,10 @@ async function loadResumen() {
   if (resumenClienteId) params.append('cliente_id', resumenClienteId);
 
   try {
-    const r = await API.get(`/reportes/resumen?${params}`);
+    const [r, sn] = await Promise.all([
+      API.get(`/reportes/resumen?${params}`),
+      API.get('/skus-nuevos/pendientes'),
+    ]);
     grid.innerHTML = `
       <div class="stat-card" style="--accent-color:var(--accent-cyan)">
         <div class="stat-label">Total Trackings</div>
@@ -229,6 +232,11 @@ async function loadResumen() {
         <div class="stat-label">Discrepancias</div>
         <div class="stat-value">${formatNum(r.totalDiscrepancias)}</div>
         <div class="stat-sub">Alertas de inventario</div>
+      </div>
+      <div class="stat-card" style="--accent-color:var(--accent-amber);cursor:pointer" onclick="window.location='skus-nuevos.html?solo_sin_completar=1'">
+        <div class="stat-label">SKUs Nuevos Pendientes</div>
+        <div class="stat-value">${formatNum(sn.count)}</div>
+        <div class="stat-sub" style="color:var(--accent-amber)">Sin fotos completas · clic para ver</div>
       </div>
     `;
   } catch(e) {}

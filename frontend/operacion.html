@@ -1217,7 +1217,8 @@ function renderSKUList() {
           <div class="sku-badges">
             <span class="badge badge-muted">×${d.cantidad}</span>
             ${tieneRetrabajo ? `<span class="badge badge-amber" style="font-weight:700">🔧 Retrabajada</span>` : ''}
-            ${d.foto_etiqueta ? `<span class="badge badge-amber" style="font-family:'IBM Plex Mono',monospace;font-size:9px">★ Nuevo en catálogo</span><span class="badge badge-blue">📷 Evidencia (3 fotos)</span>` : ''}
+            ${d.es_nuevo ? `<span class="badge badge-amber" style="font-weight:700;letter-spacing:.04em">NUEVO</span>` : ''}
+            ${d.foto_etiqueta ? `<span class="badge badge-blue">📷 Evidencia (3 fotos)</span>` : ''}
             ${d.foto_adicional_1 ? `<span class="badge badge-blue">📷 +${[1,2,3,4].filter(n=>d[`foto_adicional_${n}`]).length} adicional(es)</span>` : ''}
             ${d.pais_origen_real ? `<span class="badge ${paisDiff?'badge-amber':'badge-muted'}">🌍 ${d.pais_origen_real}${paisDiff?' ⚠':''}</span>` : ''}
             ${d.calidad ? `<span class="badge ${isMalo?'badge-red':'badge-green'}">${isMalo?'✕ Mala':'✓ Buena'}</span>` : ''}
@@ -1746,6 +1747,8 @@ async function registrarSKU() {
       insumos_real: insReal,
       insumos_coincide: state.skuNoRegistrado ? true : (state.insumosCoincide ?? true),
       calidad: state.calidadActual,
+      es_nuevo: state.skuNoRegistrado ? true : false,
+      upc_code: state.skuNoRegistrado ? upcCode : (state.skuActual?.upc_code || ''),
     });
 
     // Subir fotos de evidencia si el SKU no estaba en catálogo (soporta local + QR mixto)
