@@ -263,6 +263,10 @@ function abrirEditar(id) {
 }
 
 async function guardarEdicion() {
+  if (!editFotos.etiqueta)  { toast('Falta fotografía ① Etiqueta', 'error'); return; }
+  if (!editFotos.insumos)   { toast('Falta fotografía ② Insumos / País de origen', 'error'); return; }
+  if (!editFotos.producto)  { toast('Falta fotografía ③ Producto completo', 'error'); return; }
+
   const id = document.getElementById('edit-id').value;
   const body = {
     upc:                        document.getElementById('edit-upc').value.trim()     || null,

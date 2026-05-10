@@ -134,7 +134,7 @@ document.getElementById('page-content').innerHTML = `
 // Modal Editar Detalle SKU
 document.body.insertAdjacentHTML('beforeend', `
   <div id="modal-editar-detalle" class="modal-overlay">
-    <div class="modal" style="max-width:480px">
+    <div class="modal" style="max-width:540px">
       <div class="modal-header">
         <span class="modal-title">✏️ Editar SKU registrado</span>
         <button class="modal-close" onclick="closeModal('modal-editar-detalle')">×</button>
@@ -169,12 +169,23 @@ document.body.insertAdjacentHTML('beforeend', `
             <input class="form-control" id="ed-insumos" placeholder="Ej: 100% Cotton">
           </div>
         </div>
-        <div class="form-group">
+        <div id="ed-calidad-section" class="form-group">
           <label class="form-label">Calidad</label>
           <select class="form-control" id="ed-calidad">
             <option value="Buena">✓ Buena</option>
             <option value="Mala">✕ Mala</option>
           </select>
+        </div>
+        <!-- Fotos de evidencia (dinámico) -->
+        <div id="ed-fotos-section" class="hidden">
+          <div class="section-title" style="margin-bottom:8px;font-size:10px">Fotografías de evidencia</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px" id="ed-fotos-grid"></div>
+        </div>
+        <!-- Retrabajos (dinámico, solo si modulo_retrabajo=1) -->
+        <div id="ed-retrabajos-section" class="hidden">
+          <div class="section-title" style="margin-bottom:8px;font-size:10px">Retrabajos</div>
+          <div id="ed-retrabajos-lista"></div>
+          <div id="ed-retrabajos-agregar" style="margin-top:8px"></div>
         </div>
       </div>
       <div class="modal-footer">
@@ -187,7 +198,7 @@ document.body.insertAdjacentHTML('beforeend', `
 
 // Modal de Error/Evidencia
 document.body.insertAdjacentHTML('beforeend', `
-  <div id="modal-error" class="modal-overlay">
+  <div id="modal-error" class="modal-overlay" onclick="if(event.target===this)cerrarModalError()">
     <div class="modal" style="max-width:500px">
       <div class="modal-header">
         <span class="modal-title">📸 Registrar Error / Evidencia</span>
@@ -452,6 +463,31 @@ document.body.insertAdjacentHTML('beforeend', `
       </div>
     </div>
   </div>
+
+  <div id="modal-reasignar-caja" class="modal-overlay">
+    <div class="modal" style="max-width:440px">
+      <div class="modal-header">
+        <span class="modal-title">📦 Cambiar Caja / Pallet</span>
+        <button class="modal-close" onclick="closeModal('modal-reasignar-caja')">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="reasignar-info" style="padding:10px 12px;background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.2);border-radius:var(--radius-sm);margin-bottom:14px;font-size:12px;color:var(--text-secondary)">
+          La calidad del SKU cambió — selecciona la caja adecuada.
+        </div>
+        <div class="form-group">
+          <label class="form-label">Caja / Pallet *</label>
+          <select class="form-control form-control-mono" id="reasignar-caja-select">
+            <option value="">— Cargando... —</option>
+          </select>
+          <div class="form-hint"><a href="cajas.html" target="_blank" style="color:var(--accent-cyan)">Administrar cajas →</a></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-reasignar-caja')">Ahora no</button>
+        <button class="btn btn-primary" onclick="confirmarReasignarCaja()">Reasignar</button>
+      </div>
+    </div>
+  </div>
 `);
 
 // ========================
@@ -468,6 +504,7 @@ let state = {
   paisCoincide: true,
   insumosCoincide: true,
   calidadActual: 'Buena',
+  pendingReset: false, // true mientras el modal de error está abierto tras registrar un SKU
 };
 
 // Check URL for existing tracking
@@ -1864,7 +1901,7 @@ async function registrarSKU() {
 
     toast(`SKU ${skuCode} registrado${_eraNuevo ? ' — NUEVO en catálogo' : ''}${fotosReq > 0 ? ` + ${fotosReq} foto(s) adicional(es)` : ''}`);
 
-    // Si hay problemas → abrir modal de error
+    // Si hay problemas → abrir modal de error y diferir el reset del formulario
     const hayProblema = (state.paisCoincide === false) || (state.insumosCoincide === false) || state.calidadActual === 'Mala';
     if (hayProblema) {
       document.getElementById('error-detalle-id').value = res.id;
@@ -1883,14 +1920,17 @@ async function registrarSKU() {
       renderRetrabajoBotones();
       limpiarQR();
       setFotoMode('local');
+      // Marcar reset pendiente: cancelarSKU + renderInspeccion se ejecutan al cerrar el modal
+      state.pendingReset = true;
+      // Actualizar solo la lista de SKUs (sin reconstruir todo el panel ni cerrar el formulario)
+      const listaEl = document.getElementById('lista-skus');
+      if (listaEl) listaEl.innerHTML = renderSKUList();
       openModal('modal-error');
+    } else {
+      cancelarSKU();
+      document.getElementById('lista-skus').innerHTML = renderSKUList();
+      renderInspeccion();
     }
-
-    cancelarSKU();
-    document.getElementById('lista-skus').innerHTML = renderSKUList();
-
-    // Actualizar panel
-    renderInspeccion();
   } catch(e) {
     if (_detalleGuardadoId) {
       // El detalle ya fue guardado — resetear formulario y avisar
@@ -1929,9 +1969,110 @@ function getEdPais() {
   return sel.value;
 }
 
+// Edit modal state
+let editDetalleId = null;
+let editDetalleFotoFiles = { etiqueta: null, insumos: null, pieza: null };
+let editNuevosRTSel = new Set();
+
+function renderEdFotosGrid(d) {
+  const slots = [
+    { key: 'etiqueta', label: '① Etiqueta', url: d.foto_etiqueta },
+    { key: 'insumos',  label: '② Insumos/Origen', url: d.foto_insumos },
+    { key: 'pieza',    label: '③ Pieza completa', url: d.foto_pieza },
+  ];
+  return slots.map(s => `
+    <div style="display:flex;flex-direction:column;gap:5px" id="ed-foto-slot-${s.key}">
+      <div style="font-size:10px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace">${s.label}</div>
+      ${s.url
+        ? `<img id="ed-foto-img-${s.key}" src="${s.url}" style="width:100%;max-height:72px;object-fit:cover;border-radius:4px;border:1px solid var(--border);cursor:pointer"
+             onclick="verFoto('${s.url}','${s.label}','')" title="Clic para ampliar">`
+        : `<div id="ed-foto-img-${s.key}" style="width:100%;height:60px;border:1px dashed var(--border);border-radius:4px;display:flex;align-items:center;justify-content:center">
+             <span style="font-size:10px;color:var(--text-muted)">Sin foto</span>
+           </div>`}
+      <label class="btn btn-secondary btn-sm" style="justify-content:center;cursor:pointer;font-size:11px;padding:4px 8px;margin:0">
+        ${s.url ? '↑ Cambiar' : '📷 Subir'}
+        <input type="file" accept="image/*" capture="environment" style="display:none"
+          onchange="edFotoChange(this,'${s.key}')">
+      </label>
+      <div id="ed-foto-nueva-${s.key}" class="hidden" style="font-size:10px;color:var(--accent-green);text-align:center;font-weight:700">✓ Nueva foto lista</div>
+    </div>
+  `).join('');
+}
+
+function edFotoChange(input, slot) {
+  const file = input.files[0];
+  if (!file) return;
+  editDetalleFotoFiles[slot] = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = document.getElementById(`ed-foto-img-${slot}`);
+    if (img) {
+      img.src = e.target.result;
+      img.style.cssText = 'width:100%;max-height:72px;object-fit:cover;border-radius:4px;border:1px solid var(--accent-green);cursor:pointer';
+      img.onclick = null;
+    }
+    document.getElementById(`ed-foto-nueva-${slot}`)?.classList.remove('hidden');
+  };
+  reader.readAsDataURL(file);
+}
+
+function renderEdRetrabajos(detalleId) {
+  const lista   = document.getElementById('ed-retrabajos-lista');
+  const agregar = document.getElementById('ed-retrabajos-agregar');
+
+  const rts = state.retrabajos.filter(r => r.detalle_sku_id === detalleId);
+  lista.innerHTML = rts.length === 0
+    ? `<div style="font-size:12px;color:var(--text-muted);font-style:italic;margin-bottom:8px">Sin retrabajos asignados</div>`
+    : rts.map(r => {
+        let tipos;
+        try { tipos = JSON.parse(r.retrabajos_seleccionados || '[]'); } catch { tipos = []; }
+        if (r.retrabajo_otro) tipos.push(r.retrabajo_otro);
+        return `
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;padding:8px;background:rgba(255,171,0,.07);border:1px solid rgba(255,171,0,.2);border-radius:4px">
+            <span style="flex:1;font-size:12px">🔧 ${tipos.join(' · ') || 'Retrabajo'}</span>
+            <button class="btn btn-sm" style="padding:3px 8px;font-size:11px;border:1px solid rgba(255,61,61,.4);color:var(--accent-red);background:transparent;cursor:pointer;border-radius:4px"
+              onclick="eliminarEdRetrabajo('${r.id}')">✕</button>
+          </div>`;
+      }).join('');
+
+  const tipo   = (state.tracking?.tipo_mercancia || 'textil').toLowerCase();
+  const opciones = CATALOGO_RT[tipo] || CATALOGO_RT.textil;
+  const btnSt  = sel => `display:inline-block;padding:5px 10px;border-radius:4px;font-size:11px;cursor:pointer;transition:all .15s;border:1px solid ${sel?'#ffab00':'var(--border)'};background:${sel?'rgba(255,171,0,.15)':'var(--bg-elevated)'};color:${sel?'#ffab00':'var(--text-secondary)'};font-weight:${sel?'700':'400'}`;
+
+  agregar.innerHTML = `
+    <div style="font-size:10px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;letter-spacing:.06em;margin-bottom:6px;text-transform:uppercase">Agregar retrabajo</div>
+    <div style="display:flex;flex-wrap:wrap;gap:6px" id="ed-rt-botones">
+      ${opciones.map(op => `<span style="${btnSt(editNuevosRTSel.has(op))}" onclick="toggleEdRT('${op.replace(/'/g, "\\'")}')">${op}</span>`).join('')}
+    </div>`;
+}
+
+function toggleEdRT(tipo) {
+  if (editNuevosRTSel.has(tipo)) { editNuevosRTSel.delete(tipo); }
+  else { editNuevosRTSel.add(tipo); }
+  const t    = (state.tracking?.tipo_mercancia || 'textil').toLowerCase();
+  const opts = CATALOGO_RT[t] || CATALOGO_RT.textil;
+  const btnSt = sel => `display:inline-block;padding:5px 10px;border-radius:4px;font-size:11px;cursor:pointer;transition:all .15s;border:1px solid ${sel?'#ffab00':'var(--border)'};background:${sel?'rgba(255,171,0,.15)':'var(--bg-elevated)'};color:${sel?'#ffab00':'var(--text-secondary)'};font-weight:${sel?'700':'400'}`;
+  const cont = document.getElementById('ed-rt-botones');
+  if (cont) cont.innerHTML = opts.map(op => `<span style="${btnSt(editNuevosRTSel.has(op))}" onclick="toggleEdRT('${op.replace(/'/g, "\\'")}')">${op}</span>`).join('');
+}
+
+async function eliminarEdRetrabajo(id) {
+  try {
+    await API.del(`/retrabajos/${id}`);
+    state.retrabajos = state.retrabajos.filter(r => r.id !== id);
+    renderEdRetrabajos(editDetalleId);
+    toast('Retrabajo eliminado');
+  } catch(e) { toast(e.error || 'Error', 'error'); }
+}
+
 function abrirEditarDetalle(id) {
   const d = state.detalles.find(x => x.id === id);
   if (!d) return;
+
+  editDetalleId = id;
+  editDetalleFotoFiles = { etiqueta: null, insumos: null, pieza: null };
+  editNuevosRTSel = new Set();
+
   document.getElementById('ed-id').value          = d.id;
   document.getElementById('ed-tracking-id').value = state.tracking.id;
   document.getElementById('ed-sku').value         = d.sku_code;
@@ -1940,7 +2081,7 @@ function abrirEditarDetalle(id) {
   document.getElementById('ed-insumos').value     = d.insumos_real || '';
   document.getElementById('ed-calidad').value     = d.calidad || 'Buena';
 
-  // Set country dropdown — if value is in the list use it, otherwise show manual
+  // Country dropdown
   const paisActual = d.pais_origen_real || '';
   const sel = document.getElementById('ed-pais-select');
   const opts = Array.from(sel.options).map(o => o.value);
@@ -1956,12 +2097,31 @@ function abrirEditarDetalle(id) {
     onEdPaisSelect('__other__');
   }
 
+  // Photos section — always visible
+  const fotosSection = document.getElementById('ed-fotos-section');
+  const fotosGrid    = document.getElementById('ed-fotos-grid');
+  fotosSection.classList.remove('hidden');
+  fotosGrid.innerHTML = renderEdFotosGrid(d);
+
+  // Retrabajos section — only when client has the module
+  const rtSection = document.getElementById('ed-retrabajos-section');
+  if (parseInt(state.tracking.modulo_retrabajo) === 1) {
+    rtSection.classList.remove('hidden');
+    renderEdRetrabajos(id);
+  } else {
+    rtSection.classList.add('hidden');
+  }
+
   openModal('modal-editar-detalle');
 }
 
 async function guardarEditarDetalle() {
   const id  = document.getElementById('ed-id').value;
   const tid = document.getElementById('ed-tracking-id').value;
+
+  // Capture old calidad before saving to detect changes
+  const oldCalidad = state.detalles.find(d => d.id === id)?.calidad || 'Buena';
+
   const body = {
     descripcion:      document.getElementById('ed-desc').value.trim()    || null,
     cantidad:         parseInt(document.getElementById('ed-cantidad').value) || 1,
@@ -1971,13 +2131,111 @@ async function guardarEditarDetalle() {
   };
   try {
     await API.put(`/trackings/${tid}/detalles/${id}`, body);
+
+    // Upload any changed/new evidence photos
+    const hasNewPhotos = Object.values(editDetalleFotoFiles).some(f => f);
+    if (hasNewPhotos) {
+      const fd = new FormData();
+      if (editDetalleFotoFiles.etiqueta) fd.append('etiqueta', editDetalleFotoFiles.etiqueta);
+      if (editDetalleFotoFiles.insumos)  fd.append('insumos',  editDetalleFotoFiles.insumos);
+      if (editDetalleFotoFiles.pieza)    fd.append('pieza',    editDetalleFotoFiles.pieza);
+      await API.postForm(`/detalles/${id}/fotos-evidencia`, fd);
+    }
+
+    // Save newly selected retrabajos
+    if (editNuevosRTSel.size > 0) {
+      const detalle = state.detalles.find(d => d.id === id);
+      await API.post(`/trackings/${tid}/retrabajos`, {
+        detalle_sku_id:          id,
+        sku_code:                detalle?.sku_code     || '',
+        descripcion_sku:         detalle?.descripcion  || '',
+        retrabajos_seleccionados: [...editNuevosRTSel],
+        retrabajo_otro:          null,
+      });
+    }
+
     closeModal('modal-editar-detalle');
-    state.tracking = await API.get(`/trackings/${tid}`);
-    state.detalles = await API.get(`/trackings/${tid}/detalles`);
+    state.tracking  = await API.get(`/trackings/${tid}`);
+    state.detalles  = await API.get(`/trackings/${tid}/detalles`);
+    state.retrabajos = await API.get(`/trackings/${tid}/retrabajos`);
     document.getElementById('lista-skus').innerHTML = renderSKUList();
     renderInspeccion();
     toast('SKU actualizado ✓');
+
+    // If calidad changed, prompt to reassign box
+    if (body.calidad !== oldCalidad) {
+      await manejarCambioCalidad();
+    }
   } catch(e) { toast(e.error || 'Error al guardar', 'error'); }
+}
+
+function calcularTipoRequerido() {
+  const tieneDanado   = state.errores.some(e => e.tipo_error === 'Calidad' || e.tipo_error === 'Otro')
+                     || state.detalles.some(d => d.calidad === 'Mala');
+  const tieneNoMarca  = state.errores.some(e => e.tipo_error === 'Mercancía ajena');
+  const tieneRetrabajos = state.retrabajos.length > 0;
+  if (tieneDanado && !tieneRetrabajos) return 'Damage';
+  if (tieneNoMarca) return 'Non-brand merchandise';
+  return 'Good Condition';
+}
+
+async function manejarCambioCalidad() {
+  const tipo = calcularTipoRequerido();
+  const labels = {
+    'Damage':                'Dañado (Damage)',
+    'Good Condition':        'Buen Estado (Good Condition)',
+    'Non-brand merchandise': 'Sin Marca (Non-brand)',
+  };
+
+  if (state.tracking.caja_pallet_id) {
+    // Tracking ya tiene caja asignada — ofrecer reasignación
+    await abrirReasignarCaja(tipo);
+  } else {
+    // Tracking aún sin caja — aviso informativo
+    toast(`Calidad actualizada. Al cerrar, usa una caja de tipo "${labels[tipo]}".`, 'warning');
+  }
+}
+
+async function abrirReasignarCaja(tipo) {
+  const labels = {
+    'Damage':                'Dañado (Damage)',
+    'Good Condition':        'Buen Estado (Good Condition)',
+    'Non-brand merchandise': 'Sin Marca (Non-brand)',
+  };
+  const t = state.tracking;
+
+  const infoEl = document.getElementById('reasignar-info');
+  if (infoEl) infoEl.textContent = `La calidad del SKU cambió — tipo de caja requerido: ${labels[tipo] || tipo}.`;
+
+  const sel = document.getElementById('reasignar-caja-select');
+  sel.innerHTML = '<option value="">— Cargando... —</option>';
+
+  try {
+    const cajas = await API.get(`/cajas?cliente_id=${t.cliente_id}&estatus=Abierta&tipo=${encodeURIComponent(tipo)}`);
+    const tipoBadge = { 'Damage': 'DMG', 'Good Condition': 'GDC', 'Non-brand merchandise': 'NBM' };
+    if (cajas.length === 0) {
+      sel.innerHTML = `<option value="">— Sin cajas "${tipoBadge[tipo] || tipo}" abiertas —</option>`;
+    } else {
+      sel.innerHTML = '<option value="">— Seleccionar caja —</option>'
+        + cajas.map(c => `<option value="${c.id}">[${tipoBadge[c.tipo] || c.tipo}] ${c.nombre}${c.id === t.caja_pallet_id ? ' (actual)' : ''}</option>`).join('');
+    }
+  } catch(e) {
+    sel.innerHTML = '<option value="">— Error al cargar —</option>';
+  }
+
+  openModal('modal-reasignar-caja');
+}
+
+async function confirmarReasignarCaja() {
+  const cajaPalletId = document.getElementById('reasignar-caja-select').value;
+  if (!cajaPalletId) { toast('Selecciona una caja', 'error'); return; }
+  try {
+    await API.put(`/trackings/${state.tracking.id}/caja`, { caja_pallet_id: cajaPalletId });
+    state.tracking = await API.get(`/trackings/${state.tracking.id}`);
+    closeModal('modal-reasignar-caja');
+    renderInspeccion();
+    toast(`Caja reasignada a ${state.tracking.caja_id} ✓`);
+  } catch(e) { toast(e.error || 'Error al reasignar', 'error'); }
 }
 
 // ========================
@@ -2092,6 +2350,11 @@ function cerrarModalError() {
   limpiarQR();
   setFotoMode('local');
   closeModal('modal-error');
+  if (state.pendingReset) {
+    state.pendingReset = false;
+    cancelarSKU();
+    renderInspeccion();
+  }
 }
 // --- fin QR Foto Sesion ---
 
@@ -2265,6 +2528,12 @@ async function guardarError() {
     document.getElementById('error-foto').value = '';
     document.getElementById('foto-preview').classList.add('hidden');
     retrabajosSel.clear();
+
+    // Si el modal se abrió tras registrar un SKU con discrepancia, limpiar el formulario ahora
+    if (state.pendingReset) {
+      state.pendingReset = false;
+      cancelarSKU();
+    }
 
     toast(hayRetrabajos ? 'Error registrado — pieza enviada a retrabajo ✓' : 'Error registrado con evidencia');
     renderInspeccion();

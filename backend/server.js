@@ -626,6 +626,23 @@ app.post('/api/trackings/:id/cerrar', (req, res) => {
   res.json({ mensaje: 'Tracking cerrado exitosamente' });
 });
 
+// Reasignar caja/pallet a un tracking ya cerrado (o pre-asignar a uno abierto)
+app.put('/api/trackings/:id/caja', (req, res) => {
+  const tracking = dbGet('SELECT * FROM trackings WHERE id=?', [req.params.id]);
+  if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+
+  const { caja_pallet_id } = req.body;
+  if (!caja_pallet_id) return res.status(400).json({ error: 'caja_pallet_id requerido' });
+
+  const caja = dbGet('SELECT * FROM cajas_pallets WHERE id=?', [caja_pallet_id]);
+  if (!caja) return res.status(400).json({ error: 'Caja no encontrada' });
+  if (caja.cliente_id !== tracking.cliente_id) return res.status(400).json({ error: 'La caja no pertenece a este cliente' });
+  if (caja.estatus !== 'Abierta') return res.status(400).json({ error: 'La caja está cerrada' });
+
+  dbRun('UPDATE trackings SET caja_id=?, caja_pallet_id=? WHERE id=?', [caja.nombre, caja_pallet_id, req.params.id]);
+  res.json({ mensaje: 'Caja reasignada', caja_id: caja.nombre, caja_pallet_id });
+});
+
 // --- DETALLE SKUs ---
 app.get('/api/trackings/:id/detalles', (req, res) => {
   const rows = dbAll('SELECT * FROM detalle_skus WHERE tracking_id=? ORDER BY created_at DESC', [req.params.id]);
@@ -846,6 +863,11 @@ app.put('/api/retrabajos/:id', (req, res) => {
   if (!estatus) return res.status(400).json({ error: 'estatus requerido' });
   dbRun(`UPDATE retrabajos SET estatus=?, updated_at=datetime('now') WHERE id=?`, [estatus, req.params.id]);
   res.json({ mensaje: 'Estatus actualizado' });
+});
+
+app.delete('/api/retrabajos/:id', (req, res) => {
+  dbRun('DELETE FROM retrabajos WHERE id=?', [req.params.id]);
+  res.json({ mensaje: 'Retrabajo eliminado' });
 });
 
 // --- DISCREPANCIAS ---
