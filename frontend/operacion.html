@@ -131,6 +131,60 @@ document.getElementById('page-content').innerHTML = `
   </div>
 `;
 
+// Modal Editar Detalle SKU
+document.body.insertAdjacentHTML('beforeend', `
+  <div id="modal-editar-detalle" class="modal-overlay">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <span class="modal-title">✏️ Editar SKU registrado</span>
+        <button class="modal-close" onclick="closeModal('modal-editar-detalle')">×</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:14px">
+        <input type="hidden" id="ed-id">
+        <input type="hidden" id="ed-tracking-id">
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">SKU</label>
+            <input class="form-control form-control-mono" id="ed-sku" readonly style="opacity:.6">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Cantidad</label>
+            <input type="number" class="form-control form-control-mono" id="ed-cantidad" min="1" style="width:80px">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Descripción</label>
+          <input class="form-control" id="ed-desc" placeholder="Nombre / descripción del producto">
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">País de Origen</label>
+            <select class="form-control" id="ed-pais-select" onchange="onEdPaisSelect(this.value)">
+              ${COUNTRY_OPTIONS}
+            </select>
+            <input type="text" class="form-control mt-8" id="ed-pais-manual" placeholder="Enter country name..." style="display:none">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Insumos / Composición</label>
+            <input class="form-control" id="ed-insumos" placeholder="Ej: 100% Cotton">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Calidad</label>
+          <select class="form-control" id="ed-calidad">
+            <option value="Buena">✓ Buena</option>
+            <option value="Mala">✕ Mala</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-editar-detalle')">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarEditarDetalle()">Guardar</button>
+      </div>
+    </div>
+  </div>
+`);
+
 // Modal de Error/Evidencia
 document.body.insertAdjacentHTML('beforeend', `
   <div id="modal-error" class="modal-overlay">
@@ -767,7 +821,7 @@ function renderInspeccion() {
             <div id="sku-form" class="hidden" style="margin-top:16px">
               <div class="section-title">Datos del Producto</div>
 
-              <div class="form-row">
+              <div id="fila-datos-sku" class="form-row">
                 <div class="form-group">
                   <label class="form-label">Código SKU</label>
                   <input type="text" class="form-control form-control-mono" id="f-sku-code" placeholder="SKU-XXX-000">
@@ -1259,11 +1313,14 @@ function renderSKUList() {
             </div>
           ` : ''}
         </div>
-        ${state.tracking.estatus !== 'cerrado' ? `
-          <div style="display:flex;gap:6px;flex-shrink:0">
-            <button class="btn btn-danger btn-sm" onclick="eliminarDetalle('${d.id}')">✕</button>
-          </div>
-        ` : ''}
+        <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;padding-top:2px">
+          <button class="btn btn-secondary btn-sm" onclick="abrirEditarDetalle('${d.id}')" title="Editar" style="padding:4px 8px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          </button>
+          ${state.tracking.estatus !== 'cerrado' ? `
+            <button class="btn btn-danger btn-sm" onclick="eliminarDetalle('${d.id}')" style="padding:4px 8px">✕</button>
+          ` : ''}
+        </div>
       </div>
     `;
   }).join('');
@@ -1299,6 +1356,8 @@ async function buscarSKU(code) {
     // Mostrar sección correcta según si el SKU está registrado o no
     const secVerif = document.getElementById('seccion-verificacion');
     const secNR = document.getElementById('seccion-no-registrado');
+    const filaDatos = document.getElementById('fila-datos-sku');
+    if (filaDatos) filaDatos.classList.toggle('hidden', !sku);
     if (secVerif) secVerif.classList.toggle('hidden', !sku);
     if (secNR) {
       secNR.classList.toggle('hidden', !!sku);
@@ -1348,6 +1407,7 @@ function cancelarSKU() {
   document.getElementById('sku-form').classList.add('hidden');
   document.getElementById('seccion-no-registrado')?.classList.add('hidden');
   document.getElementById('seccion-verificacion')?.classList.remove('hidden');
+  document.getElementById('fila-datos-sku')?.classList.remove('hidden');
   document.getElementById('scan-input').value = '';
   document.getElementById('scan-input').focus();
 }
@@ -1723,36 +1783,28 @@ async function registrarSKU() {
     }
   }
 
-  try {
-    // Si SKU no estaba en catálogo → guardarlo primero
-    if (state.skuNoRegistrado) {
-      await API.post('/skus', {
-        cliente_id: state.tracking.cliente_id,
-        sku_code:   skuCode,
-        upc_code:   upcCode || null,
-        descripcion: desc || null,
-        pais_origen: paisReal,
-        insumos:     insReal,
-      });
-    }
+  let _detalleGuardadoId = null; // para saber si el detalle ya fue creado en caso de error parcial
+  const _eraNuevo = state.skuNoRegistrado;
 
+  try {
     const res = await API.post(`/trackings/${state.tracking.id}/detalles`, {
       sku_code: skuCode,
       descripcion: desc,
       cantidad,
-      pais_origen_catalogo: state.skuNoRegistrado ? paisReal : paisCatalogo,
+      pais_origen_catalogo: _eraNuevo ? paisReal : paisCatalogo,
       pais_origen_real: paisReal,
-      pais_coincide: state.skuNoRegistrado ? true : (state.paisCoincide ?? true),
-      insumos_catalogo: state.skuNoRegistrado ? insReal : insCatalogo,
+      pais_coincide: _eraNuevo ? true : (state.paisCoincide ?? true),
+      insumos_catalogo: _eraNuevo ? insReal : insCatalogo,
       insumos_real: insReal,
-      insumos_coincide: state.skuNoRegistrado ? true : (state.insumosCoincide ?? true),
+      insumos_coincide: _eraNuevo ? true : (state.insumosCoincide ?? true),
       calidad: state.calidadActual,
-      es_nuevo: state.skuNoRegistrado ? true : false,
-      upc_code: state.skuNoRegistrado ? upcCode : (state.skuActual?.upc_code || ''),
+      es_nuevo: _eraNuevo,
+      upc_code: _eraNuevo ? upcCode : (state.skuActual?.upc_code || ''),
     });
+    _detalleGuardadoId = res.id;
 
     // Subir fotos de evidencia si el SKU no estaba en catálogo (soporta local + QR mixto)
-    if (state.skuNoRegistrado) {
+    if (_eraNuevo) {
       const fdEv = new FormData();
       const urlEv = {};
       let hasLocalEv = false;
@@ -1771,6 +1823,16 @@ async function registrarSKU() {
       if (hasLocalEv) await API.postForm(`/detalles/${res.id}/fotos-evidencia`, fdEv);
       if (hasQREv)   await API.post(`/detalles/${res.id}/fotos-evidencia-url`, urlEv);
       limpiarTodasFotosEvidenciaQR();
+
+      // Agregar al catálogo (idempotente — no crea duplicado si ya existe)
+      await API.post('/skus', {
+        cliente_id: state.tracking.cliente_id,
+        sku_code:   skuCode,
+        upc_code:   upcCode || null,
+        descripcion: desc || null,
+        pais_origen: paisReal,
+        insumos:     insReal,
+      });
     }
 
     // Subir fotos adicionales (G3) — modo local vía multipart, modo QR vía URL
@@ -1800,7 +1862,7 @@ async function registrarSKU() {
     state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
     state.retrabajos = await API.get(`/trackings/${state.tracking.id}/retrabajos`);
 
-    toast(`SKU ${skuCode} registrado${state.skuNoRegistrado ? ' (fotos de evidencia guardadas)' : ''}${fotosReq > 0 ? ` + ${fotosReq} foto(s) adicional(es)` : ''}`);
+    toast(`SKU ${skuCode} registrado${_eraNuevo ? ' — NUEVO en catálogo' : ''}${fotosReq > 0 ? ` + ${fotosReq} foto(s) adicional(es)` : ''}`);
 
     // Si hay problemas → abrir modal de error
     const hayProblema = (state.paisCoincide === false) || (state.insumosCoincide === false) || state.calidadActual === 'Mala';
@@ -1830,7 +1892,16 @@ async function registrarSKU() {
     // Actualizar panel
     renderInspeccion();
   } catch(e) {
-    toast(e.error || 'Error al registrar SKU', 'error');
+    if (_detalleGuardadoId) {
+      // El detalle ya fue guardado — resetear formulario y avisar
+      cancelarSKU();
+      state.detalles = await API.get(`/trackings/${state.tracking.id}/detalles`).catch(() => state.detalles);
+      document.getElementById('lista-skus').innerHTML = renderSKUList();
+      renderInspeccion();
+      toast('SKU guardado. Error subiendo fotos — agrégalas desde SKUs Nuevos en Catálogo.', 'warning');
+    } else {
+      toast(e.error || 'Error al registrar SKU', 'error');
+    }
   }
 }
 
@@ -1844,6 +1915,69 @@ async function eliminarDetalle(id) {
     renderInspeccion();
     toast('SKU eliminado');
   } catch(e) { toast(e.error || 'Error', 'error'); }
+}
+
+function onEdPaisSelect(val) {
+  const manual = document.getElementById('ed-pais-manual');
+  if (manual) manual.style.display = val === '__other__' ? 'block' : 'none';
+}
+
+function getEdPais() {
+  const sel = document.getElementById('ed-pais-select');
+  if (!sel) return '';
+  if (sel.value === '__other__') return document.getElementById('ed-pais-manual')?.value.trim() || '';
+  return sel.value;
+}
+
+function abrirEditarDetalle(id) {
+  const d = state.detalles.find(x => x.id === id);
+  if (!d) return;
+  document.getElementById('ed-id').value          = d.id;
+  document.getElementById('ed-tracking-id').value = state.tracking.id;
+  document.getElementById('ed-sku').value         = d.sku_code;
+  document.getElementById('ed-cantidad').value    = d.cantidad || 1;
+  document.getElementById('ed-desc').value        = d.descripcion || '';
+  document.getElementById('ed-insumos').value     = d.insumos_real || '';
+  document.getElementById('ed-calidad').value     = d.calidad || 'Buena';
+
+  // Set country dropdown — if value is in the list use it, otherwise show manual
+  const paisActual = d.pais_origen_real || '';
+  const sel = document.getElementById('ed-pais-select');
+  const opts = Array.from(sel.options).map(o => o.value);
+  if (!paisActual) {
+    sel.value = '';
+    onEdPaisSelect('');
+  } else if (opts.includes(paisActual)) {
+    sel.value = paisActual;
+    onEdPaisSelect(paisActual);
+  } else {
+    sel.value = '__other__';
+    document.getElementById('ed-pais-manual').value = paisActual;
+    onEdPaisSelect('__other__');
+  }
+
+  openModal('modal-editar-detalle');
+}
+
+async function guardarEditarDetalle() {
+  const id  = document.getElementById('ed-id').value;
+  const tid = document.getElementById('ed-tracking-id').value;
+  const body = {
+    descripcion:      document.getElementById('ed-desc').value.trim()    || null,
+    cantidad:         parseInt(document.getElementById('ed-cantidad').value) || 1,
+    pais_origen_real: getEdPais() || null,
+    insumos_real:     document.getElementById('ed-insumos').value.trim() || null,
+    calidad:          document.getElementById('ed-calidad').value,
+  };
+  try {
+    await API.put(`/trackings/${tid}/detalles/${id}`, body);
+    closeModal('modal-editar-detalle');
+    state.tracking = await API.get(`/trackings/${tid}`);
+    state.detalles = await API.get(`/trackings/${tid}/detalles`);
+    document.getElementById('lista-skus').innerHTML = renderSKUList();
+    renderInspeccion();
+    toast('SKU actualizado ✓');
+  } catch(e) { toast(e.error || 'Error al guardar', 'error'); }
 }
 
 // ========================

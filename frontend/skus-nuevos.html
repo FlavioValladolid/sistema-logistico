@@ -141,7 +141,13 @@ async function buscar() {
 // ─── TABLA ────────────────────────────────────────────────────────────────────
 function fotoIcon(url) {
   if (!url) return `<span class="foto-check no">—</span>`;
-  return `<img src="${url}" class="foto-mini" onclick="verFoto('${url}','','')" title="Ver foto">`;
+  const abs = url.startsWith('http') ? url : `${location.origin}${url}`;
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;gap:3px">
+      <img src="${url}" class="foto-mini" onclick="verFoto('${url}','','')" title="Ver foto">
+      <a href="${abs}" target="_blank" style="font-size:9px;font-family:'IBM Plex Mono',monospace;color:var(--accent-cyan);text-decoration:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:80px" title="${abs}">🔗 ver</a>
+    </div>
+  `;
 }
 
 function renderTabla() {
@@ -170,17 +176,14 @@ function renderTabla() {
         <td style="text-align:center">${fotoIcon(r.url_foto_etiqueta)}</td>
         <td style="text-align:center">${fotoIcon(r.url_foto_insumos_origen)}</td>
         <td style="text-align:center">${fotoIcon(r.url_foto_producto_completo)}</td>
-        <td>${r.dado_de_alta
-          ? `<span class="badge badge-green">✓ Alta</span>`
-          : incompleto
-            ? `<span class="badge badge-amber">Pendiente</span>`
-            : `<span class="badge badge-blue">Completo</span>`
+        <td>${incompleto
+          ? `<span class="badge badge-amber">Pendiente fotos</span>`
+          : `<span class="badge badge-green">Completo</span>`
         }</td>
         <td style="font-size:11px;color:var(--text-muted)">${r.operador || '—'}</td>
         <td>
           <div style="display:flex;gap:4px">
             <button class="btn btn-secondary btn-sm btn-xs" onclick="abrirEditar('${r.id}')">✏️ Editar</button>
-            ${!r.dado_de_alta ? `<button class="btn btn-secondary btn-sm btn-xs" onclick="darDeAlta('${r.id}')" style="color:var(--accent-green)">★ Alta</button>` : ''}
             <button class="btn btn-secondary btn-sm btn-xs" onclick="eliminar('${r.id}')" style="color:var(--accent-red)">✕</button>
           </div>
         </td>
@@ -277,35 +280,6 @@ async function guardarEdicion() {
     await buscar();
   } catch(e) {
     toast(e.error || 'Error al guardar', 'error');
-  }
-}
-
-// ─── DAR DE ALTA EN CATÁLOGO ──────────────────────────────────────────────────
-async function darDeAlta(id) {
-  const r = datos.find(x => x.id === id);
-  if (!r) return;
-  if (!r.sku_code)    { toast('Falta SKU code', 'error'); return; }
-  if (!r.descripcion) { toast('Falta descripción — edita el registro primero', 'error'); return; }
-  if (!r.pais_origen) { toast('Falta país de origen — edita el registro primero', 'error'); return; }
-  if (!r.insumos)     { toast('Faltan insumos / composición — edita el registro primero', 'error'); return; }
-
-  const ok = await confirm(`¿Dar de alta "${r.sku_code}" en el catálogo del cliente?`, 'Dar de alta en catálogo');
-  if (!ok) return;
-
-  try {
-    await API.post('/skus', {
-      cliente_id:  r.cliente_id,
-      sku_code:    r.sku_code,
-      upc_code:    r.upc || null,
-      descripcion: r.descripcion,
-      pais_origen: r.pais_origen,
-      insumos:     r.insumos,
-    });
-    await API.put(`/skus-nuevos/${id}`, { dado_de_alta: true });
-    toast(`SKU ${r.sku_code} agregado al catálogo ✓`);
-    await buscar();
-  } catch(e) {
-    toast(e.error || 'Error al dar de alta', 'error');
   }
 }
 

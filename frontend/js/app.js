@@ -110,7 +110,7 @@ function setActivePage() {
   const current = window.location.pathname.split('/').pop() || 'index.html';
   document.querySelectorAll('.nav-item').forEach(item => {
     const href = item.getAttribute('data-page') || item.getAttribute('href');
-    if (href && (href === current || href.includes(current.replace('.html', '')))) {
+    if (href && href === current) {
       item.classList.add('active');
     } else {
       item.classList.remove('active');

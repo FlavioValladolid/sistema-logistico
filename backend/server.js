@@ -401,9 +401,12 @@ app.get('/api/skus/buscar/:code', (req, res) => {
 app.post('/api/skus', (req, res) => {
   const { cliente_id, sku_code, upc_code, descripcion, pais_origen, insumos } = req.body;
   if (!cliente_id || !sku_code) return res.status(400).json({ error: 'cliente_id y sku_code requeridos' });
+  const code = (sku_code || '').trim().toUpperCase();
+  const existing = dbGet('SELECT id FROM skus WHERE sku_code=? AND cliente_id=?', [code, cliente_id]);
+  if (existing) return res.json({ id: existing.id, mensaje: 'SKU ya existe' });
   const id = uuidv4();
   dbRun(`INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code) VALUES (?,?,?,?,?,?,?)`,
-    [id, cliente_id, sku_code, descripcion, pais_origen, insumos, upc_code || null]);
+    [id, cliente_id, code, descripcion, pais_origen, insumos, upc_code || null]);
   res.json({ id, mensaje: 'SKU creado' });
 });
 
@@ -668,6 +671,23 @@ app.post('/api/trackings/:id/detalles', (req, res) => {
   dbRun('UPDATE trackings SET cantidad_final=? WHERE id=?', [total?.total || 0, req.params.id]);
 
   res.json({ id, mensaje: 'SKU registrado' });
+});
+
+app.put('/api/trackings/:tid/detalles/:did', (req, res) => {
+  const { descripcion, cantidad, pais_origen_real, insumos_real, calidad } = req.body;
+  const updates = [], vals = [];
+  if (descripcion  !== undefined) { updates.push('descripcion=?');     vals.push(descripcion  || null); }
+  if (cantidad     !== undefined) { updates.push('cantidad=?');         vals.push(parseInt(cantidad) || 1); }
+  if (pais_origen_real !== undefined) { updates.push('pais_origen_real=?'); vals.push(pais_origen_real || null); }
+  if (insumos_real !== undefined) { updates.push('insumos_real=?');     vals.push(insumos_real || null); }
+  if (calidad      !== undefined) { updates.push('calidad=?');          vals.push(calidad || 'Buena'); }
+  if (!updates.length) return res.status(400).json({ error: 'Nada que actualizar' });
+  vals.push(req.params.did, req.params.tid);
+  dbRun(`UPDATE detalle_skus SET ${updates.join(',')} WHERE id=? AND tracking_id=?`, vals);
+  // Recalcular cantidad_final
+  const total = dbGet('SELECT SUM(cantidad) as total FROM detalle_skus WHERE tracking_id=?', [req.params.tid]);
+  dbRun('UPDATE trackings SET cantidad_final=? WHERE id=?', [total?.total || 0, req.params.tid]);
+  res.json({ mensaje: 'Detalle actualizado' });
 });
 
 app.delete('/api/trackings/:tid/detalles/:did', (req, res) => {
@@ -1314,6 +1334,8 @@ app.get('/api/skus-nuevos/exportar/csv', (req, res) => {
     LEFT JOIN detalle_skus d ON n.detalle_sku_id=d.id
     WHERE ${where} ORDER BY n.created_at DESC
   `, vals);
+  const base = `${req.protocol}://${req.get('host')}`;
+  const toAbs = v => v ? (v.startsWith('http') ? v : base + v) : null;
   const esc = v => v ? `"${String(v).replace(/"/g,'""')}"` : '""';
   const headers = ['Fecha','Cliente','Tracking #','SKU Code','UPC','Descripción','País de Origen','Insumos','URL Fotografía Etiqueta','URL Fotografía Insumos / País de Origen','URL Fotografía Producto Completo','Operador'];
   const lines = [
@@ -1321,7 +1343,7 @@ app.get('/api/skus-nuevos/exportar/csv', (req, res) => {
     ...rows.map(r => [
       esc(r.created_at?.substring(0,10)), esc(r.cliente_nombre), esc(r.tracking_number),
       esc(r.sku_code), esc(r.upc), esc(r.descripcion), esc(r.pais_origen), esc(r.insumos),
-      esc(r.url_foto_etiqueta), esc(r.url_foto_insumos_origen), esc(r.url_foto_producto_completo),
+      esc(toAbs(r.url_foto_etiqueta)), esc(toAbs(r.url_foto_insumos_origen)), esc(toAbs(r.url_foto_producto_completo)),
       esc(r.operador),
     ].join(','))
   ];
