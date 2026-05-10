@@ -920,6 +920,7 @@ function renderInspeccion() {
         <div id="lista-skus" style="display:flex;flex-direction:column;gap:8px">
           ${renderSKUList()}
         </div>
+        ${renderErroresGenerales()}
       </div>
 
       <!-- PANEL DERECHO -->
@@ -1003,6 +1004,36 @@ function renderInspeccion() {
   setTimeout(() => document.getElementById('scan-input')?.focus(), 100);
 }
 
+function renderErroresGenerales() {
+  const generales = state.errores.filter(e => !e.detalle_sku_id && e.path_fotografia);
+  if (!generales.length) return '';
+
+  window._fotoGrupos = window._fotoGrupos || {};
+  window._fotoGrupos['_err_gral'] = generales.map(e => ({
+    src: e.path_fotografia,
+    titulo: `${e.tipo_error}${e.comentarios ? ' — ' + e.comentarios : ''}`
+  }));
+
+  return `
+    <div style="margin-top:16px">
+      <div class="section-title">Evidencia — Errores Generales</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px">
+        ${generales.map(e => `
+          <div style="position:relative;line-height:0;flex-shrink:0">
+            <img src="${e.path_fotografia}" class="foto-thumb"
+              title="${e.tipo_error} — clic para ampliar"
+              onclick="verFoto('${e.path_fotografia}','','_err_gral')"
+              style="height:64px;width:64px;object-fit:cover;border-radius:6px;border:1.5px solid rgba(220,38,38,.5);display:block">
+            <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(180,20,20,.88);color:#fff;font-size:9px;text-align:center;padding:3px;border-radius:0 0 5px 5px;font-weight:700;font-family:'IBM Plex Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+              ${e.tipo_error}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
 function renderSKUList() {
   if (state.detalles.length === 0) return `
     <div class="empty-state" style="padding:32px">
@@ -1027,6 +1058,9 @@ function renderSKUList() {
     if (d.foto_insumos)  grupo.push({ src: d.foto_insumos,  titulo: 'Insumos / País de origen' });
     if (d.foto_pieza)    grupo.push({ src: d.foto_pieza,    titulo: 'Pieza completa' });
     [1,2,3,4].forEach(n => { if (d[`foto_adicional_${n}`]) grupo.push({ src: d[`foto_adicional_${n}`], titulo: `Foto adicional ${n}` }); });
+    errD.forEach(err => {
+      if (err.path_fotografia) grupo.push({ src: err.path_fotografia, titulo: `⚠ ${err.tipo_error}${err.comentarios ? ' — ' + err.comentarios : ''}` });
+    });
     if (grupo.length) window._fotoGrupos[d.id] = grupo;
 
     const thumbStyle = 'height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)';
@@ -1059,6 +1093,25 @@ function renderSKUList() {
           ` : d.foto_adicional_1 ? `
             <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
               ${[1,2,3,4].filter(n => d[`foto_adicional_${n}`]).map(n => `<img src="${d[`foto_adicional_${n}`]}" title="Foto adicional ${n} — clic para ampliar" class="foto-thumb" onclick="verFoto('${d[`foto_adicional_${n}`]}','Foto adicional ${n}','${d.id}')" style="${thumbAdicStyle}">`).join('')}
+            </div>
+          ` : ''}
+
+          ${errD.some(e => e.path_fotografia) ? `
+            <div style="margin-top:8px;padding-top:8px;border-top:1px solid rgba(220,38,38,.2)">
+              <div style="font-size:9px;font-family:'IBM Plex Mono',monospace;letter-spacing:.08em;color:var(--accent-red);font-weight:700;margin-bottom:5px;text-transform:uppercase">Evidencia de errores</div>
+              <div style="display:flex;gap:5px;flex-wrap:wrap">
+                ${errD.filter(e => e.path_fotografia).map(e => `
+                  <div style="position:relative;line-height:0;flex-shrink:0">
+                    <img src="${e.path_fotografia}" class="foto-thumb"
+                      title="${e.tipo_error} — clic para ampliar"
+                      onclick="verFoto('${e.path_fotografia}','','${d.id}')"
+                      style="height:48px;width:48px;object-fit:cover;border-radius:5px;border:1.5px solid rgba(220,38,38,.45);display:block">
+                    <div style="position:absolute;bottom:0;left:0;right:0;background:rgba(180,20,20,.88);color:#fff;font-size:8px;text-align:center;padding:2px 2px;border-radius:0 0 3px 3px;font-weight:700;font-family:'IBM Plex Mono',monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+                      ${e.tipo_error.length > 9 ? e.tipo_error.substring(0,9) + '…' : e.tipo_error}
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
             </div>
           ` : ''}
         </div>
