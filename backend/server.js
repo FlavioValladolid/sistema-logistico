@@ -191,10 +191,8 @@ async function initDB() {
   `);
   try { db.run('ALTER TABLE trackings ADD COLUMN caja_pallet_id TEXT'); } catch(e) {}
 
-  // Recrear tabla retrabajos con nuevo esquema (DROP seguro: migración controlada)
-  db.run('DROP TABLE IF EXISTS retrabajos');
   db.run(`
-    CREATE TABLE retrabajos (
+    CREATE TABLE IF NOT EXISTS retrabajos (
       id TEXT PRIMARY KEY,
       tracking_id TEXT NOT NULL,
       detalle_sku_id TEXT,
@@ -209,6 +207,8 @@ async function initDB() {
       FOREIGN KEY (tracking_id) REFERENCES trackings(id)
     )
   `);
+  try { db.run('ALTER TABLE retrabajos ADD COLUMN detalle_sku_id TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE retrabajos ADD COLUMN retrabajo_otro TEXT'); } catch(e) {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS foto_sesiones (
