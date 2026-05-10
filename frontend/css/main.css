@@ -366,6 +366,7 @@ body {
 .main-content {
   margin-left: var(--sidebar-width);
   flex: 1;
+  min-width: 0;
   min-height: 100vh;
   display: flex;
   flex-direction: column;
@@ -681,10 +682,15 @@ select.form-control {
 }
 
 table {
-  width: auto;
-  min-width: 100%;
+  width: 100%;
   border-collapse: collapse;
   font-size: 13.5px;
+}
+
+/* Tablas anchas con scroll horizontal explícito */
+.table-scroll table {
+  width: max-content;
+  min-width: 100%;
 }
 
 thead th {
