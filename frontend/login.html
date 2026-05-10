@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Iniciar Sesión — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+  <style>
+    .login-page {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--bg-primary);
+      padding: 20px;
+    }
+    .login-card {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 40px;
+      width: 100%;
+      max-width: 400px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.3);
+    }
+    .login-logo {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+    .login-logo-icon {
+      width: 44px;
+      height: 44px;
+      background: var(--accent-blue);
+      border-radius: 10px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-logo-icon svg {
+      width: 24px;
+      height: 24px;
+      stroke: #fff;
+      fill: none;
+    }
+    .login-logo-text { font-size: 18px; font-weight: 700; color: var(--text-primary); }
+    .login-logo-sub  { font-size: 11px; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; }
+    .login-title     { font-size: 22px; font-weight: 700; color: var(--text-primary); margin-bottom: 6px; }
+    .login-sub       { font-size: 13px; color: var(--text-secondary); margin-bottom: 28px; }
+    .login-error {
+      background: rgba(231,76,60,0.12);
+      border: 1px solid rgba(231,76,60,0.4);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13px;
+      color: var(--danger);
+      margin-bottom: 16px;
+      display: none;
+    }
+    .login-btn {
+      width: 100%;
+      padding: 12px;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      margin-top: 4px;
+    }
+    .login-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-top: 24px;
+      padding-top: 20px;
+      border-top: 1px solid var(--border);
+    }
+    .login-version { font-size: 11px; color: var(--text-muted); font-family: 'IBM Plex Mono', monospace; }
+    .theme-toggle-inline {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-size: 11px;
+      color: var(--text-secondary);
+      cursor: pointer;
+      font-family: 'IBM Plex Mono', monospace;
+    }
+  </style>
+</head>
+<body>
+<script>
+  (function() {
+    const t = localStorage.getItem('theme') || 'dark';
+    document.documentElement.setAttribute('data-theme', t);
+  })();
+</script>
+
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-logo-icon">
+        <svg viewBox="0 0 24 24" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      </div>
+      <div>
+        <div class="login-logo-text">LOGÍSTICA</div>
+        <div class="login-logo-sub">Sistema de Inspección</div>
+      </div>
+    </div>
+
+    <div class="login-title">Iniciar sesión</div>
+    <div class="login-sub">Ingresa tus credenciales para continuar</div>
+
+    <div id="login-error" class="login-error"></div>
+
+    <form id="login-form" onsubmit="doLogin(event)">
+      <div class="form-group">
+        <label class="form-label">Correo electrónico</label>
+        <input type="email" id="login-email" class="form-control" placeholder="usuario@empresa.com"
+          autocomplete="username" required autofocus>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Contraseña</label>
+        <input type="password" id="login-password" class="form-control" placeholder="••••••••"
+          autocomplete="current-password" required>
+      </div>
+      <button type="submit" class="btn btn-primary login-btn" id="login-btn">Iniciar sesión</button>
+    </form>
+
+    <div class="login-footer">
+      <span class="login-version">v1.0.0 — 2026</span>
+      <button class="theme-toggle-inline" onclick="toggleLoginTheme()">☀/☾ Tema</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function toggleLoginTheme() {
+  const current = document.documentElement.getAttribute('data-theme') || 'dark';
+  const next = current === 'dark' ? 'light' : 'dark';
+  document.documentElement.setAttribute('data-theme', next);
+  localStorage.setItem('theme', next);
+}
+
+async function doLogin(e) {
+  e.preventDefault();
+  const email = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  const btn = document.getElementById('login-btn');
+
+  errEl.style.display = 'none';
+  btn.disabled = true;
+  btn.textContent = 'Verificando...';
+
+  try {
+    const res = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password })
+    });
+    const data = await res.json();
+
+    if (!res.ok) {
+      errEl.textContent = data.error || 'Error al iniciar sesión';
+      errEl.style.display = 'block';
+      btn.disabled = false;
+      btn.textContent = 'Iniciar sesión';
+      return;
+    }
+
+    localStorage.setItem('auth_token', data.token);
+    localStorage.setItem('auth_rol', data.rol);
+    localStorage.setItem('auth_nombre', data.nombre);
+    localStorage.setItem('auth_email', data.email || email);
+    localStorage.setItem('auth_id', data.id || '');
+    localStorage.setItem('auth_clienteIds', JSON.stringify(data.clienteIds || null));
+
+    // Redirect based on role
+    const redirectMap = {
+      ADMIN: 'index.html',
+      SUPERVISOR: 'index.html',
+      OPERADOR: 'operacion.html',
+      CLIENTE: 'index.html',
+      LOGISTICA: 'trackings.html'
+    };
+    window.location.href = redirectMap[data.rol] || 'index.html';
+  } catch (err) {
+    errEl.textContent = 'Error de conexión con el servidor';
+    errEl.style.display = 'block';
+    btn.disabled = false;
+    btn.textContent = 'Iniciar sesión';
+  }
+}
+
+// If already logged in, skip login page
+(async function() {
+  const token = localStorage.getItem('auth_token');
+  if (!token) return;
+  try {
+    const res = await fetch('/api/auth/me', { headers: { 'Authorization': 'Bearer ' + token } });
+    if (res.ok) {
+      const data = await res.json();
+      const redirectMap = { ADMIN: 'index.html', SUPERVISOR: 'index.html', OPERADOR: 'operacion.html', CLIENTE: 'index.html', LOGISTICA: 'trackings.html' };
+      window.location.href = redirectMap[data.rol] || 'index.html';
+    }
+  } catch(e) {}
+})();
+</script>
+</body>
+</html>

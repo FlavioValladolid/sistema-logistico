@@ -1,4 +1,69 @@
 // =====================================================
+// AUTH HELPERS
+// =====================================================
+
+// Sync redirect — runs before anything renders
+(function() {
+  if (window.location.pathname.includes('login.html')) return;
+  if (!localStorage.getItem('auth_token')) window.location.href = '/login.html';
+})();
+
+function getToken() {
+  return localStorage.getItem('auth_token');
+}
+
+function getAuthHeaders(extra = {}) {
+  const token = getToken();
+  return token ? { 'Authorization': `Bearer ${token}`, ...extra } : { ...extra };
+}
+
+// Returns user from localStorage immediately (sync), then validates token in background.
+// If token is invalid the next API call will get 401 and redirect to login.
+function checkAuth(allowedRoles = null) {
+  const token = getToken();
+  if (!token) { window.location.href = '/login.html'; return null; }
+
+  const user = {
+    id:     localStorage.getItem('auth_id')     || '',
+    nombre: localStorage.getItem('auth_nombre') || 'Usuario',
+    email:  localStorage.getItem('auth_email')  || '',
+    rol:    localStorage.getItem('auth_rol')    || 'ADMIN',
+    clienteIds: JSON.parse(localStorage.getItem('auth_clienteIds') || 'null')
+  };
+
+  if (allowedRoles && !allowedRoles.includes(user.rol)) {
+    const redirectMap = { OPERADOR: 'operacion.html', CLIENTE: 'index.html', LOGISTICA: 'trackings.html' };
+    window.location.href = redirectMap[user.rol] || 'index.html';
+    return null;
+  }
+
+  // Background token validation
+  fetch('/api/auth/me', { headers: getAuthHeaders() })
+    .then(r => r.ok ? r.json() : Promise.reject(r.status))
+    .then(me => {
+      localStorage.setItem('auth_id',        me.id);
+      localStorage.setItem('auth_nombre',    me.nombre);
+      localStorage.setItem('auth_email',     me.email);
+      localStorage.setItem('auth_rol',       me.rol);
+      localStorage.setItem('auth_clienteIds', JSON.stringify(me.clienteIds));
+    })
+    .catch(status => {
+      if (status === 401 || status === 403) {
+        ['auth_token','auth_id','auth_nombre','auth_email','auth_rol','auth_clienteIds'].forEach(k => localStorage.removeItem(k));
+        window.location.href = '/login.html';
+      }
+    });
+
+  return user;
+}
+
+async function logout() {
+  try { await API.post('/auth/logout', {}); } catch(e) {}
+  ['auth_token','auth_id','auth_nombre','auth_email','auth_rol','auth_clienteIds'].forEach(k => localStorage.removeItem(k));
+  window.location.href = '/login.html';
+}
+
+// =====================================================
 // API CLIENT
 // =====================================================
 const API = {
@@ -6,13 +71,20 @@ const API = {
 
   async _parseError(res) {
     const text = await res.text();
-    try { return JSON.parse(text); } catch {
+    try {
+      const data = JSON.parse(text);
+      if (res.status === 401) {
+        localStorage.removeItem('auth_token');
+        if (!window.location.pathname.includes('login.html')) window.location.href = '/login.html';
+      }
+      return data;
+    } catch {
       return { error: `Error ${res.status} del servidor. Verifica que el servidor esté corriendo.` };
     }
   },
 
   async get(path) {
-    const res = await fetch(this.base + path);
+    const res = await fetch(this.base + path, { headers: getAuthHeaders() });
     if (!res.ok) throw await this._parseError(res);
     return res.json();
   },
@@ -20,7 +92,7 @@ const API = {
   async post(path, data) {
     const res = await fetch(this.base + path, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(data)
     });
     if (!res.ok) throw await this._parseError(res);
@@ -30,6 +102,7 @@ const API = {
   async postForm(path, formData) {
     const res = await fetch(this.base + path, {
       method: 'POST',
+      headers: getAuthHeaders(),
       body: formData
     });
     if (!res.ok) throw await this._parseError(res);
@@ -39,7 +112,7 @@ const API = {
   async put(path, data) {
     const res = await fetch(this.base + path, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: getAuthHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(data)
     });
     if (!res.ok) throw await this._parseError(res);
@@ -47,7 +120,7 @@ const API = {
   },
 
   async del(path) {
-    const res = await fetch(this.base + path, { method: 'DELETE' });
+    const res = await fetch(this.base + path, { method: 'DELETE', headers: getAuthHeaders() });
     if (!res.ok) throw await this._parseError(res);
     return res.json();
   }

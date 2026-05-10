@@ -63,7 +63,8 @@
 <script src="js/app.js"></script>
 <script src="js/shell.js"></script>
 <script>
-buildShell('Retrabajos', 'RETRABAJOS', '');
+const _pageUser = checkAuth(['ADMIN','SUPERVISOR','OPERADOR']);
+buildShell('Retrabajos', 'RETRABAJOS', '', _pageUser);
 
 const content = document.getElementById('page-content');
 

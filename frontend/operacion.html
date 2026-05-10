@@ -65,7 +65,8 @@
 <script src="js/app.js"></script>
 <script src="js/shell.js"></script>
 <script>
-buildShell('Operación', 'OPERACIÓN / INSPECCIÓN', '');
+const _pageUser = checkAuth(['ADMIN','SUPERVISOR','OPERADOR']);
+buildShell('Operación', 'OPERACIÓN / INSPECCIÓN', '', _pageUser);
 
 const COUNTRY_OPTIONS = `
   <option value="">— Select country —</option>

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Usuarios — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<script src="js/app.js"></script>
+<script src="js/shell.js"></script>
+<script>
+const ROL_OPTS = ['ADMIN','SUPERVISOR','OPERADOR','CLIENTE','LOGISTICA'];
+const ROL_LABELS_U = { ADMIN: 'Admin', SUPERVISOR: 'Supervisor', OPERADOR: 'Operador', CLIENTE: 'Cliente', LOGISTICA: 'Logística' };
+const ROL_COLORS_U = { ADMIN: '#e74c3c', SUPERVISOR: '#e67e22', OPERADOR: '#3498db', CLIENTE: '#27ae60', LOGISTICA: '#8e44ad' };
+
+let currentUser = null;
+let allClientes = [];
+let editingId = null;
+
+const currentUser_ = checkAuth(['ADMIN']);
+buildShell('Usuarios', 'Usuarios', `
+  <button class="btn btn-primary btn-sm" onclick="abrirModal()">+ Nuevo usuario</button>
+`, currentUser_);
+
+async function init() {
+  currentUser = currentUser_;
+
+  document.getElementById('page-content').innerHTML = `
+    <div id="users-table-wrap" style="overflow-x:auto"></div>
+  `;
+
+  allClientes = await API.get('/clientes');
+  await cargarUsuarios();
+}
+
+async function cargarUsuarios() {
+  const users = await API.get('/usuarios');
+  const wrap = document.getElementById('users-table-wrap');
+
+  if (!users.length) {
+    wrap.innerHTML = '<div class="empty-state"><div class="empty-icon">👤</div><div class="empty-title">Sin usuarios</div></div>';
+    return;
+  }
+
+  wrap.innerHTML = `
+    <table class="table">
+      <thead>
+        <tr>
+          <th>Nombre</th>
+          <th>Email</th>
+          <th>Rol</th>
+          <th>Clientes asignados</th>
+          <th>Último acceso</th>
+          <th>Estatus</th>
+          <th>Acciones</th>
+        </tr>
+      </thead>
+      <tbody>
+        ${users.map(u => {
+          const clientesHtml = u.rol === 'ADMIN' || u.rol === 'SUPERVISOR'
+            ? '<span style="color:var(--text-muted);font-size:12px">Todos</span>'
+            : u.clientes.length === 0
+              ? '<span style="color:var(--danger);font-size:12px;font-weight:600">Sin clientes</span>'
+              : u.clientes.length === 1
+                ? `<span style="font-size:12px">${u.clientes[0].nombre}</span>`
+                : `<span style="font-size:12px;color:var(--text-secondary)">${u.clientes.length} clientes</span>`;
+
+          const esSelf = u.id === currentUser.id;
+          return `
+            <tr>
+              <td style="font-weight:600">${u.nombre}</td>
+              <td style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--text-secondary)">${u.email}</td>
+              <td><span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:3px;background:${ROL_COLORS_U[u.rol]};color:#fff;font-family:'IBM Plex Mono',monospace">${ROL_LABELS_U[u.rol]}</span></td>
+              <td>${clientesHtml}</td>
+              <td style="font-size:12px;color:var(--text-muted)">${u.ultimo_acceso ? formatDate(u.ultimo_acceso) : '—'}</td>
+              <td>
+                <span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:3px;background:${u.activo ? 'rgba(39,174,96,0.15)' : 'rgba(127,127,127,0.15)'};color:${u.activo ? 'var(--accent-green)' : 'var(--text-muted)'}">
+                  ${u.activo ? 'Activo' : 'Inactivo'}
+                </span>
+              </td>
+              <td>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <button class="btn btn-secondary btn-sm" onclick="abrirModal('${u.id}')">Editar</button>
+                  <button class="btn btn-secondary btn-sm" onclick="resetPassword('${u.id}', '${u.nombre.replace(/'/g, "\\'")}')">Contraseña</button>
+                  ${!esSelf ? `<button class="btn btn-secondary btn-sm" onclick="toggleActivo('${u.id}', ${u.activo})">${u.activo ? 'Desactivar' : 'Activar'}</button>` : ''}
+                  ${!esSelf ? `<button class="btn btn-danger btn-sm" onclick="eliminarUsuario('${u.id}', '${u.nombre.replace(/'/g, "\\'")}')">Eliminar</button>` : ''}
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function abrirModal(id = null) {
+  editingId = id;
+  const user = id ? (() => {
+    // get from table data - re-fetch
+    return null;
+  })() : null;
+
+  document.getElementById('modal-titulo').textContent = id ? 'Editar usuario' : 'Nuevo usuario';
+  document.getElementById('u-nombre').value = '';
+  document.getElementById('u-email').value = '';
+  document.getElementById('u-password').value = '';
+  document.getElementById('u-rol').value = 'OPERADOR';
+  document.getElementById('u-activo').checked = true;
+  document.getElementById('u-password-group').style.display = id ? 'none' : '';
+
+  // Load clientes checkboxes
+  renderClientesCheck([]);
+
+  if (id) {
+    API.get(`/usuarios`).then(users => {
+      const u = users.find(x => x.id === id);
+      if (!u) return;
+      document.getElementById('u-nombre').value = u.nombre;
+      document.getElementById('u-email').value = u.email;
+      document.getElementById('u-rol').value = u.rol;
+      document.getElementById('u-activo').checked = !!u.activo;
+      renderClientesCheck(u.clientes.map(c => c.id));
+      actualizarClientesVisibilidad();
+    });
+  } else {
+    actualizarClientesVisibilidad();
+  }
+
+  openModal('modal-usuario');
+}
+
+function renderClientesCheck(selIds) {
+  const wrap = document.getElementById('u-clientes-wrap');
+  wrap.innerHTML = allClientes.map(c => `
+    <label style="display:flex;align-items:center;gap:8px;padding:6px 0;cursor:pointer;font-size:13px">
+      <input type="checkbox" value="${c.id}" ${selIds.includes(c.id) ? 'checked' : ''}
+        style="accent-color:var(--accent-blue);width:15px;height:15px">
+      ${c.nombre}
+    </label>
+  `).join('');
+}
+
+function actualizarClientesVisibilidad() {
+  const rol = document.getElementById('u-rol').value;
+  const clientesSection = document.getElementById('clientes-section');
+  const needs = ['OPERADOR','CLIENTE','LOGISTICA'].includes(rol);
+  clientesSection.style.display = needs ? '' : 'none';
+}
+
+async function guardarUsuario() {
+  const nombre = document.getElementById('u-nombre').value.trim();
+  const email = document.getElementById('u-email').value.trim();
+  const password = document.getElementById('u-password').value;
+  const rol = document.getElementById('u-rol').value;
+  const activo = document.getElementById('u-activo').checked;
+
+  if (!nombre || !email || !rol) { toast('Completa los campos requeridos', 'error'); return; }
+  if (!editingId && !password) { toast('La contraseña es requerida', 'error'); return; }
+
+  const clienteIds = [...document.querySelectorAll('#u-clientes-wrap input:checked')].map(el => el.value);
+
+  try {
+    if (editingId) {
+      await API.put(`/usuarios/${editingId}`, { nombre, email, rol, activo });
+      await API.put(`/usuarios/${editingId}/clientes`, { cliente_ids: clienteIds });
+    } else {
+      await API.post('/usuarios', { nombre, email, password, rol, activo, cliente_ids: clienteIds });
+    }
+    closeModal('modal-usuario');
+    toast(editingId ? 'Usuario actualizado' : 'Usuario creado');
+    await cargarUsuarios();
+  } catch(e) {
+    toast(e.error || 'Error al guardar', 'error');
+  }
+}
+
+async function resetPassword(id, nombre) {
+  const nueva = prompt(`Nueva contraseña para ${nombre}:`);
+  if (!nueva) return;
+  if (nueva.length < 6) { toast('Mínimo 6 caracteres', 'error'); return; }
+  try {
+    await API.put(`/usuarios/${id}/resetear-password`, { password: nueva });
+    toast('Contraseña restablecida');
+  } catch(e) {
+    toast(e.error || 'Error', 'error');
+  }
+}
+
+async function toggleActivo(id, activo) {
+  const users = await API.get('/usuarios');
+  const u = users.find(x => x.id === id);
+  if (!u) return;
+  try {
+    await API.put(`/usuarios/${id}`, { nombre: u.nombre, email: u.email, rol: u.rol, activo: !activo });
+    await API.put(`/usuarios/${id}/clientes`, { cliente_ids: u.clientes.map(c => c.id) });
+    toast(activo ? 'Usuario desactivado' : 'Usuario activado');
+    await cargarUsuarios();
+  } catch(e) { toast(e.error || 'Error', 'error'); }
+}
+
+async function eliminarUsuario(id, nombre) {
+  const ok = await confirm(`¿Eliminar al usuario "${nombre}"? Esta acción no se puede deshacer.`, '¿Eliminar usuario?');
+  if (!ok) return;
+  try {
+    await API.del(`/usuarios/${id}`);
+    toast('Usuario eliminado');
+    await cargarUsuarios();
+  } catch(e) { toast(e.error || 'Error', 'error'); }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+
+<!-- Modal usuario -->
+<div id="modal-usuario" class="modal-overlay">
+  <div class="modal" style="max-width:500px">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-titulo">Nuevo usuario</span>
+      <button class="modal-close" onclick="closeModal('modal-usuario')">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label class="form-label">Nombre *</label>
+        <input type="text" id="u-nombre" class="form-control" placeholder="Nombre completo">
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email *</label>
+        <input type="email" id="u-email" class="form-control" placeholder="correo@empresa.com">
+      </div>
+      <div class="form-group" id="u-password-group">
+        <label class="form-label">Contraseña *</label>
+        <input type="password" id="u-password" class="form-control" placeholder="Mínimo 6 caracteres">
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">Rol *</label>
+          <select id="u-rol" class="form-control" onchange="actualizarClientesVisibilidad()">
+            <option value="ADMIN">Admin</option>
+            <option value="SUPERVISOR">Supervisor</option>
+            <option value="OPERADOR" selected>Operador</option>
+            <option value="CLIENTE">Cliente</option>
+            <option value="LOGISTICA">Logística</option>
+          </select>
+        </div>
+        <div class="form-group" style="display:flex;align-items:center;gap:10px;padding-top:26px">
+          <label class="form-label" style="margin:0">Activo</label>
+          <input type="checkbox" id="u-activo" checked style="width:16px;height:16px;accent-color:var(--accent-blue)">
+        </div>
+      </div>
+      <div id="clientes-section" class="form-group">
+        <label class="form-label">Clientes asignados</label>
+        <div id="u-clientes-wrap" style="border:1px solid var(--border);border-radius:6px;padding:10px;max-height:180px;overflow-y:auto"></div>
+        <div class="form-hint">Sin selección = sin acceso a datos de clientes</div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeModal('modal-usuario')">Cancelar</button>
+      <button class="btn btn-primary" onclick="guardarUsuario()">Guardar</button>
+    </div>
+  </div>
+</div>
+</body>
+</html>

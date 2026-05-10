@@ -5,6 +5,7 @@ const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const initSqlJs = require('sql.js');
+const bcrypt = require('bcrypt');
 
 const app = express();
 const PORT = 3000;
@@ -256,6 +257,36 @@ async function initDB() {
   // Config table for migration markers
   db.run(`CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)`);
 
+  // Auth tables
+  db.run(`
+    CREATE TABLE IF NOT EXISTS usuarios (
+      id TEXT PRIMARY KEY,
+      nombre TEXT NOT NULL,
+      email TEXT NOT NULL UNIQUE,
+      password_hash TEXT NOT NULL,
+      rol TEXT NOT NULL DEFAULT 'OPERADOR',
+      activo INTEGER DEFAULT 1,
+      ultimo_acceso TEXT,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS usuario_clientes (
+      usuario_id TEXT NOT NULL,
+      cliente_id TEXT NOT NULL,
+      PRIMARY KEY (usuario_id, cliente_id)
+    )
+  `);
+  db.run(`
+    CREATE TABLE IF NOT EXISTS sesiones (
+      token TEXT PRIMARY KEY,
+      usuario_id TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `);
+  db.run("DELETE FROM sesiones WHERE expires_at < datetime('now','localtime')");
+
   // One-time migration: convert all UTC timestamps stored before the localtime fix
   const migDone = db.exec("SELECT value FROM config WHERE key='utc_to_local_v1'");
   if (!migDone[0]?.values?.length) {
@@ -279,6 +310,16 @@ async function initDB() {
   const check = db.exec("SELECT COUNT(*) as cnt FROM clientes");
   if (check[0].values[0][0] === 0) {
     seedData();
+  }
+
+  // Crear admin por defecto si no existe ningún usuario
+  const adminCheck = db.exec("SELECT COUNT(*) as cnt FROM usuarios");
+  if (adminCheck[0].values[0][0] === 0) {
+    const hash = await bcrypt.hash('Admin123!', 10);
+    db.run(`INSERT INTO usuarios (id,nombre,email,password_hash,rol,activo,created_at) VALUES (?,?,?,?,?,?,?)`,
+      [uuidv4(), 'Administrador', 'admin@sistema.com', hash, 'ADMIN', 1, localNow()]);
+    saveDB();
+    console.log('👤 Usuario admin creado: admin@sistema.com / Admin123!');
   }
 
   console.log('✅ Base de datos inicializada');
@@ -353,6 +394,179 @@ function generarNombreCaja(clienteNombre, tipo, consecutivo) {
   const abr = { 'Damage': 'DMG', 'Good Condition': 'GDC', 'Non-brand merchandise': 'NBM' }[tipo] || 'UNK';
   return `${iniciales}-${abr}-${String(consecutivo).padStart(3, '0')}`;
 }
+
+// ===================== AUTH MIDDLEWARE =====================
+
+const AUTH_BYPASS = [
+  { method: 'POST', path: '/auth/login' },
+];
+
+function authMiddleware(req, res, next) {
+  // Skip for photo session routes (mobile upload) — path is relative to /api mount
+  if (req.path.startsWith('/foto-sesion/')) return next();
+  // Check bypass list
+  const bypass = AUTH_BYPASS.some(b => b.method === req.method && req.path === b.path);
+  if (bypass) return next();
+
+  const header = req.headers['authorization'] || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'No autenticado' });
+
+  const sesion = dbGet(
+    "SELECT s.*, u.id as uid, u.nombre, u.email, u.rol, u.activo FROM sesiones s JOIN usuarios u ON u.id=s.usuario_id WHERE s.token=? AND s.expires_at > datetime('now','localtime')",
+    [token]
+  );
+  if (!sesion) return res.status(401).json({ error: 'Sesión expirada o inválida' });
+  if (!sesion.activo) return res.status(403).json({ error: 'Usuario desactivado' });
+
+  req.usuario = { id: sesion.uid, nombre: sesion.nombre, email: sesion.email, rol: sesion.rol };
+
+  // Block write operations for read-only roles
+  if (['CLIENTE', 'LOGISTICA'].includes(sesion.rol) && ['POST','PUT','DELETE'].includes(req.method)) {
+    // Allow password change
+    if (req.path === '/api/auth/cambiar-password') return next();
+    // Allow logout
+    if (req.path === '/api/auth/logout') return next();
+    return res.status(403).json({ error: 'Sin permiso para esta operación' });
+  }
+
+  next();
+}
+
+function requireRol(...roles) {
+  return (req, res, next) => {
+    if (!req.usuario) return res.status(401).json({ error: 'No autenticado' });
+    if (!roles.includes(req.usuario.rol)) return res.status(403).json({ error: 'Sin permiso' });
+    next();
+  };
+}
+
+function getUserClienteIds(usuario_id, rol) {
+  if (rol === 'ADMIN' || rol === 'SUPERVISOR') return null; // null = all clients
+  const rows = dbAll('SELECT cliente_id FROM usuario_clientes WHERE usuario_id=?', [usuario_id]);
+  return rows.map(r => r.cliente_id);
+}
+
+app.use('/api', authMiddleware);
+
+// ===================== RUTAS AUTH =====================
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password) return res.status(400).json({ error: 'Email y contraseña requeridos' });
+  const user = dbGet('SELECT * FROM usuarios WHERE email=? AND activo=1', [email.toLowerCase().trim()]);
+  if (!user) return res.status(401).json({ error: 'Credenciales incorrectas' });
+  const match = await bcrypt.compare(password, user.password_hash);
+  if (!match) return res.status(401).json({ error: 'Credenciales incorrectas' });
+
+  const token = uuidv4() + '-' + uuidv4();
+  const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000);
+  const p = n => String(n).padStart(2, '0');
+  const expiresStr = `${expiresAt.getFullYear()}-${p(expiresAt.getMonth()+1)}-${p(expiresAt.getDate())} ${p(expiresAt.getHours())}:${p(expiresAt.getMinutes())}:${p(expiresAt.getSeconds())}`;
+
+  dbRun('INSERT INTO sesiones (token,usuario_id,expires_at,created_at) VALUES (?,?,?,?)',
+    [token, user.id, expiresStr, localNow()]);
+  dbRun('UPDATE usuarios SET ultimo_acceso=? WHERE id=?', [localNow(), user.id]);
+
+  const clienteRows = dbAll('SELECT cliente_id FROM usuario_clientes WHERE usuario_id=?', [user.id]);
+  const clienteIds = (user.rol === 'ADMIN' || user.rol === 'SUPERVISOR') ? null : clienteRows.map(r => r.cliente_id);
+  res.json({ token, id: user.id, rol: user.rol, nombre: user.nombre, email: user.email, clienteIds });
+});
+
+app.get('/api/auth/me', (req, res) => {
+  const u = req.usuario;
+  const clienteIds = getUserClienteIds(u.id, u.rol);
+  res.json({ id: u.id, nombre: u.nombre, email: u.email, rol: u.rol, clienteIds });
+});
+
+app.post('/api/auth/logout', (req, res) => {
+  const header = req.headers['authorization'] || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (token) dbRun('DELETE FROM sesiones WHERE token=?', [token]);
+  res.json({ mensaje: 'Sesión cerrada' });
+});
+
+app.put('/api/auth/cambiar-password', async (req, res) => {
+  const { password_actual, password_nuevo } = req.body;
+  if (!password_actual || !password_nuevo) return res.status(400).json({ error: 'Campos requeridos' });
+  if (password_nuevo.length < 6) return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+  const user = dbGet('SELECT * FROM usuarios WHERE id=?', [req.usuario.id]);
+  const match = await bcrypt.compare(password_actual, user.password_hash);
+  if (!match) return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+  const hash = await bcrypt.hash(password_nuevo, 10);
+  dbRun('UPDATE usuarios SET password_hash=? WHERE id=?', [hash, req.usuario.id]);
+  res.json({ mensaje: 'Contraseña actualizada' });
+});
+
+// --- USUARIOS (ADMIN only) ---
+app.get('/api/usuarios', requireRol('ADMIN'), (req, res) => {
+  const users = dbAll('SELECT id,nombre,email,rol,activo,ultimo_acceso,created_at FROM usuarios ORDER BY nombre');
+  users.forEach(u => {
+    const clientes = dbAll('SELECT c.id,c.nombre FROM usuario_clientes uc JOIN clientes c ON c.id=uc.cliente_id WHERE uc.usuario_id=?', [u.id]);
+    u.clientes = clientes;
+  });
+  res.json(users);
+});
+
+app.post('/api/usuarios', requireRol('ADMIN'), async (req, res) => {
+  const { nombre, email, password, rol, activo, cliente_ids } = req.body;
+  if (!nombre || !email || !password || !rol) return res.status(400).json({ error: 'Campos requeridos: nombre, email, password, rol' });
+  const roles = ['ADMIN','SUPERVISOR','OPERADOR','CLIENTE','LOGISTICA'];
+  if (!roles.includes(rol)) return res.status(400).json({ error: 'Rol inválido' });
+  const existing = dbGet('SELECT id FROM usuarios WHERE email=?', [email.toLowerCase().trim()]);
+  if (existing) return res.status(400).json({ error: 'Email ya registrado' });
+  const hash = await bcrypt.hash(password, 10);
+  const id = uuidv4();
+  dbRun('INSERT INTO usuarios (id,nombre,email,password_hash,rol,activo,created_at) VALUES (?,?,?,?,?,?,?)',
+    [id, nombre, email.toLowerCase().trim(), hash, rol, activo !== false ? 1 : 0, localNow()]);
+  if (Array.isArray(cliente_ids)) {
+    cliente_ids.forEach(cid => {
+      dbRun('INSERT OR IGNORE INTO usuario_clientes (usuario_id,cliente_id) VALUES (?,?)', [id, cid]);
+    });
+  }
+  res.json({ id, mensaje: 'Usuario creado' });
+});
+
+app.put('/api/usuarios/:id', requireRol('ADMIN'), (req, res) => {
+  const { nombre, email, rol, activo } = req.body;
+  if (!nombre || !email || !rol) return res.status(400).json({ error: 'Campos requeridos' });
+  dbRun('UPDATE usuarios SET nombre=?,email=?,rol=?,activo=? WHERE id=?',
+    [nombre, email.toLowerCase().trim(), rol, activo !== false ? 1 : 0, req.params.id]);
+  res.json({ mensaje: 'Usuario actualizado' });
+});
+
+app.delete('/api/usuarios/:id', requireRol('ADMIN'), (req, res) => {
+  if (req.params.id === req.usuario.id) return res.status(400).json({ error: 'No puedes eliminarte a ti mismo' });
+  dbRun('DELETE FROM sesiones WHERE usuario_id=?', [req.params.id]);
+  dbRun('DELETE FROM usuario_clientes WHERE usuario_id=?', [req.params.id]);
+  dbRun('DELETE FROM usuarios WHERE id=?', [req.params.id]);
+  res.json({ mensaje: 'Usuario eliminado' });
+});
+
+app.put('/api/usuarios/:id/resetear-password', requireRol('ADMIN'), async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 6) return res.status(400).json({ error: 'Contraseña inválida (mínimo 6 caracteres)' });
+  const hash = await bcrypt.hash(password, 10);
+  dbRun('UPDATE usuarios SET password_hash=? WHERE id=?', [hash, req.params.id]);
+  dbRun('DELETE FROM sesiones WHERE usuario_id=?', [req.params.id]);
+  res.json({ mensaje: 'Contraseña restablecida' });
+});
+
+app.get('/api/usuarios/:id/clientes', requireRol('ADMIN'), (req, res) => {
+  const clientes = dbAll('SELECT c.id,c.nombre FROM usuario_clientes uc JOIN clientes c ON c.id=uc.cliente_id WHERE uc.usuario_id=?', [req.params.id]);
+  res.json(clientes);
+});
+
+app.put('/api/usuarios/:id/clientes', requireRol('ADMIN'), (req, res) => {
+  const { cliente_ids } = req.body;
+  dbRun('DELETE FROM usuario_clientes WHERE usuario_id=?', [req.params.id]);
+  if (Array.isArray(cliente_ids)) {
+    cliente_ids.forEach(cid => {
+      dbRun('INSERT OR IGNORE INTO usuario_clientes (usuario_id,cliente_id) VALUES (?,?)', [req.params.id, cid]);
+    });
+  }
+  res.json({ mensaje: 'Clientes asignados' });
+});
 
 // ===================== RUTAS API =====================
 
