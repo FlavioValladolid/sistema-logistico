@@ -329,13 +329,58 @@ document.body.insertAdjacentHTML('beforeend', `
 
         <div class="form-group">
           <label class="form-label">Fotografía de Evidencia *</label>
-          <div class="photo-upload">
-            <input type="file" id="ma-foto" accept="image/*" capture="environment" onchange="previewMaFoto(this)">
-            <div class="photo-upload-icon">📷</div>
-            <div class="photo-upload-text">Toca para tomar foto de la mercancía</div>
-            <div class="photo-upload-hint">JPG, PNG — requerida para continuar</div>
+
+          <!-- Selector de modo -->
+          <div style="display:flex;gap:0;margin-bottom:10px;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <button id="ma-btn-modo-local" class="foto-modo-btn active" onclick="setMaFotoMode('local')">📁 Subir archivo</button>
+            <button id="ma-btn-modo-qr" class="foto-modo-btn" onclick="setMaFotoMode('qr')">📱 Foto con teléfono</button>
           </div>
-          <img id="ma-foto-preview" class="photo-preview hidden" alt="Vista previa">
+
+          <!-- Modo A: archivo local -->
+          <div id="ma-foto-modo-local">
+            <div class="photo-upload">
+              <input type="file" id="ma-foto" accept="image/*" capture="environment" onchange="previewMaFoto(this)">
+              <div class="photo-upload-icon">📷</div>
+              <div class="photo-upload-text">Toca para tomar foto de la mercancía</div>
+              <div class="photo-upload-hint">JPG, PNG — requerida para continuar</div>
+            </div>
+            <img id="ma-foto-preview" class="photo-preview hidden" alt="Vista previa">
+          </div>
+
+          <!-- Modo B: QR móvil -->
+          <div id="ma-foto-modo-qr" class="hidden">
+            <div id="ma-qr-idle" style="text-align:center;padding:16px 0">
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
+                Genera un QR y escanéalo con tu teléfono para tomar la foto con la cámara del móvil
+              </div>
+              <button class="btn btn-secondary" onclick="iniciarSesionQRMA()" style="justify-content:center;max-width:220px;margin:0 auto">
+                📱 Generar QR
+              </button>
+            </div>
+
+            <div id="ma-qr-activo" class="hidden" style="text-align:center">
+              <div id="ma-qr-code-div" style="display:inline-block;background:#fff;padding:10px;border-radius:8px;margin-bottom:10px"></div>
+              <div style="display:flex;justify-content:center;align-items:center;gap:6px;margin-bottom:4px">
+                <span style="font-size:11px;color:var(--text-muted)">Expira en</span>
+                <span id="ma-qr-countdown" style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--text-secondary)">10:00</span>
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Esperando foto desde el teléfono…</div>
+              <div class="spinner" id="ma-qr-spinner" style="width:16px;height:16px;border-width:2px;margin:0 auto 8px"></div>
+              <button class="btn btn-secondary btn-sm hidden" id="ma-btn-nuevo-qr" onclick="iniciarSesionQRMA()" style="justify-content:center;margin:0 auto;max-width:180px">
+                ↻ Generar nuevo QR
+              </button>
+            </div>
+
+            <div id="ma-qr-recibida" class="hidden" style="text-align:center">
+              <div style="color:var(--accent-green);font-weight:700;font-size:13px;margin-bottom:8px">✅ Foto recibida desde el teléfono</div>
+              <img id="ma-foto-qr-preview" style="max-width:100%;border-radius:8px;max-height:180px;object-fit:cover;border:1px solid var(--border)" alt="Foto recibida">
+              <div style="margin-top:8px">
+                <button class="btn btn-secondary btn-sm" onclick="resetQRSesionMA()" style="justify-content:center;margin:0 auto;max-width:160px">
+                  ↩ Cambiar foto
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="form-group">
@@ -2073,10 +2118,114 @@ async function guardarError() {
 // ========================
 // MERCANCÍA AJENA AL CLIENTE
 // ========================
+// QR – Mercancía ajena
+// ========================
+let maFotoMode = 'local';
+let maSesionQR = null;
+let maPollInterval = null;
+let maCountdownInterval = null;
+let maExpiresMs = 0;
+
+function setMaFotoMode(mode) {
+  maFotoMode = mode;
+  document.getElementById('ma-btn-modo-local')?.classList.toggle('active', mode === 'local');
+  document.getElementById('ma-btn-modo-qr')?.classList.toggle('active', mode === 'qr');
+  document.getElementById('ma-foto-modo-local')?.classList.toggle('hidden', mode !== 'local');
+  document.getElementById('ma-foto-modo-qr')?.classList.toggle('hidden', mode !== 'qr');
+  if (mode === 'local') limpiarQRMA();
+}
+
+async function iniciarSesionQRMA() {
+  limpiarQRMA();
+  document.getElementById('ma-qr-idle').classList.add('hidden');
+  document.getElementById('ma-qr-activo').classList.remove('hidden');
+  document.getElementById('ma-qr-recibida').classList.add('hidden');
+  document.getElementById('ma-btn-nuevo-qr').classList.add('hidden');
+  document.getElementById('ma-qr-spinner').classList.remove('hidden');
+
+  const qrDiv = document.getElementById('ma-qr-code-div');
+  qrDiv.innerHTML = '<div class="spinner" style="width:22px;height:22px;border-width:2px;margin:24px auto"></div>';
+
+  try {
+    const sesion = await API.post('/foto-sesion', {
+      tracking_id: state.tracking?.id || null,
+      contexto: 'mercancia-ajena',
+    });
+    maSesionQR = sesion;
+
+    qrDiv.innerHTML = '';
+    new QRCode(qrDiv, {
+      text: sesion.url,
+      width: 220, height: 220,
+      colorDark: '#000000', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+
+    maExpiresMs = Date.now() + 10 * 60 * 1000;
+    tickCountdownMA();
+    maCountdownInterval = setInterval(tickCountdownMA, 1000);
+    maPollInterval = setInterval(pollQRMA, 2000);
+  } catch(e) {
+    qrDiv.innerHTML = '<div style="color:var(--accent-red);padding:16px;font-size:12px">Error al generar QR. Intenta de nuevo.</div>';
+    document.getElementById('ma-btn-nuevo-qr').classList.remove('hidden');
+    document.getElementById('ma-qr-spinner').classList.add('hidden');
+  }
+}
+
+function tickCountdownMA() {
+  const remaining = Math.max(0, maExpiresMs - Date.now());
+  const mins = Math.floor(remaining / 60000);
+  const secs = Math.floor((remaining % 60000) / 1000);
+  const el = document.getElementById('ma-qr-countdown');
+  if (el) {
+    el.textContent = `${mins}:${String(secs).padStart(2, '0')}`;
+    el.style.color = remaining < 120000 ? 'var(--accent-red)' : 'var(--text-secondary)';
+  }
+  if (remaining === 0) {
+    clearInterval(maCountdownInterval);
+    clearInterval(maPollInterval);
+    document.getElementById('ma-qr-spinner')?.classList.add('hidden');
+    document.getElementById('ma-btn-nuevo-qr')?.classList.remove('hidden');
+  }
+}
+
+async function pollQRMA() {
+  if (!maSesionQR?.token) return;
+  try {
+    const data = await API.get(`/foto-sesion/${maSesionQR.token}`);
+    if (data.estatus === 'completada' && data.url_foto) {
+      clearInterval(maPollInterval);
+      clearInterval(maCountdownInterval);
+      maSesionQR.url_foto = data.url_foto;
+      document.getElementById('ma-qr-activo').classList.add('hidden');
+      document.getElementById('ma-qr-recibida').classList.remove('hidden');
+      document.getElementById('ma-foto-qr-preview').src = data.url_foto;
+    }
+  } catch(e) {}
+}
+
+function limpiarQRMA() {
+  clearInterval(maPollInterval);
+  clearInterval(maCountdownInterval);
+  maPollInterval = null;
+  maCountdownInterval = null;
+}
+
+function resetQRSesionMA() {
+  limpiarQRMA();
+  maSesionQR = null;
+  document.getElementById('ma-qr-activo').classList.add('hidden');
+  document.getElementById('ma-qr-recibida').classList.add('hidden');
+  document.getElementById('ma-qr-idle').classList.remove('hidden');
+}
+
+// ========================
 function abrirMercanciaAjena() {
   document.getElementById('ma-desc').value = '';
   document.getElementById('ma-foto').value = '';
   document.getElementById('ma-foto-preview').classList.add('hidden');
+  limpiarQRMA();
+  setMaFotoMode('local');
   openModal('modal-mercancia-ajena');
 }
 
@@ -2094,19 +2243,29 @@ function previewMaFoto(input) {
 
 async function guardarMercanciaAjena() {
   const desc = document.getElementById('ma-desc').value.trim();
-  const fotoInput = document.getElementById('ma-foto');
-
   if (!desc) { toast('La descripción es requerida', 'error'); return; }
-  if (!fotoInput.files[0]) { toast('La fotografía de evidencia es requerida', 'error'); return; }
-
-  const fd = new FormData();
-  fd.append('tipo_error', 'Mercancía ajena');
-  fd.append('comentarios', desc);
-  fd.append('foto', fotoInput.files[0]);
 
   try {
-    await API.postForm(`/trackings/${state.tracking.id}/errores`, fd);
+    if (maFotoMode === 'qr') {
+      if (!maSesionQR?.url_foto) { toast('Espera a que el teléfono envíe la foto antes de guardar', 'error'); return; }
+      await API.post(`/trackings/${state.tracking.id}/errores-url`, {
+        tipo_error: 'Mercancía ajena',
+        comentarios: desc,
+        path_fotografia: maSesionQR.url_foto,
+      });
+    } else {
+      const fotoInput = document.getElementById('ma-foto');
+      if (!fotoInput.files[0]) { toast('La fotografía de evidencia es requerida', 'error'); return; }
+      const fd = new FormData();
+      fd.append('tipo_error', 'Mercancía ajena');
+      fd.append('comentarios', desc);
+      fd.append('foto', fotoInput.files[0]);
+      await API.postForm(`/trackings/${state.tracking.id}/errores`, fd);
+    }
+
     state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
+    limpiarQRMA();
+    setMaFotoMode('local');
     closeModal('modal-mercancia-ajena');
     toast('Registrado — colocar mercancía en caja de dañados ✓');
     renderInspeccion();
