@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(git -C /Users/flaviovalladolid/Downloads/sistema-logistico ls-files)",
-      "Bash(git:*)"
+      "Bash(git:*)",
+      "Bash(awk '{print $5, $9}')"
     ]
   }
 }
