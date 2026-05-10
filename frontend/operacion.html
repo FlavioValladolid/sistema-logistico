@@ -1012,12 +1012,25 @@ function renderSKUList() {
     </div>
   `;
 
+  window._fotoGrupos = window._fotoGrupos || {};
+
   return state.detalles.map(d => {
     const errD = state.errores.filter(e => e.detalle_sku_id === d.id);
     const hasError = errD.length > 0;
     const isMalo = d.calidad === 'Mala';
     const paisDiff = !d.pais_coincide;
     const insDiff = !d.insumos_coincide;
+
+    // Build photo group for this detalle (for lightbox navigation)
+    const grupo = [];
+    if (d.foto_etiqueta) grupo.push({ src: d.foto_etiqueta, titulo: 'Etiqueta del producto' });
+    if (d.foto_insumos)  grupo.push({ src: d.foto_insumos,  titulo: 'Insumos / País de origen' });
+    if (d.foto_pieza)    grupo.push({ src: d.foto_pieza,    titulo: 'Pieza completa' });
+    [1,2,3,4].forEach(n => { if (d[`foto_adicional_${n}`]) grupo.push({ src: d[`foto_adicional_${n}`], titulo: `Foto adicional ${n}` }); });
+    if (grupo.length) window._fotoGrupos[d.id] = grupo;
+
+    const thumbStyle = 'height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)';
+    const thumbAdicStyle = 'height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid rgba(68,138,255,.4)';
 
     return `
       <div class="sku-list-item ${hasError ? 'has-error' : ''}">
@@ -1038,14 +1051,14 @@ function renderSKUList() {
           </div>
           ${d.foto_etiqueta ? `
             <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-              <img src="${d.foto_etiqueta}" title="Etiqueta" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">
-              <img src="${d.foto_insumos}" title="Insumos/Origen" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">
-              <img src="${d.foto_pieza}" title="Pieza completa" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid var(--border)">
-              ${[1,2,3,4].filter(n => d[`foto_adicional_${n}`]).map(n => `<img src="${d[`foto_adicional_${n}`]}" title="Foto adicional ${n}" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid rgba(68,138,255,.4)">`).join('')}
+              <img src="${d.foto_etiqueta}" title="Etiqueta — clic para ampliar" class="foto-thumb" onclick="verFoto('${d.foto_etiqueta}','Etiqueta del producto','${d.id}')" style="${thumbStyle}">
+              <img src="${d.foto_insumos}"  title="Insumos/Origen — clic para ampliar" class="foto-thumb" onclick="verFoto('${d.foto_insumos}','Insumos / País de origen','${d.id}')" style="${thumbStyle}">
+              <img src="${d.foto_pieza}"    title="Pieza completa — clic para ampliar" class="foto-thumb" onclick="verFoto('${d.foto_pieza}','Pieza completa','${d.id}')" style="${thumbStyle}">
+              ${[1,2,3,4].filter(n => d[`foto_adicional_${n}`]).map(n => `<img src="${d[`foto_adicional_${n}`]}" title="Foto adicional ${n} — clic para ampliar" class="foto-thumb" onclick="verFoto('${d[`foto_adicional_${n}`]}','Foto adicional ${n}','${d.id}')" style="${thumbAdicStyle}">`).join('')}
             </div>
           ` : d.foto_adicional_1 ? `
             <div style="display:flex;gap:6px;margin-top:6px;flex-wrap:wrap">
-              ${[1,2,3,4].filter(n => d[`foto_adicional_${n}`]).map(n => `<img src="${d[`foto_adicional_${n}`]}" title="Foto adicional ${n}" style="height:40px;width:40px;object-fit:cover;border-radius:4px;border:1px solid rgba(68,138,255,.4)">`).join('')}
+              ${[1,2,3,4].filter(n => d[`foto_adicional_${n}`]).map(n => `<img src="${d[`foto_adicional_${n}`]}" title="Foto adicional ${n} — clic para ampliar" class="foto-thumb" onclick="verFoto('${d[`foto_adicional_${n}`]}','Foto adicional ${n}','${d.id}')" style="${thumbAdicStyle}">`).join('')}
             </div>
           ` : ''}
         </div>

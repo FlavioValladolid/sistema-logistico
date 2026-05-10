@@ -168,6 +168,85 @@ function confirm(message, title = '¿Confirmar acción?') {
   });
 }
 
+// =====================================================
+// LIGHTBOX (foto viewer + descarga)
+// =====================================================
+let _lbFotos = [];
+let _lbIdx   = 0;
+
+function verFoto(src, titulo, grupoId) {
+  if (!document.getElementById('lightbox-overlay')) _crearLightbox();
+
+  if (grupoId && window._fotoGrupos?.[grupoId]) {
+    _lbFotos = window._fotoGrupos[grupoId];
+    _lbIdx   = _lbFotos.findIndex(f => f.src === src);
+    if (_lbIdx < 0) _lbIdx = 0;
+  } else {
+    _lbFotos = [{ src, titulo }];
+    _lbIdx   = 0;
+  }
+
+  _lbMostrar(_lbIdx);
+  document.getElementById('lightbox-overlay').classList.add('open');
+  document.body.style.overflow = 'hidden';
+}
+
+function _lbMostrar(idx) {
+  const foto = _lbFotos[idx];
+  document.getElementById('lightbox-img').src = foto.src;
+  document.getElementById('lightbox-title').textContent = foto.titulo || '';
+
+  const dl = document.getElementById('lightbox-download');
+  dl.href = foto.src;
+  dl.download = foto.src.split('/').pop();
+
+  const multi = _lbFotos.length > 1;
+  document.getElementById('lightbox-counter').textContent = multi ? `${idx + 1} / ${_lbFotos.length}` : '';
+  document.getElementById('lightbox-prev').classList.toggle('hidden', !multi);
+  document.getElementById('lightbox-next').classList.toggle('hidden', !multi);
+}
+
+function _lbNav(dir) {
+  _lbIdx = (_lbIdx + dir + _lbFotos.length) % _lbFotos.length;
+  _lbMostrar(_lbIdx);
+}
+
+function cerrarLightbox() {
+  document.getElementById('lightbox-overlay')?.classList.remove('open');
+  document.body.style.overflow = '';
+}
+
+function _crearLightbox() {
+  const el = document.createElement('div');
+  el.id = 'lightbox-overlay';
+  el.innerHTML = `
+    <div id="lightbox-inner">
+      <div id="lightbox-toolbar">
+        <span id="lightbox-title"></span>
+        <span id="lightbox-counter"></span>
+        <div id="lightbox-actions">
+          <a id="lightbox-download" href="#" class="lightbox-btn lightbox-btn-primary" download>↓ Descargar</a>
+          <button class="lightbox-btn" onclick="cerrarLightbox()">✕ Cerrar</button>
+        </div>
+      </div>
+      <div id="lightbox-img-wrap">
+        <button id="lightbox-prev" class="lightbox-nav prev hidden" onclick="event.stopPropagation();_lbNav(-1)">‹</button>
+        <img id="lightbox-img" onclick="event.stopPropagation()" alt="Foto ampliada">
+        <button id="lightbox-next" class="lightbox-nav next hidden" onclick="event.stopPropagation();_lbNav(1)">›</button>
+      </div>
+    </div>
+  `;
+  el.addEventListener('click', e => { if (e.target === el) cerrarLightbox(); });
+  document.body.appendChild(el);
+
+  document.addEventListener('keydown', e => {
+    if (!document.getElementById('lightbox-overlay')?.classList.contains('open')) return;
+    if (e.key === 'Escape') cerrarLightbox();
+    if (e.key === 'ArrowLeft')  _lbNav(-1);
+    if (e.key === 'ArrowRight') _lbNav(1);
+  });
+}
+
 // DOM ready
 document.addEventListener('DOMContentLoaded', () => {
   setActivePage();
