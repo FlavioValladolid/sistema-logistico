@@ -210,6 +210,21 @@ async function initDB() {
     )
   `);
 
+  db.run(`
+    CREATE TABLE IF NOT EXISTS foto_sesiones (
+      id TEXT PRIMARY KEY,
+      token TEXT UNIQUE NOT NULL,
+      tracking_id TEXT,
+      detalle_sku_id TEXT,
+      contexto TEXT,
+      estatus TEXT DEFAULT 'pendiente',
+      url_foto TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL
+    )
+  `);
+  db.run("DELETE FROM foto_sesiones WHERE expires_at < datetime('now')");
+
   saveDB();
 
   // Datos demo
@@ -977,6 +992,205 @@ app.get('/api/dashboard/ranking', (req, res) => {
   if (cliente_id)  { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
   sql += ' GROUP BY t.operador ORDER BY total_piezas DESC LIMIT 10';
   res.json(dbAll(sql, params));
+});
+
+// --- FOTO SESIONES (Hybrid Web-Mobile) ---
+
+function buildMobilePhotoPage(pageState, token) {
+  const stateContent = {
+    invalid: `
+      <div class="status status-error">❌ Enlace inválido</div>
+      <p class="sub">Este enlace no es válido o ya expiró. Genera un nuevo QR desde la estación de trabajo.</p>
+    `,
+    expired: `
+      <div class="status status-warning">⏱ Sesión expirada</div>
+      <p class="sub">Este enlace ha caducado. Genera un nuevo QR desde la estación de trabajo.</p>
+    `,
+    used: `
+      <div class="status status-success">✅ Foto ya enviada</div>
+      <p class="sub">La fotografía fue recibida correctamente en la estación de trabajo. Puedes cerrar esta pantalla.</p>
+    `,
+    active: `
+      <h1>📸 Capturar Evidencia</h1>
+      <p class="sub">Toma la fotografía del defecto o discrepancia encontrada en el producto.</p>
+      <img id="preview" class="preview-img" alt="Vista previa">
+      <div id="status-msg"></div>
+      <label class="btn btn-primary" id="btn-capture">
+        📷 Tomar Foto / Seleccionar
+        <input type="file" id="foto-input" accept="image/*" capture="environment">
+      </label>
+      <button class="btn btn-secondary hidden" id="btn-retomar" onclick="retomar()">↩ Retomar foto</button>
+      <button class="btn btn-primary hidden" id="btn-enviar" onclick="enviarFoto()">✓ Enviar foto</button>
+      <div class="spinner hidden" id="loading-spinner"></div>
+    `,
+  }[pageState] || '';
+
+  const script = pageState === 'active' ? `
+    <script>
+      const TOKEN = '${token}';
+      let selectedFile = null;
+
+      document.getElementById('foto-input').addEventListener('change', function() {
+        const file = this.files[0];
+        if (!file) return;
+        selectedFile = file;
+        const reader = new FileReader();
+        reader.onload = e => {
+          const img = document.getElementById('preview');
+          img.src = e.target.result;
+          img.style.display = 'block';
+        };
+        reader.readAsDataURL(file);
+        document.getElementById('btn-capture').classList.add('hidden');
+        document.getElementById('btn-retomar').classList.remove('hidden');
+        document.getElementById('btn-enviar').classList.remove('hidden');
+        clearStatus();
+      });
+
+      function retomar() {
+        selectedFile = null;
+        document.getElementById('preview').style.display = 'none';
+        document.getElementById('foto-input').value = '';
+        document.getElementById('btn-capture').classList.remove('hidden');
+        document.getElementById('btn-retomar').classList.add('hidden');
+        document.getElementById('btn-enviar').classList.add('hidden');
+        clearStatus();
+      }
+
+      async function enviarFoto() {
+        if (!selectedFile) return;
+        const btnEnviar = document.getElementById('btn-enviar');
+        const spinner = document.getElementById('loading-spinner');
+        btnEnviar.disabled = true;
+        btnEnviar.textContent = 'Enviando...';
+        document.getElementById('btn-retomar').classList.add('hidden');
+        spinner.classList.remove('hidden');
+        clearStatus();
+
+        const fd = new FormData();
+        fd.append('foto', selectedFile);
+
+        try {
+          const res = await fetch('/api/foto-sesion/' + TOKEN + '/upload', { method: 'POST', body: fd });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Error al enviar');
+          spinner.classList.add('hidden');
+          btnEnviar.classList.add('hidden');
+          document.getElementById('btn-retomar').classList.add('hidden');
+          document.getElementById('btn-capture').classList.add('hidden');
+          setStatus('✅ ¡Foto enviada! Puedes cerrar esta pantalla.', 'success');
+        } catch(e) {
+          spinner.classList.add('hidden');
+          btnEnviar.disabled = false;
+          btnEnviar.textContent = '✓ Enviar foto';
+          document.getElementById('btn-retomar').classList.remove('hidden');
+          setStatus('❌ Error: ' + e.message, 'error');
+        }
+      }
+
+      function setStatus(msg, type) {
+        const el = document.getElementById('status-msg');
+        el.className = 'status status-' + type;
+        el.textContent = msg;
+      }
+      function clearStatus() {
+        const el = document.getElementById('status-msg');
+        el.className = '';
+        el.textContent = '';
+      }
+    <\/script>
+  ` : '';
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Captura de Foto — Sistema Logístico</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0A0E1A;color:#E5E7EB;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:32px 20px}
+    .logo{font-size:11px;letter-spacing:.15em;color:#6B7280;text-transform:uppercase;margin-bottom:32px}
+    .card{background:#131827;border:1px solid #1E2A3A;border-radius:16px;padding:32px 24px;width:100%;max-width:420px;text-align:center}
+    h1{font-size:20px;font-weight:700;margin-bottom:8px}
+    .sub{font-size:14px;color:#9CA3AF;margin-bottom:28px;line-height:1.5}
+    .btn{display:block;width:100%;padding:18px;border-radius:12px;border:none;font-size:17px;font-weight:700;cursor:pointer;transition:opacity .15s;margin-bottom:12px;text-align:center}
+    .btn:active{opacity:.75}
+    .btn.hidden{display:none}
+    .btn-primary{background:#1D4ED8;color:#fff}
+    .btn-secondary{background:#1E2A3A;color:#E5E7EB}
+    label.btn{display:block}
+    input[type=file]{display:none}
+    .preview-img{width:100%;border-radius:12px;margin:16px 0;display:none;object-fit:cover;max-height:320px}
+    .status{padding:14px 16px;border-radius:12px;font-size:14px;font-weight:600;margin-bottom:16px;text-align:left;line-height:1.4}
+    .status-success{background:rgba(22,163,74,.15);color:#4ADE80;border:1px solid rgba(22,163,74,.3)}
+    .status-error{background:rgba(220,38,38,.15);color:#F87171;border:1px solid rgba(220,38,38,.3)}
+    .status-warning{background:rgba(202,138,4,.15);color:#FCD34D;border:1px solid rgba(202,138,4,.3)}
+    .spinner{width:36px;height:36px;border:3px solid #1E2A3A;border-top-color:#1D4ED8;border-radius:50%;animation:spin .8s linear infinite;margin:16px auto}
+    .hidden{display:none}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <div class="logo">Sistema Logístico · Captura Móvil</div>
+  <div class="card">
+    ${stateContent}
+  </div>
+  ${script}
+</body>
+</html>`;
+}
+
+app.post('/api/foto-sesion', (req, res) => {
+  const { tracking_id, detalle_sku_id, contexto } = req.body;
+  const id = uuidv4();
+  const token = uuidv4();
+  dbRun(
+    `INSERT INTO foto_sesiones (id, token, tracking_id, detalle_sku_id, contexto, expires_at)
+     VALUES (?, ?, ?, ?, ?, datetime('now', '+10 minutes'))`,
+    [id, token, tracking_id || null, detalle_sku_id || null, contexto || null]
+  );
+  const proto = req.headers['x-forwarded-proto'] || 'http';
+  const host = req.headers.host;
+  const url = `${proto}://${host}/foto/${token}`;
+  res.json({ token, url });
+});
+
+app.get('/api/foto-sesion/:token', (req, res) => {
+  const sesion = dbGet('SELECT estatus, url_foto, expires_at FROM foto_sesiones WHERE token = ?', [req.params.token]);
+  if (!sesion) return res.status(404).json({ error: 'Sesión no encontrada' });
+  res.json(sesion);
+});
+
+app.post('/api/foto-sesion/:token/upload', upload.single('foto'), (req, res) => {
+  const sesion = dbGet('SELECT * FROM foto_sesiones WHERE token = ?', [req.params.token]);
+  if (!sesion) return res.status(404).json({ error: 'Sesión inválida' });
+  if (sesion.estatus === 'completada') return res.status(400).json({ error: 'Esta sesión ya fue utilizada' });
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  if (sesion.expires_at < now) return res.status(410).json({ error: 'Sesión expirada' });
+  if (!req.file) return res.status(400).json({ error: 'No se recibió foto' });
+  const url_foto = `/uploads/${req.file.filename}`;
+  dbRun("UPDATE foto_sesiones SET estatus = 'completada', url_foto = ? WHERE token = ?",
+    [url_foto, req.params.token]);
+  res.json({ mensaje: 'Foto recibida', url_foto });
+});
+
+app.get('/foto/:token', (req, res) => {
+  const sesion = dbGet('SELECT * FROM foto_sesiones WHERE token = ?', [req.params.token]);
+  if (!sesion) return res.send(buildMobilePhotoPage('invalid', null));
+  if (sesion.estatus === 'completada') return res.send(buildMobilePhotoPage('used', null));
+  const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
+  if (sesion.expires_at < now) return res.send(buildMobilePhotoPage('expired', null));
+  res.send(buildMobilePhotoPage('active', req.params.token));
+});
+
+app.post('/api/trackings/:id/errores-url', (req, res) => {
+  const { detalle_sku_id, tipo_error, comentarios, path_fotografia } = req.body;
+  if (!path_fotografia) return res.status(400).json({ error: 'path_fotografia requerido' });
+  const id = uuidv4();
+  dbRun(`INSERT INTO errores (id,tracking_id,detalle_sku_id,tipo_error,path_fotografia,comentarios) VALUES (?,?,?,?,?,?)`,
+    [id, req.params.id, detalle_sku_id || null, tipo_error, path_fotografia, comentarios]);
+  res.json({ id, path_fotografia, mensaje: 'Error registrado' });
 });
 
 // Iniciar servidor

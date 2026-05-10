@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Operación — Sistema Logístico</title>
   <link rel="stylesheet" href="css/main.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     .fase-indicator {
       display:flex;gap:0;margin-bottom:24px;
@@ -33,6 +34,14 @@
     .sku-code{font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--accent-cyan);}
     .sku-meta{font-size:11px;color:var(--text-muted);}
     .sku-badges{display:flex;gap:4px;flex-wrap:wrap;}
+
+    .foto-modo-btn{
+      flex:1;padding:8px 12px;background:var(--bg-elevated);color:var(--text-muted);
+      border:none;cursor:pointer;font-size:12px;font-weight:600;transition:all .15s;
+      border-right:1px solid var(--border);
+    }
+    .foto-modo-btn:last-child{border-right:none;}
+    .foto-modo-btn.active{background:var(--bg-card);color:var(--text-primary);}
 
     .panel-right{
       background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-md);
@@ -128,7 +137,7 @@ document.body.insertAdjacentHTML('beforeend', `
     <div class="modal" style="max-width:500px">
       <div class="modal-header">
         <span class="modal-title">📸 Registrar Error / Evidencia</span>
-        <button class="modal-close" onclick="closeModal('modal-error')">×</button>
+        <button class="modal-close" onclick="cerrarModalError()">×</button>
       </div>
       <div class="modal-body">
         <div id="disposicion-danados" class="disposicion-banner">
@@ -174,13 +183,58 @@ document.body.insertAdjacentHTML('beforeend', `
 
         <div class="form-group">
           <label class="form-label">Fotografía de Evidencia *</label>
-          <div class="photo-upload" id="photo-drop-zone">
-            <input type="file" id="error-foto" accept="image/*" capture="environment" onchange="previewFoto(this)">
-            <div class="photo-upload-icon">📷</div>
-            <div class="photo-upload-text">Toca para tomar foto o seleccionar imagen</div>
-            <div class="photo-upload-hint">JPG, PNG — requerido para guardar</div>
+
+          <!-- Selector de modo -->
+          <div style="display:flex;gap:0;margin-bottom:10px;border:1px solid var(--border);border-radius:var(--radius-sm);overflow:hidden">
+            <button id="btn-modo-local" class="foto-modo-btn active" onclick="setFotoMode('local')">📁 Subir archivo</button>
+            <button id="btn-modo-qr" class="foto-modo-btn" onclick="setFotoMode('qr')">📱 Foto con teléfono</button>
           </div>
-          <img id="foto-preview" class="photo-preview hidden" alt="Vista previa">
+
+          <!-- Modo A: archivo local -->
+          <div id="foto-modo-local">
+            <div class="photo-upload" id="photo-drop-zone">
+              <input type="file" id="error-foto" accept="image/*" capture="environment" onchange="previewFoto(this)">
+              <div class="photo-upload-icon">📷</div>
+              <div class="photo-upload-text">Toca para tomar foto o seleccionar imagen</div>
+              <div class="photo-upload-hint">JPG, PNG — requerido para guardar</div>
+            </div>
+            <img id="foto-preview" class="photo-preview hidden" alt="Vista previa">
+          </div>
+
+          <!-- Modo B: QR móvil -->
+          <div id="foto-modo-qr" class="hidden">
+            <div id="qr-idle" style="text-align:center;padding:16px 0">
+              <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;line-height:1.5">
+                Genera un QR y escanéalo con tu teléfono para tomar la foto con la cámara del móvil
+              </div>
+              <button class="btn btn-secondary" onclick="iniciarSesionQR()" style="justify-content:center;max-width:220px;margin:0 auto">
+                📱 Generar QR
+              </button>
+            </div>
+
+            <div id="qr-activo" class="hidden" style="text-align:center">
+              <div id="qr-code-div" style="display:inline-block;background:#fff;padding:10px;border-radius:8px;margin-bottom:10px"></div>
+              <div style="display:flex;justify-content:center;align-items:center;gap:6px;margin-bottom:4px">
+                <span style="font-size:11px;color:var(--text-muted)">Expira en</span>
+                <span id="qr-countdown" style="font-family:'IBM Plex Mono',monospace;font-size:13px;font-weight:700;color:var(--text-secondary)">10:00</span>
+              </div>
+              <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Esperando foto desde el teléfono…</div>
+              <div class="spinner" id="qr-spinner" style="width:16px;height:16px;border-width:2px;margin:0 auto 8px"></div>
+              <button class="btn btn-secondary btn-sm hidden" id="btn-nuevo-qr" onclick="iniciarSesionQR()" style="justify-content:center;margin:0 auto;max-width:180px">
+                ↻ Generar nuevo QR
+              </button>
+            </div>
+
+            <div id="qr-recibida" class="hidden" style="text-align:center">
+              <div style="color:var(--accent-green);font-weight:700;font-size:13px;margin-bottom:8px">✅ Foto recibida desde el teléfono</div>
+              <img id="foto-qr-preview" style="max-width:100%;border-radius:8px;max-height:180px;object-fit:cover;border:1px solid var(--border)" alt="Foto recibida">
+              <div style="margin-top:8px">
+                <button class="btn btn-secondary btn-sm" onclick="resetQRSesion()" style="justify-content:center;margin:0 auto;max-width:160px">
+                  ↩ Cambiar foto
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div class="form-group">
@@ -191,7 +245,7 @@ document.body.insertAdjacentHTML('beforeend', `
         <input type="hidden" id="error-detalle-id">
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeModal('modal-error')">Cancelar</button>
+        <button class="btn btn-secondary" onclick="cerrarModalError()">Cancelar</button>
         <button class="btn btn-danger" onclick="guardarError()">
           ⚠ Registrar Error
         </button>
@@ -1226,6 +1280,8 @@ async function registrarSKU() {
 
       onTipoErrorChange(tipoSugerido);
       renderRetrabajoBotones();
+      limpiarQR();
+      setFotoMode('local');
       openModal('modal-error');
     }
 
@@ -1254,6 +1310,118 @@ async function eliminarDetalle(id) {
 // ========================
 // ERROR / EVIDENCIA
 // ========================
+
+// --- QR Foto Sesion ---
+let fotoMode = 'local';
+let qrSesion = null;
+let qrPollInterval = null;
+let qrCountdownInterval = null;
+let qrExpiresMs = 0;
+
+function setFotoMode(mode) {
+  fotoMode = mode;
+  document.getElementById('btn-modo-local')?.classList.toggle('active', mode === 'local');
+  document.getElementById('btn-modo-qr')?.classList.toggle('active', mode === 'qr');
+  document.getElementById('foto-modo-local')?.classList.toggle('hidden', mode !== 'local');
+  document.getElementById('foto-modo-qr')?.classList.toggle('hidden', mode !== 'qr');
+  if (mode === 'local') limpiarQR();
+}
+
+async function iniciarSesionQR() {
+  limpiarQR();
+
+  document.getElementById('qr-idle').classList.add('hidden');
+  document.getElementById('qr-activo').classList.remove('hidden');
+  document.getElementById('qr-recibida').classList.add('hidden');
+  document.getElementById('btn-nuevo-qr').classList.add('hidden');
+  document.getElementById('qr-spinner').classList.remove('hidden');
+
+  const qrDiv = document.getElementById('qr-code-div');
+  qrDiv.innerHTML = '<div class="spinner" style="width:22px;height:22px;border-width:2px;margin:24px auto"></div>';
+
+  try {
+    const sesion = await API.post('/foto-sesion', {
+      tracking_id: state.tracking?.id || null,
+      detalle_sku_id: document.getElementById('error-detalle-id')?.value || null,
+      contexto: 'error-evidencia',
+    });
+    qrSesion = sesion;
+
+    qrDiv.innerHTML = '';
+    new QRCode(qrDiv, {
+      text: sesion.url,
+      width: 220,
+      height: 220,
+      colorDark: '#000000',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+
+    qrExpiresMs = Date.now() + 10 * 60 * 1000;
+    tickCountdown();
+    qrCountdownInterval = setInterval(tickCountdown, 1000);
+    qrPollInterval = setInterval(pollQR, 2000);
+  } catch(e) {
+    qrDiv.innerHTML = '<div style="color:var(--accent-red);padding:16px;font-size:12px">Error al generar QR. Intenta de nuevo.</div>';
+    document.getElementById('btn-nuevo-qr').classList.remove('hidden');
+    document.getElementById('qr-spinner').classList.add('hidden');
+  }
+}
+
+function tickCountdown() {
+  const remaining = Math.max(0, qrExpiresMs - Date.now());
+  const mins = Math.floor(remaining / 60000);
+  const secs = Math.floor((remaining % 60000) / 1000);
+  const el = document.getElementById('qr-countdown');
+  if (el) {
+    el.textContent = `${mins}:${String(secs).padStart(2, '0')}`;
+    el.style.color = remaining < 120000 ? 'var(--accent-red)' : 'var(--text-secondary)';
+  }
+  if (remaining === 0) {
+    clearInterval(qrCountdownInterval);
+    clearInterval(qrPollInterval);
+    document.getElementById('qr-spinner')?.classList.add('hidden');
+    document.getElementById('btn-nuevo-qr')?.classList.remove('hidden');
+  }
+}
+
+async function pollQR() {
+  if (!qrSesion?.token) return;
+  try {
+    const data = await API.get(`/foto-sesion/${qrSesion.token}`);
+    if (data.estatus === 'completada' && data.url_foto) {
+      clearInterval(qrPollInterval);
+      clearInterval(qrCountdownInterval);
+      qrSesion.url_foto = data.url_foto;
+      document.getElementById('qr-activo').classList.add('hidden');
+      document.getElementById('qr-recibida').classList.remove('hidden');
+      document.getElementById('foto-qr-preview').src = data.url_foto;
+    }
+  } catch(e) {}
+}
+
+function limpiarQR() {
+  clearInterval(qrPollInterval);
+  clearInterval(qrCountdownInterval);
+  qrPollInterval = null;
+  qrCountdownInterval = null;
+}
+
+function resetQRSesion() {
+  limpiarQR();
+  qrSesion = null;
+  document.getElementById('qr-activo').classList.add('hidden');
+  document.getElementById('qr-recibida').classList.add('hidden');
+  document.getElementById('qr-idle').classList.remove('hidden');
+}
+
+function cerrarModalError() {
+  limpiarQR();
+  setFotoMode('local');
+  closeModal('modal-error');
+}
+// --- fin QR Foto Sesion ---
+
 function previewFoto(input) {
   const file = input.files[0];
   if (!file) return;
@@ -1372,16 +1540,29 @@ async function guardarError() {
   const hayRetrabajos = tieneRetrabajo && esDanado && retrabajosSel.size > 0;
 
   if (!desc) { toast('La descripción es requerida', 'error'); return; }
-  if (!fotoInput.files[0]) { toast('La fotografía de evidencia es requerida', 'error'); return; }
 
-  const fd = new FormData();
-  fd.append('tipo_error', tipo);
-  fd.append('comentarios', desc);
-  fd.append('detalle_sku_id', detalleId);
-  fd.append('foto', fotoInput.files[0]);
+  if (fotoMode === 'qr') {
+    if (!qrSesion?.url_foto) { toast('Espera a que el teléfono envíe la foto antes de guardar', 'error'); return; }
+  } else {
+    if (!fotoInput.files[0]) { toast('La fotografía de evidencia es requerida', 'error'); return; }
+  }
 
   try {
-    await API.postForm(`/trackings/${state.tracking.id}/errores`, fd);
+    if (fotoMode === 'qr') {
+      await API.post(`/trackings/${state.tracking.id}/errores-url`, {
+        tipo_error: tipo,
+        comentarios: desc,
+        detalle_sku_id: detalleId,
+        path_fotografia: qrSesion.url_foto,
+      });
+    } else {
+      const fd = new FormData();
+      fd.append('tipo_error', tipo);
+      fd.append('comentarios', desc);
+      fd.append('detalle_sku_id', detalleId);
+      fd.append('foto', fotoInput.files[0]);
+      await API.postForm(`/trackings/${state.tracking.id}/errores`, fd);
+    }
 
     if (hayRetrabajos) {
       const detalle = state.detalles.find(d => d.id === detalleId);
@@ -1400,6 +1581,9 @@ async function guardarError() {
     }
 
     state.errores = await API.get(`/trackings/${state.tracking.id}/errores`);
+
+    limpiarQR();
+    setFotoMode('local');
     closeModal('modal-error');
 
     // Reset modal
@@ -1408,9 +1592,6 @@ async function guardarError() {
     document.getElementById('foto-preview').classList.add('hidden');
     retrabajosSel.clear();
 
-    const msg = hayRetrabajos
-      ? `Error registrado — ${retrabajosSel.size || [...retrabajosSel].length || 'varios'} retrabajo(s) asignado(s) ✓`
-      : 'Error registrado con evidencia';
     toast(hayRetrabajos ? 'Error registrado — pieza enviada a retrabajo ✓' : 'Error registrado con evidencia');
     renderInspeccion();
   } catch(e) {
