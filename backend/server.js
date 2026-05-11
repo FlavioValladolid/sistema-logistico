@@ -26,7 +26,8 @@ const CATALOGO_RETRABAJOS = {
 
 // Middleware
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
@@ -696,15 +697,26 @@ app.post('/api/skus/importar', (req, res) => {
   skus.forEach(s => {
     const sku_code = (s.sku_code || '').trim().toUpperCase();
     if (!sku_code) { omitidos++; return; }
-    const existe = dbGet('SELECT id FROM skus WHERE sku_code=? AND cliente_id=?', [sku_code, cliente_id]);
-    if (existe) { omitidos++; return; }
+    const pais = (s.pais_origen || '').trim();
+    const upc = (s.upc_code || '').trim() || null;
+    // Unique key: sku_code + cliente_id + pais_origen (same SKU can have multiple countries)
+    const existeClave = dbGet(
+      'SELECT id FROM skus WHERE sku_code=? AND cliente_id=? AND COALESCE(pais_origen,"")=?',
+      [sku_code, cliente_id, pais]
+    );
+    if (existeClave) { omitidos++; return; }
+    // UPC must be unique across all SKUs (if provided)
+    if (upc) {
+      const existeUPC = dbGet('SELECT id FROM skus WHERE upc_code=?', [upc]);
+      if (existeUPC) { omitidos++; return; }
+    }
     const id = uuidv4();
     dbRun('INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code,created_at) VALUES (?,?,?,?,?,?,?,?)', [
       id, cliente_id, sku_code,
       (s.descripcion || '').trim(),
-      (s.pais_origen || '').trim(),
+      pais,
       (s.insumos || '').trim(),
-      (s.upc_code || '').trim() || null,
+      upc,
       localNow()
     ]);
     insertados++;

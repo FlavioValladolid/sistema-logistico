@@ -37,11 +37,17 @@ document.getElementById('page-content').innerHTML = `
   <div class="card">
     <div class="card-header" style="flex-wrap:wrap;gap:10px">
       <span class="card-title">Productos</span>
-      <div style="display:flex;gap:8px;margin-left:auto">
+      <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center">
         <select class="form-control" id="filtro-cliente" style="width:200px">
           <option value="">— Todos los clientes —</option>
         </select>
         <input type="text" class="form-control" id="search-sku" placeholder="Buscar SKU o descripción..." style="width:220px">
+        <select class="form-control" id="page-size-selector" style="width:100px" onchange="changePageSize(this.value)">
+          <option value="50">50 / pág</option>
+          <option value="100">100 / pág</option>
+          <option value="200">200 / pág</option>
+          <option value="500">500 / pág</option>
+        </select>
       </div>
     </div>
     <div id="tabla-skus">
@@ -134,9 +140,19 @@ document.body.insertAdjacentHTML('beforeend', `
           </div>
         </div>
         <div id="imp-alert"></div>
+        <div id="imp-progress" style="display:none;margin-top:14px">
+          <div style="display:flex;justify-content:space-between;margin-bottom:6px">
+            <span style="font-size:12px;color:var(--text-secondary)" id="imp-progress-text">Procesando…</span>
+            <span style="font-size:12px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--accent-cyan)" id="imp-progress-pct">0%</span>
+          </div>
+          <div style="height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden">
+            <div id="imp-progress-bar" style="height:100%;width:0%;background:var(--accent-cyan);border-radius:4px;transition:width .2s ease"></div>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:6px" id="imp-progress-detail"></div>
+        </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeModal('modal-importar')">Cancelar</button>
+        <button class="btn btn-secondary" id="btn-cancelar-importar" onclick="closeModal('modal-importar')">Cancelar</button>
         <button class="btn btn-primary" id="btn-importar" onclick="importarCSV()" disabled>Importar</button>
       </div>
     </div>
@@ -146,6 +162,9 @@ document.body.insertAdjacentHTML('beforeend', `
 let skusData = [];
 let clientesData = [];
 let csvRows = [];
+let filteredSkus = [];
+let currentPage = 1;
+let pageSize = 50;
 
 async function loadAll() {
   const [clientes, skus] = await Promise.all([API.get('/clientes'), API.get('/skus')]);
@@ -166,9 +185,9 @@ async function loadAll() {
   applyFilters();
 }
 
-function renderTabla(skus) {
+function renderTabla() {
   const el = document.getElementById('tabla-skus');
-  if (skus.length === 0) {
+  if (filteredSkus.length === 0) {
     el.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">📋</div>
@@ -176,6 +195,27 @@ function renderTabla(skus) {
         <div class="empty-state-text">Agrega productos al catálogo para habilitar la inspección</div>
       </div>`;
     return;
+  }
+
+  const totalPages = Math.ceil(filteredSkus.length / pageSize);
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * pageSize;
+  const end = Math.min(start + pageSize, filteredSkus.length);
+  const pageData = filteredSkus.slice(start, end);
+
+  // Pagination numbers: always show first, last, and ±2 around current
+  function paginationHtml() {
+    if (totalPages <= 1) return '';
+    const pages = new Set([1, totalPages, currentPage, currentPage - 1, currentPage + 1, currentPage - 2, currentPage + 2]);
+    const sorted = [...pages].filter(p => p >= 1 && p <= totalPages).sort((a, b) => a - b);
+    let html = '';
+    let prev = 0;
+    for (const p of sorted) {
+      if (prev && p - prev > 1) html += `<span style="padding:0 4px;color:var(--text-muted)">…</span>`;
+      html += `<button onclick="goToPage(${p})" style="min-width:30px;height:28px;padding:0 6px;border-radius:4px;border:1px solid ${p === currentPage ? 'var(--accent-cyan)' : 'var(--border)'};background:${p === currentPage ? 'rgba(0,188,212,.15)' : 'transparent'};color:${p === currentPage ? 'var(--accent-cyan)' : 'var(--text-secondary)'};font-size:12px;cursor:${p === currentPage ? 'default' : 'pointer'};font-family:'IBM Plex Mono',monospace">${p}</button>`;
+      prev = p;
+    }
+    return html;
   }
 
   el.innerHTML = `
@@ -193,7 +233,7 @@ function renderTabla(skus) {
           </tr>
         </thead>
         <tbody>
-          ${skus.map(s => {
+          ${pageData.map(s => {
             const cliente = clientesData.find(c => c.id === s.cliente_id);
             return `
               <tr>
@@ -215,7 +255,37 @@ function renderTabla(skus) {
         </tbody>
       </table>
     </div>
+    ${totalPages > 1 ? `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);flex-wrap:wrap;gap:8px">
+      <span style="font-size:12px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace">
+        Mostrando ${start + 1}–${end} de ${filteredSkus.length} SKUs
+      </span>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button onclick="goToPage(${currentPage - 1})" ${currentPage === 1 ? 'disabled' : ''} class="btn btn-ghost btn-sm" style="padding:0 10px;height:28px;font-size:12px">← Anterior</button>
+        ${paginationHtml()}
+        <button onclick="goToPage(${currentPage + 1})" ${currentPage === totalPages ? 'disabled' : ''} class="btn btn-ghost btn-sm" style="padding:0 10px;height:28px;font-size:12px">Siguiente →</button>
+      </div>
+    </div>
+    ` : `
+    <div style="padding:8px 16px;border-top:1px solid var(--border)">
+      <span style="font-size:12px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace">${filteredSkus.length} SKUs</span>
+    </div>
+    `}
   `;
+}
+
+function goToPage(p) {
+  const totalPages = Math.ceil(filteredSkus.length / pageSize);
+  if (p < 1 || p > totalPages) return;
+  currentPage = p;
+  renderTabla();
+  document.getElementById('tabla-skus').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function changePageSize(val) {
+  pageSize = parseInt(val);
+  currentPage = 1;
+  renderTabla();
 }
 
 function abrirNuevo() {
@@ -293,7 +363,11 @@ document.getElementById('btn-cargar-skus').onclick = function() {
   document.getElementById('imp-archivo').value = '';
   document.getElementById('imp-preview').classList.add('hidden');
   document.getElementById('imp-alert').innerHTML = '';
+  document.getElementById('imp-progress').style.display = 'none';
+  document.getElementById('imp-progress-bar').style.width = '0%';
+  document.getElementById('imp-progress-bar').style.background = 'var(--accent-cyan)';
   document.getElementById('btn-importar').disabled = true;
+  document.getElementById('btn-cancelar-importar').disabled = false;
   openModal('modal-importar');
 };
 
@@ -350,10 +424,36 @@ function previewCSV(input) {
     document.getElementById('imp-count').textContent = csvRows.length;
     document.getElementById('imp-preview').classList.toggle('hidden', csvRows.length === 0);
     document.getElementById('btn-importar').disabled = csvRows.length === 0;
+
+    let alertHtml = '';
     if (csvRows.length === 0) {
-      document.getElementById('imp-alert').innerHTML =
-        '<div class="alert alert-error" style="margin-top:10px">No se encontraron filas válidas. Verifica que el archivo sea el layout descargado con datos en las filas.</div>';
+      alertHtml = '<div class="alert alert-error" style="margin-top:10px">No se encontraron filas válidas. Verifica que el archivo sea el layout descargado con datos en las filas.</div>';
+    } else {
+      // Detectar UPCs duplicados dentro del archivo
+      const upcCount = {};
+      csvRows.forEach(r => {
+        const upc = (r.upc_code || '').trim();
+        if (upc) upcCount[upc] = (upcCount[upc] || 0) + 1;
+      });
+      const upcsDuplicados = Object.entries(upcCount).filter(([, n]) => n > 1);
+      if (upcsDuplicados.length > 0) {
+        const maxMostrar = 10;
+        const lista = upcsDuplicados.slice(0, maxMostrar)
+          .map(([upc, n]) => `<span style="font-family:'IBM Plex Mono',monospace;background:rgba(255,179,0,.12);padding:1px 6px;border-radius:3px">${upc}</span> ×${n}`)
+          .join(' &nbsp; ');
+        const resto = upcsDuplicados.length > maxMostrar ? `<div style="margin-top:4px;color:var(--text-muted)">…y ${upcsDuplicados.length - maxMostrar} más</div>` : '';
+        alertHtml = `
+          <div style="margin-top:10px;padding:10px 14px;border-radius:6px;border:1px solid rgba(255,179,0,.4);background:rgba(255,179,0,.08)">
+            <div style="font-size:12px;font-weight:700;color:var(--accent-amber);margin-bottom:6px">
+              ⚠ ${upcsDuplicados.length} UPC${upcsDuplicados.length > 1 ? 's duplicados' : ' duplicado'} en el archivo
+            </div>
+            <div style="font-size:12px;color:var(--text-secondary);line-height:1.8">${lista}</div>
+            ${resto}
+            <div style="font-size:11px;color:var(--text-muted);margin-top:6px">Solo se importará la primera aparición de cada UPC duplicado.</div>
+          </div>`;
+      }
     }
+    document.getElementById('imp-alert').innerHTML = alertHtml;
   };
   reader.onerror = function() {
     document.getElementById('imp-alert').innerHTML =
@@ -366,17 +466,48 @@ async function importarCSV() {
   const clienteId = document.getElementById('imp-cliente').value;
   if (!clienteId) { toast('Selecciona un cliente', 'error'); return; }
   if (!csvRows.length) return;
+
+  const BATCH = 500;
+  const total = csvRows.length;
+  let procesados = 0;
+  let totalInsertados = 0;
+  let totalOmitidos = 0;
+
+  document.getElementById('btn-importar').disabled = true;
+  document.getElementById('btn-cancelar-importar').disabled = true;
+  document.getElementById('imp-alert').innerHTML = '';
+  document.getElementById('imp-progress').style.display = 'block';
+
+  function setProgress(pct, detalle) {
+    document.getElementById('imp-progress-bar').style.width = pct + '%';
+    document.getElementById('imp-progress-pct').textContent = pct + '%';
+    document.getElementById('imp-progress-text').textContent = `Procesando lote…`;
+    document.getElementById('imp-progress-detail').textContent = detalle;
+  }
+
   try {
-    document.getElementById('btn-importar').disabled = true;
-    document.getElementById('imp-alert').innerHTML = '';
-    const res = await API.post('/skus/importar', { cliente_id: clienteId, skus: csvRows });
-    toast(`Importación completada: ${res.insertados} insertados, ${res.omitidos} omitidos`);
+    for (let i = 0; i < csvRows.length; i += BATCH) {
+      const lote = csvRows.slice(i, i + BATCH);
+      const res = await API.post('/skus/importar', { cliente_id: clienteId, skus: lote });
+      totalInsertados += res.insertados;
+      totalOmitidos += res.omitidos;
+      procesados += lote.length;
+      const pct = Math.round(procesados / total * 100);
+      setProgress(pct, `${procesados.toLocaleString()} de ${total.toLocaleString()} filas — ${totalInsertados.toLocaleString()} insertados, ${totalOmitidos.toLocaleString()} omitidos`);
+    }
+
+    document.getElementById('imp-progress-text').textContent = '¡Importación completada!';
+    document.getElementById('imp-progress-bar').style.background = 'var(--accent-green)';
+    await new Promise(r => setTimeout(r, 800));
+    toast(`${totalInsertados.toLocaleString()} insertados, ${totalOmitidos.toLocaleString()} omitidos (duplicados o vacíos)`);
     closeModal('modal-importar');
     loadAll();
   } catch(e) {
     const msg = e?.error || e?.message || 'Error al comunicarse con el servidor. Verifica que el servidor esté corriendo.';
     document.getElementById('imp-alert').innerHTML = `<div class="alert alert-error" style="margin-top:10px">${msg}</div>`;
+    document.getElementById('imp-progress').style.display = 'none';
     document.getElementById('btn-importar').disabled = false;
+    document.getElementById('btn-cancelar-importar').disabled = false;
   }
 }
 
@@ -386,11 +517,13 @@ document.getElementById('filtro-cliente').addEventListener('change', applyFilter
 function applyFilters() {
   const q = document.getElementById('search-sku').value.toLowerCase();
   const clienteId = document.getElementById('filtro-cliente').value;
-  renderTabla(skusData.filter(s => {
+  filteredSkus = skusData.filter(s => {
     const matchQ = !q || s.sku_code.toLowerCase().includes(q) || (s.descripcion||'').toLowerCase().includes(q);
     const matchC = !clienteId || s.cliente_id === clienteId;
     return matchQ && matchC;
-  }));
+  });
+  currentPage = 1;
+  renderTabla();
 }
 
 loadAll();
