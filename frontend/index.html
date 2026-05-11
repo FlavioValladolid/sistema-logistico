@@ -11,8 +11,10 @@
 <script src="js/app.js"></script>
 <script src="js/shell.js"></script>
 <script>
-const _pageUser = checkAuth();
-buildShell('Dashboard', 'DASHBOARD', `
+const _pageUser = checkAuth(['ADMIN','SUPERVISOR','CLIENTE','LOGISTICA','OPERADOR']);
+const _esOperador = _pageUser?.rol === 'OPERADOR';
+const _esCliente  = _pageUser?.rol === 'CLIENTE';
+buildShell('Dashboard', 'DASHBOARD', _esOperador ? '' : `
   <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
     Nueva Operación
@@ -72,12 +74,12 @@ async function loadDashboard() {
 
       <div id="stat-grid" class="stat-grid"></div>
 
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+      <div style="display:grid;grid-template-columns:${_esCliente ? '1fr' : '1fr 1fr'};gap:16px">
 
         <div class="card">
           <div class="card-header">
             <span class="card-title">Trackings Recientes</span>
-            <a href="trackings.html" class="btn btn-ghost btn-sm">Ver todos →</a>
+            ${(_esOperador || _esCliente) ? '' : `<a href="trackings.html" class="btn btn-ghost btn-sm">Ver todos →</a>`}
           </div>
           ${trackings.length === 0 ? `
             <div class="empty-state">
@@ -117,6 +119,7 @@ async function loadDashboard() {
           `}
         </div>
 
+        ${_esCliente ? '' : `
         <div class="card">
           <div class="card-header">
             <span class="card-title">Grados de Confianza</span>
@@ -140,7 +143,7 @@ async function loadDashboard() {
               `;
             }).join('')}
           </div>
-
+          ${_esOperador ? '' : `
           <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
             <div class="card-title" style="margin-bottom:12px">Acciones Rápidas</div>
             <div style="display:flex;flex-direction:column;gap:8px">
@@ -155,16 +158,20 @@ async function loadDashboard() {
               </a>
             </div>
           </div>
+          `}
         </div>
+        `}
 
       </div>
     `;
 
     loadResumen();
-    buildUphSection();
-    initUph();
-    buildRankingSection();
-    initRanking();
+    if (!_esCliente) {
+      buildUphSection();
+      initUph();
+      buildRankingSection();
+      initRanking();
+    }
   } catch (e) {
     content.innerHTML = `<div class="alert alert-error">Error cargando dashboard: ${e.message || 'Error desconocido'}</div>`;
   }
@@ -234,10 +241,10 @@ async function loadResumen() {
         <div class="stat-value">${formatNum(r.totalDiscrepancias)}</div>
         <div class="stat-sub">Alertas de inventario</div>
       </div>
-      <div class="stat-card" style="--accent-color:var(--accent-amber);cursor:pointer" onclick="window.location='skus-nuevos.html?solo_sin_completar=1'">
+      <div class="stat-card" style="--accent-color:var(--accent-amber);${_esOperador ? '' : 'cursor:pointer'}" ${_esOperador ? '' : "onclick=\"window.location='skus-nuevos.html?solo_sin_completar=1'\""}>
         <div class="stat-label">SKUs Nuevos Pendientes</div>
         <div class="stat-value">${formatNum(sn.count)}</div>
-        <div class="stat-sub" style="color:var(--accent-amber)">Sin fotos completas · clic para ver</div>
+        <div class="stat-sub" style="color:var(--accent-amber)">${_esOperador ? 'Sin fotos completas' : 'Sin fotos completas · clic para ver'}</div>
       </div>
     `;
   } catch(e) {}

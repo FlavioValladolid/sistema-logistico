@@ -59,13 +59,28 @@
     .info-row:last-child{border-bottom:none;}
     .info-key{font-size:11px;color:var(--text-muted);}
     .info-val{font-family:'IBM Plex Mono',monospace;font-size:12px;font-weight:600;color:var(--text-primary);}
+
+    /* Chat */
+    @keyframes fadeInMsg { from{opacity:0;transform:translateY(6px)} to{opacity:1;transform:translateY(0)} }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+    .chat-msg { animation: fadeInMsg .2s ease; }
+    .chat-avatar {
+      width:32px;height:32px;border-radius:50%;display:flex;align-items:center;justify-content:center;
+      font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;flex-shrink:0;color:#fff;
+    }
+    .chat-bubble {
+      max-width:72%;background:var(--bg-card);border:1px solid var(--border);
+      border-radius:var(--radius-sm);padding:8px 12px;
+    }
+    .chat-bubble.own { background:rgba(0,188,212,.1);border-color:rgba(0,188,212,.3); }
   </style>
 </head>
 <body>
 <script src="js/app.js"></script>
 <script src="js/shell.js"></script>
 <script>
-const _pageUser = checkAuth(['ADMIN','SUPERVISOR','OPERADOR']);
+const _pageUser = checkAuth(['ADMIN','SUPERVISOR','OPERADOR','CLIENTE']);
+const _soloLectura = _pageUser?.rol === 'CLIENTE';
 buildShell('Operación', 'OPERACIÓN / INSPECCIÓN', '', _pageUser);
 
 const COUNTRY_OPTIONS = `
@@ -532,6 +547,7 @@ async function init() {
       renderInicio();
     }
   } else {
+    if (_soloLectura) { window.location.href = 'trackings.html'; return; }
     renderInicio();
   }
 }
@@ -578,16 +594,10 @@ async function renderInicio() {
           <div class="form-hint">Identificador único del envío</div>
         </div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label class="form-label">Cantidad Declarada</label>
-            <input type="number" class="form-control form-control-mono" id="ini-cantidad" placeholder="0" min="0">
-            <div class="form-hint">Total de piezas según manifiesto del proveedor (opcional)</div>
-          </div>
-          <div class="form-group">
-            <label class="form-label">Operador</label>
-            <input type="text" class="form-control" id="ini-operador" placeholder="Nombre del operador" value="Operador">
-          </div>
+        <div class="form-group">
+          <label class="form-label">Cantidad Declarada</label>
+          <input type="number" class="form-control form-control-mono" id="ini-cantidad" placeholder="0" min="0">
+          <div class="form-hint">Total de piezas según manifiesto del proveedor (opcional)</div>
         </div>
 
         <div id="seccion-numero-orden" class="form-group hidden">
@@ -624,7 +634,11 @@ async function renderInicio() {
 
         <div id="alert-inicio"></div>
 
-        <div style="display:flex;justify-content:flex-end;margin-top:8px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:8px;gap:12px">
+          <button class="btn btn-secondary" onclick="irUltimaOperacion()" id="btn-ultima-op" style="gap:8px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg>
+            Última operación abierta
+          </button>
           <button class="btn btn-primary btn-lg" onclick="iniciarTracking()">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><polygon points="5 3 19 12 5 21 5 3"/></svg>
             Iniciar Operación
@@ -636,6 +650,27 @@ async function renderInicio() {
 
   document.getElementById('fase-inicio').classList.remove('hidden');
   document.getElementById('fase-inspeccion').classList.add('hidden');
+}
+
+async function irUltimaOperacion() {
+  const btn = document.getElementById('btn-ultima-op');
+  if (btn) { btn.disabled = true; btn.textContent = 'Buscando...'; }
+  try {
+    const trackings = await API.get('/trackings');
+    const userEmail = _pageUser?.email || '';
+    const abiertos = trackings
+      .filter(t => t.estatus === 'abierto' && t.operador === userEmail)
+      .sort((a, b) => b.created_at?.localeCompare(a.created_at || '') || 0);
+    if (abiertos.length === 0) {
+      toast('No tienes operaciones abiertas', 'warning');
+      return;
+    }
+    window.location.href = `operacion.html?id=${abiertos[0].id}`;
+  } catch(e) {
+    toast('Error al buscar operaciones', 'error');
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.5"/></svg> Última operación abierta'; }
+  }
 }
 
 function onClienteChange(sel) {
@@ -708,7 +743,6 @@ async function iniciarTracking() {
   const trackingNum = document.getElementById('ini-tracking').value.trim().toUpperCase();
   const cantidadRaw = document.getElementById('ini-cantidad').value;
   const cantidad = cantidadRaw !== '' ? parseInt(cantidadRaw) : 0;
-  const operador = document.getElementById('ini-operador').value.trim() || 'Operador';
   const alertEl = document.getElementById('alert-inicio');
 
   if (!clienteId || !trackingNum) {
@@ -742,7 +776,6 @@ async function iniciarTracking() {
     const res = await API.post('/trackings', {
       tracking_number: trackingNum,
       cliente_id: clienteId,
-      operador,
       cantidad_declarada: cantidad,
       numero_orden: requiereOrden ? numeroOrden : null,
       tipo_retorno: requiereTipoRetorno ? tipoRetorno : null,
@@ -812,15 +845,21 @@ function renderInspeccion() {
           </div>
           ${!isClosed ? `
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <button class="btn btn-secondary btn-sm" onclick="abrirDiscrepancia()">⚠ Discrepancia</button>
-              <button class="btn btn-secondary btn-sm" style="border-color:rgba(255,61,61,.4);color:var(--accent-red)" onclick="abrirMercanciaAjena()">⛔ No pertenece a cliente</button>
-              <button class="btn btn-primary btn-sm" onclick="cerrarTracking()">✓ Cerrar Tracking</button>
+              ${_soloLectura ? '' : `
+                <button class="btn btn-secondary btn-sm" onclick="abrirDiscrepancia()">⚠ Discrepancia</button>
+                <button class="btn btn-secondary btn-sm" style="border-color:rgba(255,61,61,.4);color:var(--accent-red)" onclick="abrirMercanciaAjena()">⛔ No pertenece a cliente</button>
+                <button class="btn btn-primary btn-sm" onclick="cerrarTracking()">✓ Cerrar Tracking</button>
+              `}
             </div>
           ` : `
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               <span class="badge badge-green" style="padding:8px 14px;font-size:12px">✓ CERRADO</span>
               <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html?tracking=${t.id}'">📄 Manifiesto</button>
-              <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">▶ Iniciar otra operación</button>
+              ${_soloLectura ? `
+                <button class="btn btn-secondary btn-sm" onclick="window.location='trackings.html'">← Volver a Trackings</button>
+              ` : `
+                <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">▶ Iniciar otra operación</button>
+              `}
             </div>
           `}
         </div>
@@ -843,7 +882,7 @@ function renderInspeccion() {
           </div>
         ` : ''}
 
-        ${!isClosed ? `
+        ${!isClosed && !_soloLectura ? `
           <!-- ESCANEO SKU -->
           <div class="section-title">Escanear / Ingresar Número de Parte</div>
 
@@ -1148,6 +1187,44 @@ function renderInspeccion() {
           ${renderSKUList()}
         </div>
         ${renderErroresGenerales()}
+
+        <!-- CHAT / COMENTARIOS -->
+        <div class="card" id="chat-section" style="margin-top:20px">
+          <div class="card-header">
+            <span class="card-title" style="display:flex;align-items:center;gap:8px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+              Comentarios del Tracking
+            </span>
+            <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
+              <span id="chat-live-indicator" style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--accent-green);display:none;align-items:center;gap:4px">
+                <span style="width:6px;height:6px;border-radius:50%;background:var(--accent-green);display:inline-block;animation:pulse 2s infinite"></span>
+                En vivo
+              </span>
+              <button id="chat-resolve-btn" onclick="toggleChatResuelto()" class="btn btn-ghost btn-sm" style="font-size:11px;display:flex;align-items:center;gap:5px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg>
+                Marcar resuelto
+              </button>
+            </div>
+          </div>
+          <div id="chat-resuelto-banner" style="display:none;padding:8px 16px;background:rgba(39,174,96,.1);border-bottom:1px solid rgba(39,174,96,.25);font-size:12px;color:var(--accent-green);font-family:'IBM Plex Mono',monospace"></div>
+          <div id="chat-mensajes" style="height:300px;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px;background:var(--bg-elevated)">
+            <div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px">Cargando comentarios…</div>
+          </div>
+          ${_pageUser?.rol !== 'LOGISTICA' ? `
+          <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end">
+            <textarea id="chat-input" rows="1"
+              placeholder="Escribe un comentario… (Enter para enviar, Shift+Enter para nueva línea)"
+              style="flex:1;resize:none;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text-primary);font-size:13px;font-family:inherit;line-height:1.4;max-height:72px;overflow-y:auto;outline:none;transition:border-color .15s"
+              onfocus="this.style.borderColor='var(--accent-cyan)'" onblur="this.style.borderColor='var(--border)'"
+              oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,72)+'px'"
+              onkeydown="handleChatKey(event)"></textarea>
+            <button class="btn btn-primary btn-sm" onclick="sendComentario()" style="flex-shrink:0;gap:6px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+              Enviar
+            </button>
+          </div>
+          ` : ''}
+        </div>
       </div>
 
       <!-- PANEL DERECHO -->
@@ -1233,6 +1310,9 @@ function renderInspeccion() {
 
   // Auto focus scan input
   setTimeout(() => document.getElementById('scan-input')?.focus(), 100);
+
+  // Iniciar chat solo la primera vez o cuando cambia el tracking
+  if (state.tracking?.id) initChat(state.tracking.id);
 }
 
 function renderErroresGenerales() {
@@ -1351,6 +1431,7 @@ function renderSKUList() {
             </div>
           ` : ''}
         </div>
+        ${_soloLectura ? '' : `
         <div style="display:flex;gap:6px;flex-shrink:0;align-items:flex-start;padding-top:2px">
           <button class="btn btn-secondary btn-sm" onclick="abrirEditarDetalle('${d.id}')" title="Editar" style="padding:4px 8px">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
@@ -1359,6 +1440,7 @@ function renderSKUList() {
             <button class="btn btn-danger btn-sm" onclick="eliminarDetalle('${d.id}')" style="padding:4px 8px">✕</button>
           ` : ''}
         </div>
+        `}
       </div>
     `;
   }).join('');
@@ -2817,6 +2899,197 @@ async function confirmarCierre() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch(e) {
     toast(e.error || 'Error al cerrar', 'error');
+  }
+}
+
+// ========================
+// CHAT / COMENTARIOS
+// ========================
+const ROL_AVATAR_COLORS = { ADMIN:'#e74c3c', SUPERVISOR:'#e67e22', OPERADOR:'#27ae60', CLIENTE:'#8e44ad', LOGISTICA:'#00bcd4' };
+const scrollChatParam = new URLSearchParams(window.location.search).get('scroll');
+
+let chatPollingInterval = null;
+let chatUltimosIds = new Set();
+let chatTituloOriginal = document.title;
+let chatTituloAlerta = false;
+let chatInitializedFor = null;
+let chatScrollDone = false;
+let chatResuelto = false;
+let chatResueltoInfo = null;
+
+function updateChatResolvedUI() {
+  const btn = document.getElementById('chat-resolve-btn');
+  const banner = document.getElementById('chat-resuelto-banner');
+  if (!btn) return;
+  if (chatResuelto) {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Reactivar chat`;
+    btn.style.color = 'var(--accent-amber)';
+    btn.style.borderColor = 'rgba(255,179,0,.4)';
+    if (banner) {
+      banner.style.display = 'block';
+      const por = chatResueltoInfo?.por || '';
+      const at = chatResueltoInfo?.at ? formatDate(chatResueltoInfo.at) : '';
+      banner.innerHTML = `✓ Chat resuelto por <strong>${escapeHtml(por)}</strong>${at ? ' — ' + at : ''}`;
+    }
+  } else {
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg> Marcar resuelto`;
+    btn.style.color = '';
+    btn.style.borderColor = '';
+    if (banner) banner.style.display = 'none';
+  }
+}
+
+async function toggleChatResuelto() {
+  const btn = document.getElementById('chat-resolve-btn');
+  if (btn) btn.disabled = true;
+  try {
+    const result = await API.post(`/trackings/${chatInitializedFor}/chat-resuelto`, {});
+    chatResuelto = result.resuelto;
+    chatResueltoInfo = result.resuelto ? { por: result.nombre, at: result.at } : null;
+    updateChatResolvedUI();
+    toast(result.resuelto ? 'Chat marcado como resuelto' : 'Chat reactivado', 'success');
+  } catch(e) {
+    toast('Error al cambiar estado del chat', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
+function initChat(trackingId) {
+  if (chatInitializedFor === trackingId) {
+    // Re-render sin reiniciar polling — solo refrescar comentarios en la nueva DOM
+    const box = document.getElementById('chat-mensajes');
+    if (box && chatUltimosIds.size > 0) {
+      loadComentarios(trackingId, true);
+    }
+    updateChatResolvedUI();
+    return;
+  }
+  chatInitializedFor = trackingId;
+  chatResuelto = !!state.tracking?.chat_resuelto;
+  chatResueltoInfo = chatResuelto ? { por: state.tracking?.chat_resuelto_por, at: state.tracking?.chat_resuelto_at } : null;
+  if (chatPollingInterval) clearInterval(chatPollingInterval);
+  chatUltimosIds = new Set();
+  loadComentarios(trackingId, true);
+  chatPollingInterval = setInterval(() => loadComentarios(trackingId, false), 10000);
+  const liveEl = document.getElementById('chat-live-indicator');
+  if (liveEl) liveEl.style.display = 'flex';
+  setTimeout(updateChatResolvedUI, 0);
+
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && chatTituloAlerta) {
+      document.title = chatTituloOriginal;
+      chatTituloAlerta = false;
+    }
+  });
+
+  if (scrollChatParam === 'chat' && !chatScrollDone) {
+    chatScrollDone = true;
+    setTimeout(() => {
+      const sec = document.getElementById('chat-section');
+      if (sec) sec.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 500);
+  }
+}
+
+async function loadComentarios(trackingId, inicial) {
+  try {
+    const comentarios = await API.get(`/trackings/${trackingId}/comentarios`);
+    const nuevos = inicial
+      ? comentarios
+      : comentarios.filter(c => !chatUltimosIds.has(c.id));
+
+    comentarios.forEach(c => chatUltimosIds.add(c.id));
+
+    const box = document.getElementById('chat-mensajes');
+    if (!box) return;
+
+    if (inicial) {
+      box.innerHTML = comentarios.length === 0
+        ? `<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:30px 0">Sin comentarios aún. ¡Sé el primero!</div>`
+        : comentarios.map(c => renderMensaje(c)).join('');
+      box.scrollTop = box.scrollHeight;
+      return;
+    }
+
+    if (nuevos.length > 0) {
+      const estaAbajo = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+      const vacios = box.querySelector('[style*="Sin comentarios"]');
+      if (vacios) box.innerHTML = '';
+      nuevos.forEach(c => {
+        box.insertAdjacentHTML('beforeend', renderMensaje(c));
+      });
+      if (estaAbajo) box.scrollTop = box.scrollHeight;
+      if (document.hidden) {
+        document.title = `💬 Nuevo mensaje — ${state.tracking?.tracking_number || ''}`;
+        chatTituloAlerta = true;
+      }
+    }
+  } catch(e) {}
+}
+
+function renderMensaje(c) {
+  const esPropio = c.usuario_id === (_pageUser?.id || '');
+  const iniciales = c.nombre_usuario.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+  const color = ROL_AVATAR_COLORS[c.rol_usuario] || '#607d8b';
+  const rolLabel = { ADMIN:'Admin', SUPERVISOR:'Supervisor', OPERADOR:'Operador', CLIENTE:'Cliente', LOGISTICA:'Logística' }[c.rol_usuario] || c.rol_usuario;
+  const fecha = formatDate(c.created_at);
+
+  return `<div class="chat-msg" style="display:flex;gap:8px;align-items:flex-start;${esPropio ? 'flex-direction:row-reverse' : ''}">
+    <div class="chat-avatar" style="background:${color}">${iniciales}</div>
+    <div style="display:flex;flex-direction:column;gap:3px;${esPropio ? 'align-items:flex-end' : ''}">
+      <div style="display:flex;align-items:center;gap:6px;${esPropio ? 'flex-direction:row-reverse' : ''}">
+        <span style="font-size:12px;font-weight:600;color:var(--text-primary)">${c.nombre_usuario}</span>
+        <span style="font-size:9px;font-weight:700;padding:1px 5px;border-radius:3px;background:${color}22;color:${color};font-family:'IBM Plex Mono',monospace">${rolLabel}</span>
+      </div>
+      <div class="chat-bubble${esPropio ? ' own' : ''}">
+        <div style="font-size:13px;color:var(--text-primary);white-space:pre-wrap;word-break:break-word">${escapeHtml(c.mensaje)}</div>
+      </div>
+      <div style="font-size:10px;color:var(--text-muted)">${fecha}</div>
+    </div>
+  </div>`;
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function handleChatKey(e) {
+  if (e.key === 'Enter' && !e.shiftKey) {
+    e.preventDefault();
+    sendComentario();
+  }
+}
+
+async function sendComentario() {
+  const input = document.getElementById('chat-input');
+  if (!input) return;
+  const mensaje = input.value.trim();
+  if (!mensaje) return;
+
+  const btn = input.nextElementSibling;
+  if (btn) btn.disabled = true;
+  input.disabled = true;
+
+  try {
+    const result = await API.post(`/trackings/${state.tracking.id}/comentarios`, { mensaje });
+    input.value = '';
+    input.style.height = 'auto';
+    if (result.reactivado) {
+      chatResuelto = false;
+      chatResueltoInfo = null;
+      updateChatResolvedUI();
+      toast('Chat reactivado automáticamente', 'info');
+    }
+    await loadComentarios(state.tracking.id, false);
+    const box = document.getElementById('chat-mensajes');
+    if (box) box.scrollTop = box.scrollHeight;
+  } catch(e) {
+    toast('Error al enviar comentario', 'error');
+  } finally {
+    input.disabled = false;
+    if (btn) btn.disabled = false;
+    input.focus();
   }
 }
 

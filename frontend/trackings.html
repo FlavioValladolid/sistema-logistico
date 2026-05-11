@@ -10,8 +10,10 @@
 <script src="js/app.js"></script>
 <script src="js/shell.js"></script>
 <script>
-const _pageUser = checkAuth();
-buildShell('Trackings', 'TRACKINGS', `
+const _pageUser = checkAuth(['ADMIN','SUPERVISOR','CLIENTE','LOGISTICA','OPERADOR']);
+const _soloVisibilidad = ['OPERADOR','CLIENTE'].includes(_pageUser?.rol);
+
+buildShell('Trackings', 'TRACKINGS', _soloVisibilidad ? '' : `
   <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     Nueva Operación
@@ -29,12 +31,19 @@ document.getElementById('page-content').innerHTML = `
   <div class="card">
     <div class="card-header" style="flex-wrap:wrap;gap:10px">
       <span class="card-title">Todos los Trackings</span>
-      <div style="display:flex;gap:8px;margin-left:auto">
+      <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center">
+        <select class="form-control" id="filtro-cliente" style="width:200px">
+          <option value="">Todos los clientes</option>
+        </select>
         <select class="form-control" id="filtro-estatus" style="width:160px">
           <option value="">Todos los estados</option>
           <option value="abierto">Abiertos</option>
           <option value="cerrado">Cerrados</option>
         </select>
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);white-space:nowrap;user-select:none">
+          <input type="checkbox" id="filtro-con-comentarios" onchange="applyFilters()" style="accent-color:var(--accent-cyan)">
+          Solo con chat activo
+        </label>
         <input type="text" class="form-control" id="search-tracking" placeholder="Buscar tracking..." style="width:200px">
       </div>
     </div>
@@ -47,7 +56,21 @@ document.getElementById('page-content').innerHTML = `
 let trackingsData = [];
 
 async function loadTrackings() {
-  trackingsData = await API.get('/trackings');
+  const [trackings, clientes] = await Promise.all([
+    API.get('/trackings'),
+    API.get('/clientes')
+  ]);
+  trackingsData = trackings;
+
+  const sel = document.getElementById('filtro-cliente');
+  const clientesConTrackings = clientes.filter(c => trackings.some(t => t.cliente_id === c.id));
+  clientesConTrackings.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.nombre;
+    sel.appendChild(opt);
+  });
+
   renderTabla(trackingsData);
 }
 
@@ -76,6 +99,7 @@ function renderTabla(data) {
             <th>Declaradas</th>
             <th>Inspeccionadas</th>
             <th>Estado</th>
+            <th>Comentarios</th>
             <th>Fecha</th>
             <th>Acciones</th>
           </tr>
@@ -84,8 +108,9 @@ function renderTabla(data) {
           ${data.map(t => {
             const pct = t.cantidad_declarada > 0 ? Math.round(t.cantidad_final / t.cantidad_declarada * 100) : 0;
             const discrepancia = t.cantidad_final !== t.cantidad_declarada && t.cantidad_declarada > 0;
+            const numComent = t.total_comentarios || 0;
             return `
-              <tr>
+              <tr ondblclick="window.location='operacion.html?id=${t.id}'" style="cursor:pointer" title="Doble clic para ver detalle">
                 <td class="td-mono" style="color:var(--accent-cyan);font-weight:700">${t.tracking_number}</td>
                 <td>${t.cliente_nombre || '—'}</td>
                 <td class="td-mono">
@@ -107,15 +132,30 @@ function renderTabla(data) {
                     ${t.estatus === 'cerrado' ? '✓ Cerrado' : '⟳ Abierto'}
                   </span>
                 </td>
+                <td style="text-align:center">
+                  ${numComent > 0
+                    ? t.chat_resuelto
+                      ? `<span onclick="event.stopPropagation();window.location='operacion.html?id=${t.id}&scroll=chat'"
+                          style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:rgba(39,174,96,.15);color:var(--accent-green);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;cursor:pointer;border:1px solid rgba(39,174,96,.3);transition:all .15s"
+                          onmouseover="this.style.background='rgba(39,174,96,.28)'" onmouseout="this.style.background='rgba(39,174,96,.15)'"
+                          title="Chat resuelto — ver comentarios">✓ ${numComent}</span>`
+                      : `<span onclick="event.stopPropagation();window.location='operacion.html?id=${t.id}&scroll=chat'"
+                          style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:rgba(0,188,212,.2);color:var(--accent-cyan);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;cursor:pointer;border:1px solid rgba(0,188,212,.3);transition:all .15s"
+                          onmouseover="this.style.background='rgba(0,188,212,.35)'" onmouseout="this.style.background='rgba(0,188,212,.2)'"
+                          title="Ver comentarios">💬 ${numComent}</span>`
+                    : `<span style="color:var(--text-muted);font-size:12px">—</span>`}
+                </td>
                 <td class="td-mono text-muted">${formatDate(t.created_at)}</td>
                 <td>
                   <div class="td-actions">
-                    <button class="btn btn-secondary btn-sm" onclick="window.location='operacion.html?id=${t.id}'">
-                      ${t.estatus === 'abierto' ? 'Inspeccionar' : 'Ver'}
+                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();window.location='operacion.html?id=${t.id}'">
+                      ${_soloVisibilidad ? 'Ver' : (t.estatus === 'abierto' ? 'Inspeccionar' : 'Ver')}
                     </button>
-                    <button class="btn btn-ghost btn-sm" onclick="window.location='reportes.html?tracking=${t.id}'">
-                      Reporte
-                    </button>
+                    ${!_soloVisibilidad ? `
+                      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();window.location='reportes.html?tracking=${t.id}'">
+                        Reporte
+                      </button>
+                    ` : ''}
                   </div>
                 </td>
               </tr>
@@ -130,15 +170,20 @@ function renderTabla(data) {
 function applyFilters() {
   const q = document.getElementById('search-tracking').value.toLowerCase();
   const estatus = document.getElementById('filtro-estatus').value;
+  const clienteId = document.getElementById('filtro-cliente').value;
+  const soloComentarios = document.getElementById('filtro-con-comentarios').checked;
   renderTabla(trackingsData.filter(t => {
     const matchQ = !q || t.tracking_number.toLowerCase().includes(q) || (t.cliente_nombre||'').toLowerCase().includes(q) || (t.operador||'').toLowerCase().includes(q);
     const matchE = !estatus || t.estatus === estatus;
-    return matchQ && matchE;
+    const matchC = !clienteId || t.cliente_id === clienteId;
+    const matchComent = !soloComentarios || t.tiene_comentarios;
+    return matchQ && matchE && matchC && matchComent;
   }));
 }
 
 document.getElementById('search-tracking').addEventListener('input', applyFilters);
 document.getElementById('filtro-estatus').addEventListener('change', applyFilters);
+document.getElementById('filtro-cliente').addEventListener('change', applyFilters);
 
 loadTrackings();
 </script>

@@ -221,11 +221,18 @@ async function previewNombre() {
     return;
   }
   try {
-    const cajas = await API.get(`/cajas?cliente_id=${opt.value}&tipo=${encodeURIComponent(tipo)}`);
-    const nextCons = (cajas.length > 0 ? Math.max(...cajas.map(c => c.consecutivo)) : 0) + 1;
+    // Fetch all cajas with this prefix to find next globally-unique consecutive
     const iniciales = opt.dataset.nombre.replace(/\s+/g, '').substring(0, 3).toUpperCase().padEnd(3, 'X');
     const abr = { 'Damage': 'DMG', 'Good Condition': 'GDC', 'Non-brand merchandise': 'NBM' }[tipo] || 'UNK';
-    const nombre = `${iniciales}-${abr}-${String(nextCons).padStart(3,'0')}`;
+    const prefix = `${iniciales}-${abr}-`;
+    // Get all cajas (no filter) to find globally used names with this prefix
+    const todas = await API.get('/cajas');
+    const usadas = new Set(todas.filter(c => c.nombre.startsWith(prefix)).map(c => c.nombre));
+    // Also get client-specific max to start from there
+    const propias = todas.filter(c => c.cliente_id === opt.value && c.tipo === tipo);
+    let nextCons = (propias.length > 0 ? Math.max(...propias.map(c => c.consecutivo)) : 0) + 1;
+    let nombre = `${prefix}${String(nextCons).padStart(3,'0')}`;
+    while (usadas.has(nombre)) { nextCons++; nombre = `${prefix}${String(nextCons).padStart(3,'0')}`; }
     document.getElementById('cj-preview-nombre').textContent = nombre;
     preview.style.display = '';
   } catch(e) {

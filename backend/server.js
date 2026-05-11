@@ -102,6 +102,8 @@ async function initDB() {
   `);
   // Migración: agregar upc_code si la tabla ya existía sin esa columna
   try { db.run('ALTER TABLE skus ADD COLUMN upc_code TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE skus ADD COLUMN created_at TEXT'); } catch(e) {}
+  db.run("UPDATE skus SET created_at = datetime('now','localtime') WHERE created_at IS NULL");
 
   db.run(`
     CREATE TABLE IF NOT EXISTS trackings (
@@ -286,6 +288,18 @@ async function initDB() {
     )
   `);
   db.run("DELETE FROM sesiones WHERE expires_at < datetime('now','localtime')");
+  db.run(`
+    CREATE TABLE IF NOT EXISTS tracking_comentarios (
+      id TEXT PRIMARY KEY,
+      tracking_id TEXT NOT NULL,
+      usuario_id TEXT NOT NULL,
+      nombre_usuario TEXT NOT NULL,
+      rol_usuario TEXT NOT NULL,
+      mensaje TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (tracking_id) REFERENCES trackings(id)
+    )
+  `);
 
   // One-time migration: convert all UTC timestamps stored before the localtime fix
   const migDone = db.exec("SELECT value FROM config WHERE key='utc_to_local_v1'");
@@ -303,6 +317,11 @@ async function initDB() {
     db.run("INSERT INTO config (key,value) VALUES ('utc_to_local_v1','done')");
     console.log('✅ Migración UTC→local completada');
   }
+
+  // Migrations: chat resolved state
+  try { db.run('ALTER TABLE trackings ADD COLUMN chat_resuelto INTEGER DEFAULT 0'); } catch(e) {}
+  try { db.run('ALTER TABLE trackings ADD COLUMN chat_resuelto_por TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE trackings ADD COLUMN chat_resuelto_at TEXT'); } catch(e) {}
 
   saveDB();
 
@@ -427,6 +446,9 @@ function authMiddleware(req, res, next) {
     if (req.path === '/api/auth/cambiar-password') return next();
     // Allow logout
     if (req.path === '/api/auth/logout') return next();
+    // Allow posting comments and toggling chat resolved state
+    if (req.method === 'POST' && /^\/trackings\/[^/]+\/comentarios$/.test(req.path)) return next();
+    if (req.method === 'POST' && /^\/trackings\/[^/]+\/chat-resuelto$/.test(req.path)) return next();
     return res.status(403).json({ error: 'Sin permiso para esta operación' });
   }
 
@@ -445,6 +467,17 @@ function getUserClienteIds(usuario_id, rol) {
   if (rol === 'ADMIN' || rol === 'SUPERVISOR') return null; // null = all clients
   const rows = dbAll('SELECT cliente_id FROM usuario_clientes WHERE usuario_id=?', [usuario_id]);
   return rows.map(r => r.cliente_id);
+}
+
+// Returns SQL fragment + params to restrict a query to the user's assigned clients.
+// alias: table alias that has the column to match (default 't', column default 'cliente_id')
+// col: override column name — use 'id' when alias refers to the clientes table itself
+function clienteFilter(usuario, alias = 't', col = 'cliente_id') {
+  const ids = getUserClienteIds(usuario.id, usuario.rol);
+  if (!ids) return { sql: '', params: [] }; // ADMIN/SUPERVISOR ven todo
+  if (ids.length === 0) return { sql: ` AND 1=0`, params: [] }; // sin clientes asignados
+  const ph = ids.map(() => '?').join(',');
+  return { sql: ` AND ${alias}.${col} IN (${ph})`, params: ids };
 }
 
 app.use('/api', authMiddleware);
@@ -572,7 +605,8 @@ app.put('/api/usuarios/:id/clientes', requireRol('ADMIN'), (req, res) => {
 
 // --- CLIENTES ---
 app.get('/api/clientes', (req, res) => {
-  const rows = dbAll('SELECT * FROM clientes ORDER BY nombre');
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 'c', 'id');
+  const rows = dbAll(`SELECT * FROM clientes c WHERE 1=1${cf} ORDER BY nombre`, cp);
   res.json(rows);
 });
 
@@ -620,9 +654,10 @@ app.delete('/api/clientes/:id', (req, res) => {
 // --- SKUs ---
 app.get('/api/skus', (req, res) => {
   const { cliente_id } = req.query;
-  let sql = 'SELECT * FROM skus';
-  let params = [];
-  if (cliente_id) { sql += ' WHERE cliente_id = ?'; params = [cliente_id]; }
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 's');
+  let sql = `SELECT * FROM skus s WHERE 1=1${cf}`;
+  let params = [...cp];
+  if (cliente_id) { sql += ' AND s.cliente_id = ?'; params.push(cliente_id); }
   res.json(dbAll(sql, params));
 });
 
@@ -692,8 +727,9 @@ app.delete('/api/skus/:id', (req, res) => {
 // --- CAJAS / PALLETS ---
 app.get('/api/cajas', (req, res) => {
   const { cliente_id, tipo, estatus } = req.query;
-  let sql = `SELECT cp.*, c.nombre as cliente_nombre FROM cajas_pallets cp JOIN clientes c ON cp.cliente_id = c.id WHERE 1=1`;
-  const params = [];
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 'cp');
+  let sql = `SELECT cp.*, c.nombre as cliente_nombre FROM cajas_pallets cp JOIN clientes c ON cp.cliente_id = c.id WHERE 1=1${cf}`;
+  const params = [...cp];
   if (cliente_id) { sql += ' AND cp.cliente_id = ?'; params.push(cliente_id); }
   if (tipo)       { sql += ' AND cp.tipo = ?'; params.push(tipo); }
   if (estatus)    { sql += ' AND cp.estatus = ?'; params.push(estatus); }
@@ -731,9 +767,20 @@ app.post('/api/cajas', (req, res) => {
   const cliente = dbGet('SELECT * FROM clientes WHERE id = ?', [cliente_id]);
   if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
 
+  // Generate nombre; increment consecutive until the name is globally unique
+  const iniciales = cliente.nombre.replace(/\s+/g, '').substring(0, 3).toUpperCase().padEnd(3, 'X');
+  const abr = { 'Damage': 'DMG', 'Good Condition': 'GDC', 'Non-brand merchandise': 'NBM' }[tipo] || 'UNK';
+  const prefix = `${iniciales}-${abr}-`;
+
   const lastCons = dbGet('SELECT MAX(consecutivo) as max FROM cajas_pallets WHERE cliente_id = ? AND tipo = ?', [cliente_id, tipo]);
-  const consecutivo = (lastCons?.max || 0) + 1;
-  const nombre = generarNombreCaja(cliente.nombre, tipo, consecutivo);
+  let consecutivo = (lastCons?.max || 0) + 1;
+  let nombre = `${prefix}${String(consecutivo).padStart(3, '0')}`;
+
+  // If the name is already taken (by another client with same initials), find next free slot globally
+  while (dbGet('SELECT id FROM cajas_pallets WHERE nombre = ?', [nombre])) {
+    consecutivo += 1;
+    nombre = `${prefix}${String(consecutivo).padStart(3, '0')}`;
+  }
 
   const id = uuidv4();
   dbRun('INSERT INTO cajas_pallets (id,cliente_id,nombre,tipo,consecutivo,estatus,created_at) VALUES (?,?,?,?,?,?,?)',
@@ -765,9 +812,9 @@ app.get('/api/reportes/tipo-caja', (req, res) => {
     JOIN clientes c ON cp.cliente_id = c.id
     LEFT JOIN trackings t ON t.caja_pallet_id = cp.id
     LEFT JOIN detalle_skus d ON d.tracking_id = t.id
-    WHERE 1=1
+    WHERE 1=1${clienteFilter(req.usuario, 'cp').sql}
   `;
-  const params = [];
+  const params = [...clienteFilter(req.usuario, 'cp').params];
   if (cliente_id)  { sql += ' AND cp.cliente_id = ?'; params.push(cliente_id); }
   if (tipo)        { sql += ' AND cp.tipo = ?'; params.push(tipo); }
   if (fecha_desde) { sql += " AND date(cp.created_at) >= ?"; params.push(fecha_desde); }
@@ -778,11 +825,15 @@ app.get('/api/reportes/tipo-caja', (req, res) => {
 
 // --- TRACKINGS ---
 app.get('/api/trackings', (req, res) => {
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
   const rows = dbAll(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno,
+      COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) as total_comentarios,
+      CASE WHEN COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) > 0 AND COALESCE(t.chat_resuelto, 0) = 0 THEN 1 ELSE 0 END as tiene_comentarios
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
+    WHERE 1=1${cf}
     ORDER BY t.created_at DESC
-  `);
+  `, cp);
   res.json(rows);
 });
 
@@ -796,8 +847,53 @@ app.get('/api/trackings/:id', (req, res) => {
   res.json(row);
 });
 
+// ── Comentarios de Tracking ────────────────────────────────────────────────────
+app.get('/api/trackings/:id/comentarios', (req, res) => {
+  const rows = dbAll(
+    `SELECT * FROM tracking_comentarios WHERE tracking_id = ? ORDER BY created_at ASC`,
+    [req.params.id]
+  );
+  res.json(rows);
+});
+
+app.post('/api/trackings/:id/comentarios', (req, res) => {
+  const { mensaje } = req.body;
+  if (!mensaje || !mensaje.trim()) return res.status(400).json({ error: 'Mensaje requerido' });
+  const tracking = dbGet('SELECT id, chat_resuelto FROM trackings WHERE id = ?', [req.params.id]);
+  if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+  const id = uuidv4();
+  dbRun(
+    `INSERT INTO tracking_comentarios (id,tracking_id,usuario_id,nombre_usuario,rol_usuario,mensaje,created_at) VALUES (?,?,?,?,?,?,?)`,
+    [id, req.params.id, req.usuario.id, req.usuario.nombre, req.usuario.rol, mensaje.trim(), localNow()]
+  );
+  const reactivado = !!tracking.chat_resuelto;
+  if (reactivado) {
+    dbRun('UPDATE trackings SET chat_resuelto=0, chat_resuelto_por=NULL, chat_resuelto_at=NULL WHERE id=?', [req.params.id]);
+  }
+  res.json({ id, mensaje: 'Comentario agregado', reactivado });
+});
+
+app.delete('/api/trackings/:id/comentarios/:cid', requireRol('ADMIN'), (req, res) => {
+  dbRun('DELETE FROM tracking_comentarios WHERE id = ? AND tracking_id = ?', [req.params.cid, req.params.id]);
+  res.json({ ok: true });
+});
+
+app.post('/api/trackings/:id/chat-resuelto', (req, res) => {
+  const tracking = dbGet('SELECT id, chat_resuelto FROM trackings WHERE id = ?', [req.params.id]);
+  if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+  const nuevoEstado = tracking.chat_resuelto ? 0 : 1;
+  if (nuevoEstado === 1) {
+    dbRun('UPDATE trackings SET chat_resuelto=1, chat_resuelto_por=?, chat_resuelto_at=? WHERE id=?',
+      [req.usuario.nombre, localNow(), req.params.id]);
+  } else {
+    dbRun('UPDATE trackings SET chat_resuelto=0, chat_resuelto_por=NULL, chat_resuelto_at=NULL WHERE id=?',
+      [req.params.id]);
+  }
+  res.json({ resuelto: nuevoEstado === 1, nombre: req.usuario.nombre, at: localNow() });
+});
+
 app.post('/api/trackings', (req, res) => {
-  const { tracking_number, cliente_id, operador, cantidad_declarada, numero_orden, tipo_retorno, razon_retorno } = req.body;
+  const { tracking_number, cliente_id, cantidad_declarada, numero_orden, tipo_retorno, razon_retorno } = req.body;
   if (!tracking_number || !cliente_id) {
     return res.status(400).json({ error: 'tracking_number y cliente_id son requeridos' });
   }
@@ -805,9 +901,10 @@ app.post('/api/trackings', (req, res) => {
   const existing = dbGet('SELECT id FROM trackings WHERE tracking_number = ?', [tracking_number]);
   if (existing) return res.status(400).json({ error: 'Tracking number ya registrado' });
 
+  const operador = req.usuario.email;
   const id = uuidv4();
   dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final,numero_orden,tipo_retorno,razon_retorno,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, tracking_number, cliente_id, '', null, operador || 'Operador', cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null, localNow()]);
+    [id, tracking_number, cliente_id, '', null, operador, cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null, localNow()]);
   res.json({ id, mensaje: 'Tracking creado' });
 });
 
@@ -915,6 +1012,18 @@ app.post('/api/trackings/:id/detalles', (req, res) => {
      calidad || 'Buena', esNuevoFlag, localNow()]);
 
   if (es_nuevo) {
+    // Agregar al catálogo de SKUs si no existe ya
+    const skuExistente = dbGet('SELECT id FROM skus WHERE sku_code=? AND cliente_id=?', [sku_code, tracking.cliente_id]);
+    if (!skuExistente) {
+      dbRun(`INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code,created_at) VALUES (?,?,?,?,?,?,?,?)`,
+        [uuidv4(), tracking.cliente_id, sku_code,
+         descripcion || null,
+         pais_origen_real || pais_origen_catalogo || null,
+         insumos_real || insumos_catalogo || null,
+         upc_code || null, localNow()]);
+    }
+
+    // Registrar en SKUs Nuevos en Catálogo para revisión
     const nid = uuidv4();
     dbRun(`INSERT INTO skus_nuevos (id,tracking_id,detalle_sku_id,cliente_id,sku_code,upc,descripcion,pais_origen,insumos,operador,created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
@@ -1061,6 +1170,7 @@ app.get('/api/catalogo/retrabajos/:tipo', (req, res) => {
 
 app.get('/api/retrabajos', (req, res) => {
   const { estatus, cliente_id, tracking_id } = req.query;
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 'r');
   let sql = `
     SELECT r.*,
            t.tracking_number, t.caja_id, t.operador,
@@ -1070,9 +1180,9 @@ app.get('/api/retrabajos', (req, res) => {
     JOIN trackings t ON r.tracking_id = t.id
     JOIN clientes c ON r.cliente_id = c.id
     LEFT JOIN errores e ON e.detalle_sku_id = r.detalle_sku_id AND e.tracking_id = r.tracking_id
-    WHERE 1=1
+    WHERE 1=1${cf}
   `;
-  const params = [];
+  const params = [...cp];
   if (estatus)     { sql += ' AND r.estatus = ?';     params.push(estatus); }
   if (cliente_id)  { sql += ' AND r.cliente_id = ?';  params.push(cliente_id); }
   if (tracking_id) { sql += ' AND r.tracking_id = ?'; params.push(tracking_id); }
@@ -1130,13 +1240,14 @@ app.get('/api/trackings/:id/discrepancias', (req, res) => {
 // --- REPORTES ---
 app.get('/api/reportes/resumen', (req, res) => {
   const { fecha_desde, fecha_hasta, cliente_id } = req.query;
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
 
-  const whereParts = [];
-  const params = [];
+  const whereParts = [`1=1${cf}`];
+  const params = [...cp];
   if (fecha_desde) { whereParts.push("date(t.created_at) >= ?"); params.push(fecha_desde); }
   if (fecha_hasta) { whereParts.push("date(t.created_at) <= ?"); params.push(fecha_hasta); }
   if (cliente_id)  { whereParts.push("t.cliente_id = ?"); params.push(cliente_id); }
-  const where = whereParts.length ? ' WHERE ' + whereParts.join(' AND ') : '';
+  const where = ' WHERE ' + whereParts.join(' AND ');
 
   const totalTrackings    = dbGet(`SELECT COUNT(*) as cnt FROM trackings t${where}`, params)?.cnt || 0;
   const trackingsCerrados = dbGet(`SELECT COUNT(*) as cnt FROM trackings t${where ? where + " AND t.estatus='cerrado'" : " WHERE t.estatus='cerrado'"}`, params)?.cnt || 0;
@@ -1150,9 +1261,10 @@ app.get('/api/reportes/resumen', (req, res) => {
 // Lista de cajas/pallets agrupadas por caja_id
 app.get('/api/reportes/cajas', (req, res) => {
   const { cliente_id, fecha_desde, fecha_hasta } = req.query;
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
 
-  let where = "WHERE t.estatus = 'cerrado' AND t.caja_id != ''";
-  const params = [];
+  let where = `WHERE t.estatus = 'cerrado' AND t.caja_id != ''${cf}`;
+  const params = [...cp];
   if (cliente_id) { where += ' AND t.cliente_id = ?'; params.push(cliente_id); }
   if (fecha_desde) { where += " AND date(t.closed_at) >= ?"; params.push(fecha_desde); }
   if (fecha_hasta) { where += " AND date(t.closed_at) <= ?"; params.push(fecha_hasta); }
@@ -1279,6 +1391,7 @@ app.get('/api/reportes/manifiesto/:id', (req, res) => {
 // Reporte masivo de retrabajos
 app.get('/api/reportes/retrabajos', (req, res) => {
   const { fecha_desde, fecha_hasta, cliente_id, estatus } = req.query;
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 'r');
   let sql = `
     SELECT r.*,
            t.tracking_number, t.caja_id, t.operador,
@@ -1286,9 +1399,9 @@ app.get('/api/reportes/retrabajos', (req, res) => {
     FROM retrabajos r
     JOIN trackings t ON r.tracking_id = t.id
     JOIN clientes c ON r.cliente_id = c.id
-    WHERE 1=1
+    WHERE 1=1${cf}
   `;
-  const params = [];
+  const params = [...cp];
   if (fecha_desde) { sql += " AND date(r.created_at) >= ?"; params.push(fecha_desde); }
   if (fecha_hasta) { sql += " AND date(r.created_at) <= ?"; params.push(fecha_hasta); }
   if (cliente_id)  { sql += ' AND r.cliente_id = ?'; params.push(cliente_id); }
@@ -1299,7 +1412,8 @@ app.get('/api/reportes/retrabajos', (req, res) => {
 
 // Dashboard: hora por hora
 app.get('/api/dashboard/hora-por-hora', (req, res) => {
-  const { fecha_desde, fecha_hasta, operador, cliente_id } = req.query;
+  const { fecha_desde, fecha_hasta, cliente_id } = req.query;
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
   let sql = `
     SELECT strftime('%Y-%m-%d', d.created_at) as fecha,
            CAST(strftime('%H', d.created_at) AS INTEGER) as hora,
@@ -1311,33 +1425,34 @@ app.get('/api/dashboard/hora-por-hora', (req, res) => {
     FROM detalle_skus d
     JOIN trackings t ON d.tracking_id = t.id
     JOIN clientes c ON t.cliente_id = c.id
-    WHERE 1=1
+    WHERE 1=1${cf}
   `;
-  const params = [];
+  const params = [...cp];
   if (fecha_desde) { sql += ' AND date(d.created_at) >= ?'; params.push(fecha_desde); }
   if (fecha_hasta) { sql += ' AND date(d.created_at) <= ?'; params.push(fecha_hasta); }
-  if (operador)    { sql += ' AND t.operador = ?'; params.push(operador); }
   if (cliente_id)  { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
   sql += ' GROUP BY fecha, hora, t.cliente_id ORDER BY fecha, hora';
   res.json(dbAll(sql, params));
 });
 
 app.get('/api/dashboard/operadores', (req, res) => {
-  const rows = dbAll("SELECT DISTINCT operador FROM trackings WHERE operador IS NOT NULL AND operador != '' ORDER BY operador");
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
+  const rows = dbAll(`SELECT DISTINCT t.operador FROM trackings t WHERE t.operador IS NOT NULL AND t.operador != ''${cf} ORDER BY t.operador`, cp);
   res.json(rows.map(r => r.operador));
 });
 
 app.get('/api/dashboard/ranking', (req, res) => {
   const { fecha_desde, fecha_hasta, cliente_id } = req.query;
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
   let sql = `
     SELECT t.operador,
            SUM(d.cantidad) as total_piezas,
            COUNT(DISTINCT t.id) as total_trackings
     FROM detalle_skus d
     JOIN trackings t ON d.tracking_id = t.id
-    WHERE 1=1
+    WHERE 1=1${cf}
   `;
-  const params = [];
+  const params = [...cp];
   if (fecha_desde) { sql += ' AND date(d.created_at) >= ?'; params.push(fecha_desde); }
   if (fecha_hasta) { sql += ' AND date(d.created_at) <= ?'; params.push(fecha_hasta); }
   if (cliente_id)  { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
@@ -1552,10 +1667,11 @@ app.post('/api/subir-foto', upload.single('foto'), (req, res) => {
 
 // ── SKUs Nuevos en Catálogo ────────────────────────────────────────────────────
 
-function buildSkusNuevosWhere(query) {
+function buildSkusNuevosWhere(query, usuario) {
   const { cliente_id, fecha_inicio, fecha_fin, solo_sin_completar } = query;
-  const where = ['1=1'];
-  const vals = [];
+  const { sql: cf, params: cp } = usuario ? clienteFilter(usuario, 'n') : { sql: '', params: [] };
+  const where = [`1=1${cf}`];
+  const vals = [...cp];
   if (cliente_id) { where.push('n.cliente_id=?'); vals.push(cliente_id); }
   if (fecha_inicio) { where.push("date(n.created_at)>=?"); vals.push(fecha_inicio); }
   if (fecha_fin) { where.push("date(n.created_at)<=?"); vals.push(fecha_fin); }
@@ -1570,21 +1686,22 @@ function buildSkusNuevosWhere(query) {
 }
 
 app.get('/api/skus-nuevos/pendientes', (req, res) => {
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 'n');
   const row = dbGet(`
     SELECT COUNT(*) as cnt FROM skus_nuevos n
     LEFT JOIN detalle_skus d ON n.detalle_sku_id=d.id
-    WHERE n.dado_de_alta=0
+    WHERE n.dado_de_alta=0${cf}
     AND (
       COALESCE(n.url_foto_etiqueta, d.foto_etiqueta) IS NULL
       OR COALESCE(n.url_foto_insumos_origen, d.foto_insumos) IS NULL
       OR COALESCE(n.url_foto_producto_completo, d.foto_pieza) IS NULL
     )
-  `, []);
+  `, cp);
   res.json({ count: row?.cnt || 0 });
 });
 
 app.get('/api/skus-nuevos/exportar/csv', (req, res) => {
-  const { where, vals } = buildSkusNuevosWhere(req.query);
+  const { where, vals } = buildSkusNuevosWhere(req.query, req.usuario);
   const rows = dbAll(`
     SELECT n.id, n.tracking_id, n.detalle_sku_id, n.cliente_id, n.sku_code, n.upc,
       n.descripcion, n.pais_origen, n.insumos, n.operador, n.dado_de_alta, n.created_at,
@@ -1618,7 +1735,7 @@ app.get('/api/skus-nuevos/exportar/csv', (req, res) => {
 });
 
 app.get('/api/skus-nuevos', (req, res) => {
-  const { where, vals } = buildSkusNuevosWhere(req.query);
+  const { where, vals } = buildSkusNuevosWhere(req.query, req.usuario);
   const rows = dbAll(`
     SELECT n.id, n.tracking_id, n.detalle_sku_id, n.cliente_id, n.sku_code, n.upc,
       n.descripcion, n.pais_origen, n.insumos, n.operador, n.dado_de_alta, n.created_at,
