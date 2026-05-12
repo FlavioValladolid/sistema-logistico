@@ -471,6 +471,7 @@ async function importarCSV() {
   const total = csvRows.length;
   let procesados = 0;
   let totalInsertados = 0;
+  let totalActualizados = 0;
   let totalOmitidos = 0;
 
   document.getElementById('btn-importar').disabled = true;
@@ -489,17 +490,22 @@ async function importarCSV() {
     for (let i = 0; i < csvRows.length; i += BATCH) {
       const lote = csvRows.slice(i, i + BATCH);
       const res = await API.post('/skus/importar', { cliente_id: clienteId, skus: lote });
-      totalInsertados += res.insertados;
-      totalOmitidos += res.omitidos;
+      totalInsertados += res.insertados || 0;
+      totalActualizados += res.actualizados || 0;
+      totalOmitidos += res.omitidos || 0;
       procesados += lote.length;
       const pct = Math.round(procesados / total * 100);
-      setProgress(pct, `${procesados.toLocaleString()} de ${total.toLocaleString()} filas — ${totalInsertados.toLocaleString()} insertados, ${totalOmitidos.toLocaleString()} omitidos`);
+      setProgress(pct, `${procesados.toLocaleString()} de ${total.toLocaleString()} filas — ${totalInsertados.toLocaleString()} nuevos, ${totalActualizados.toLocaleString()} actualizados, ${totalOmitidos.toLocaleString()} omitidos`);
     }
 
     document.getElementById('imp-progress-text').textContent = '¡Importación completada!';
     document.getElementById('imp-progress-bar').style.background = 'var(--accent-green)';
     await new Promise(r => setTimeout(r, 800));
-    toast(`${totalInsertados.toLocaleString()} insertados, ${totalOmitidos.toLocaleString()} omitidos (duplicados o vacíos)`);
+    const partes = [];
+    if (totalInsertados) partes.push(`${totalInsertados.toLocaleString()} nuevos`);
+    if (totalActualizados) partes.push(`${totalActualizados.toLocaleString()} actualizados`);
+    if (totalOmitidos) partes.push(`${totalOmitidos.toLocaleString()} omitidos`);
+    toast(`Importación completada: ${partes.join(', ')}`);
     closeModal('modal-importar');
     loadAll();
   } catch(e) {

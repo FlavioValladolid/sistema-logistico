@@ -480,6 +480,67 @@ document.body.insertAdjacentHTML('beforeend', `
     </div>
   </div>
 
+  <!-- ── MODAL ENVIAR CORREO ──────────────────────────────────── -->
+  <div id="modal-enviar-correo" class="modal-overlay">
+    <div class="modal" style="max-width:560px;width:92vw">
+      <div class="modal-header">
+        <span class="modal-title">Enviar resumen por correo</span>
+        <button class="modal-close" onclick="closeModal('modal-enviar-correo')">×</button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
+
+        <!-- Destinatarios chips -->
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Destinatarios <span style="color:var(--accent-red)">*</span> <span style="color:var(--text-muted);font-weight:400">— máx. 10</span></label>
+          <div id="email-chips-wrapper" style="min-height:42px;padding:6px 8px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);display:flex;flex-wrap:wrap;gap:5px;align-items:center;cursor:text" onclick="document.getElementById('email-chip-input').focus()">
+            <div id="email-chips" style="display:contents"></div>
+            <input id="email-chip-input" type="email" placeholder="Escribe un email y presiona Enter o coma…"
+              style="flex:1;min-width:180px;background:none;border:none;outline:none;color:var(--text-primary);font-size:13px;padding:2px 4px"
+              onkeydown="handleChipKey(event)" onblur="addEmailChipFromInput()">
+          </div>
+          <div id="email-chips-error" style="color:var(--accent-red);font-size:12px;margin-top:4px;display:none"></div>
+        </div>
+
+        <!-- Asunto -->
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Asunto</label>
+          <input id="correo-asunto" type="text" class="form-control" placeholder="Asunto del correo">
+        </div>
+
+        <!-- Mensaje adicional -->
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Mensaje adicional <span style="color:var(--text-muted);font-weight:400">— opcional</span></label>
+          <textarea id="correo-mensaje" class="form-control" rows="3" maxlength="500"
+            placeholder="Agrega un mensaje personalizado que aparecerá destacado en el correo…"
+            oninput="document.getElementById('correo-mensaje-count').textContent=this.value.length"
+            style="resize:vertical"></textarea>
+          <div style="text-align:right;font-size:11px;color:var(--text-muted);margin-top:4px"><span id="correo-mensaje-count">0</span>/500</div>
+        </div>
+
+        <!-- Comentarios a incluir -->
+        <div class="form-group" style="margin-bottom:0">
+          <label class="form-label">Comentarios a incluir</label>
+          <select id="correo-comentarios" class="form-control" onchange="updateCorreoPreview()">
+            <option value="5">Últimos 5 comentarios</option>
+            <option value="10" selected>Últimos 10 comentarios</option>
+            <option value="20">Últimos 20 comentarios</option>
+            <option value="todos">Todos los comentarios</option>
+          </select>
+          <div id="correo-comentarios-preview" style="font-size:12px;color:var(--text-muted);margin-top:5px"></div>
+        </div>
+
+        <div id="correo-error" style="display:none;color:var(--accent-red);font-size:13px;background:rgba(220,38,38,.08);padding:10px 12px;border-radius:var(--radius-sm);border:1px solid rgba(220,38,38,.2)"></div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-enviar-correo')">Cancelar</button>
+        <button class="btn btn-primary" id="btn-enviar-correo" onclick="enviarCorreo()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+          Enviar correo
+        </button>
+      </div>
+    </div>
+  </div>
+
   <div id="modal-reasignar-caja" class="modal-overlay">
     <div class="modal" style="max-width:440px">
       <div class="modal-header">
@@ -1200,6 +1261,11 @@ function renderInspeccion() {
                 <span style="width:6px;height:6px;border-radius:50%;background:var(--accent-green);display:inline-block;animation:pulse 2s infinite"></span>
                 En vivo
               </span>
+              ${_pageUser?.rol !== 'LOGISTICA' ? `
+              <button onclick="abrirEnviarCorreo()" class="btn btn-ghost btn-sm" style="font-size:11px;display:flex;align-items:center;gap:5px;border-color:rgba(0,230,118,.3);color:var(--accent-green)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+                Enviar por correo
+              </button>` : ''}
               <button id="chat-resolve-btn" onclick="toggleChatResuelto()" class="btn btn-ghost btn-sm" style="font-size:11px;display:flex;align-items:center;gap:5px">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg>
                 Marcar resuelto
@@ -1222,6 +1288,12 @@ function renderInspeccion() {
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
               Enviar
             </button>
+          </div>
+          ` : ''}
+          ${['ADMIN','SUPERVISOR'].includes(_pageUser?.rol) ? `
+          <div style="padding:6px 16px 10px;border-top:1px solid var(--border)">
+            <button id="historial-correos-link" onclick="toggleHistorialCorreos()" style="background:none;border:none;color:var(--text-muted);font-size:11px;cursor:pointer;padding:0;font-family:'IBM Plex Mono',monospace">▾ Ver historial de correos enviados (0)</button>
+            <div id="historial-correos-section" style="display:none;margin-top:8px"></div>
           </div>
           ` : ''}
         </div>
@@ -2755,6 +2827,10 @@ async function guardarMercanciaAjena() {
   const desc = document.getElementById('ma-desc').value.trim();
   if (!desc) { toast('La descripción es requerida', 'error'); return; }
 
+  const btn = document.querySelector('#modal-mercancia-ajena .btn-danger');
+  if (btn?.disabled) return;
+  if (btn) btn.disabled = true;
+
   try {
     if (maFotoMode === 'qr') {
       if (!maSesionQR?.url_foto) { toast('Espera a que el teléfono envíe la foto antes de guardar', 'error'); return; }
@@ -2781,6 +2857,7 @@ async function guardarMercanciaAjena() {
     renderInspeccion();
   } catch(e) {
     toast(e.error || 'Error al guardar', 'error');
+    if (btn) btn.disabled = false;
   }
 }
 
@@ -2972,6 +3049,7 @@ function initChat(trackingId) {
   chatUltimosIds = new Set();
   loadComentarios(trackingId, true);
   chatPollingInterval = setInterval(() => loadComentarios(trackingId, false), 10000);
+  loadHistorialCorreos();
   const liveEl = document.getElementById('chat-live-indicator');
   if (liveEl) liveEl.style.display = 'flex';
   setTimeout(updateChatResolvedUI, 0);
@@ -2995,6 +3073,7 @@ function initChat(trackingId) {
 async function loadComentarios(trackingId, inicial) {
   try {
     const comentarios = await API.get(`/trackings/${trackingId}/comentarios`);
+    window._chatMensajes = comentarios;
     const nuevos = inicial
       ? comentarios
       : comentarios.filter(c => !chatUltimosIds.has(c.id));
@@ -3097,6 +3176,164 @@ async function sendComentario() {
 // INIT
 // ========================
 init();
+
+// ========================
+// ENVIAR POR CORREO
+// ========================
+let emailChips = [];
+
+function handleChipKey(e) {
+  if (e.key === 'Enter' || e.key === ',') {
+    e.preventDefault();
+    addEmailChipFromInput();
+  }
+  if (e.key === 'Backspace' && e.target.value === '' && emailChips.length > 0) {
+    removeEmailChip(emailChips.length - 1);
+  }
+}
+
+function addEmailChipFromInput() {
+  const input = document.getElementById('email-chip-input');
+  const email = (input?.value || '').trim().replace(/,$/, '');
+  if (!email) return;
+  const errEl = document.getElementById('email-chips-error');
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRe.test(email)) {
+    errEl.textContent = `"${escHf(email)}" no es un email válido`;
+    errEl.style.display = 'block'; return;
+  }
+  if (emailChips.includes(email)) {
+    errEl.textContent = `"${escHf(email)}" ya fue agregado`;
+    errEl.style.display = 'block'; return;
+  }
+  if (emailChips.length >= 10) {
+    errEl.textContent = 'Máximo 10 destinatarios';
+    errEl.style.display = 'block'; return;
+  }
+  errEl.style.display = 'none';
+  emailChips.push(email);
+  input.value = '';
+  renderEmailChips();
+}
+
+function removeEmailChip(idx) {
+  emailChips.splice(idx, 1);
+  renderEmailChips();
+}
+
+function renderEmailChips() {
+  const el = document.getElementById('email-chips');
+  if (!el) return;
+  el.innerHTML = emailChips.map((email, i) => `
+    <span style="display:inline-flex;align-items:center;gap:4px;background:rgba(0,230,118,.1);color:var(--accent-green);border:1px solid rgba(0,230,118,.25);border-radius:4px;padding:3px 8px;font-size:12px;font-family:'IBM Plex Mono',monospace">
+      ${escHf(email)}
+      <button onclick="removeEmailChip(${i})" style="background:none;border:none;color:inherit;cursor:pointer;padding:0;line-height:1;font-size:15px;opacity:.7" title="Eliminar">×</button>
+    </span>`).join('');
+}
+
+function escHf(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function updateCorreoPreview() {
+  const sel = document.getElementById('correo-comentarios')?.value;
+  const total = (window._chatMensajes || []).length;
+  const n = sel === 'todos' ? total : Math.min(parseInt(sel) || 10, total);
+  const el = document.getElementById('correo-comentarios-preview');
+  if (el) el.textContent = `Se incluirán ${n} comentario${n !== 1 ? 's' : ''} de ${total} totales`;
+}
+
+function abrirEnviarCorreo() {
+  emailChips = [];
+  renderEmailChips();
+  const chipInput = document.getElementById('email-chip-input');
+  if (chipInput) chipInput.value = '';
+  const errEl = document.getElementById('email-chips-error');
+  if (errEl) errEl.style.display = 'none';
+  const asuntoEl = document.getElementById('correo-asunto');
+  if (asuntoEl) asuntoEl.value = `Seguimiento: Tracking ${state.tracking?.tracking_number || ''} — ${state.tracking?.cliente_nombre || ''}`;
+  const msgEl = document.getElementById('correo-mensaje');
+  if (msgEl) msgEl.value = '';
+  const cntEl = document.getElementById('correo-mensaje-count');
+  if (cntEl) cntEl.textContent = '0';
+  const selEl = document.getElementById('correo-comentarios');
+  if (selEl) selEl.value = '10';
+  const errCorreo = document.getElementById('correo-error');
+  if (errCorreo) errCorreo.style.display = 'none';
+  const btn = document.getElementById('btn-enviar-correo');
+  if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Enviar correo'; }
+  updateCorreoPreview();
+  openModal('modal-enviar-correo');
+}
+
+async function enviarCorreo() {
+  const btn = document.getElementById('btn-enviar-correo');
+  if (btn?.disabled) return;
+  addEmailChipFromInput();
+  const errEl = document.getElementById('correo-error');
+  errEl.style.display = 'none';
+  if (emailChips.length === 0) {
+    errEl.textContent = 'Agrega al menos un destinatario';
+    errEl.style.display = 'block'; return;
+  }
+  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></span>Enviando…'; }
+  try {
+    const sel = document.getElementById('correo-comentarios').value;
+    const result = await API.post(`/trackings/${state.tracking.id}/enviar-correo`, {
+      destinatarios: emailChips,
+      asunto: (document.getElementById('correo-asunto').value || '').trim() || undefined,
+      mensaje_adicional: (document.getElementById('correo-mensaje').value || '').trim() || undefined,
+      incluir_comentarios: sel,
+    });
+    closeModal('modal-enviar-correo');
+    toast(`Correo enviado a ${result.enviados} destinatario${result.enviados !== 1 ? 's' : ''} ✓`);
+    loadHistorialCorreos();
+  } catch(e) {
+    errEl.textContent = e.error || 'Error al enviar el correo';
+    errEl.style.display = 'block';
+    if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Enviar correo'; }
+  }
+}
+
+// Historial de correos (ADMIN / SUPERVISOR only)
+let _historialVisible = false;
+let _historialData = [];
+
+async function loadHistorialCorreos() {
+  if (!['ADMIN','SUPERVISOR'].includes(_pageUser?.rol)) return;
+  if (!state.tracking?.id) return;
+  try {
+    _historialData = await API.get(`/trackings/${state.tracking.id}/correos-enviados`);
+    renderHistorialCorreos();
+  } catch(e) {}
+}
+
+function toggleHistorialCorreos() {
+  _historialVisible = !_historialVisible;
+  renderHistorialCorreos();
+}
+
+function renderHistorialCorreos() {
+  const link = document.getElementById('historial-correos-link');
+  const sec  = document.getElementById('historial-correos-section');
+  if (!link || !sec) return;
+  const n = _historialData.length;
+  link.textContent = `${_historialVisible ? '▴' : '▾'} Ver historial de correos enviados (${n})`;
+  if (!_historialVisible) { sec.style.display = 'none'; return; }
+  sec.style.display = 'block';
+  if (n === 0) { sec.innerHTML = '<div style="color:var(--text-muted);font-size:12px;padding:6px 0">Sin correos enviados aún.</div>'; return; }
+  sec.innerHTML = _historialData.map(c => {
+    const dests = c.destinatarios || [];
+    const show  = dests.slice(0,2).join(', ') + (dests.length > 2 ? ` +${dests.length - 2} más` : '');
+    return `<div style="padding:7px 0;border-bottom:1px solid var(--border);font-size:12px">
+      <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+        <span style="color:var(--text-secondary);font-weight:600">${escHf(c.nombre_usuario)}</span>
+        <span style="color:var(--text-muted);font-family:'IBM Plex Mono',monospace;font-size:11px">${escHf(c.created_at)}</span>
+      </div>
+      <div style="color:var(--text-muted)">→ ${escHf(show)}</div>
+    </div>`;
+  }).join('');
+}
 </script>
 </body>
 </html>

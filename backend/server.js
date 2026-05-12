@@ -6,6 +6,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const initSqlJs = require('sql.js');
 const bcrypt = require('bcrypt');
+let nodemailer; try { nodemailer = require('nodemailer'); } catch(e) { nodemailer = null; }
 
 const app = express();
 const PORT = 3000;
@@ -289,6 +290,32 @@ async function initDB() {
     )
   `);
   db.run("DELETE FROM sesiones WHERE expires_at < datetime('now','localtime')");
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS config_smtp (
+      id INTEGER PRIMARY KEY DEFAULT 1,
+      host TEXT,
+      port INTEGER DEFAULT 587,
+      user TEXT,
+      pass TEXT,
+      from_name TEXT DEFAULT 'Sistema Logístico',
+      updated_at TEXT
+    )
+  `);
+
+  db.run(`
+    CREATE TABLE IF NOT EXISTS correos_enviados (
+      id TEXT PRIMARY KEY,
+      tracking_id TEXT NOT NULL,
+      usuario_id TEXT NOT NULL,
+      nombre_usuario TEXT NOT NULL,
+      destinatarios TEXT NOT NULL,
+      asunto TEXT NOT NULL,
+      mensaje_adicional TEXT,
+      total_comentarios_incluidos INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now', 'localtime'))
+    )
+  `);
   db.run(`
     CREATE TABLE IF NOT EXISTS tracking_comentarios (
       id TEXT PRIMARY KEY,
@@ -415,6 +442,133 @@ function generarNombreCaja(clienteNombre, tipo, consecutivo) {
   return `${iniciales}-${abr}-${String(consecutivo).padStart(3, '0')}`;
 }
 
+// ===================== EMAIL / SMTP =====================
+
+function escH(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getSmtpConfig() {
+  let row;
+  try { row = dbGet('SELECT * FROM config_smtp WHERE id=1'); } catch(e) {}
+  const host     = row?.host      || process.env.SMTP_HOST      || 'smtp.gmail.com';
+  const port     = row?.port      || parseInt(process.env.SMTP_PORT) || 587;
+  const user     = row?.user      || process.env.SMTP_USER      || null;
+  const pass     = row?.pass      || process.env.SMTP_PASS      || null;
+  const fromName = row?.from_name || process.env.SMTP_FROM_NAME || 'Sistema Logístico';
+  return { host, port, user, pass, fromName, configured: !!(user && pass) };
+}
+
+function createTransporter() {
+  if (!nodemailer) return null;
+  const cfg = getSmtpConfig();
+  if (!cfg.configured) return null;
+  return nodemailer.createTransport({
+    host: cfg.host,
+    port: cfg.port,
+    secure: cfg.port === 465,
+    auth: { user: cfg.user, pass: cfg.pass },
+  });
+}
+
+function buildEmailHtml({ tracking, errores, comentarios, remitente, mensaje_adicional, asunto }) {
+  const ROL_LABELS = { ADMIN:'Admin', SUPERVISOR:'Supervisor', OPERADOR:'Operador', CLIENTE:'Cliente', LOGISTICA:'Logística' };
+  const isClosed   = tracking.estatus === 'cerrado';
+  const statusColor = isClosed ? '#16a34a' : '#d97706';
+  const statusLabel = isClosed ? '✓ Cerrado' : '⟳ Abierto';
+  const gradoLabels = { 1:'Grado 1 — Bajo', 2:'Grado 2 — Medio', 3:'Grado 3 — Alto' };
+  const gradoLabel  = gradoLabels[tracking.grado_confianza] || `Grado ${tracking.grado_confianza}`;
+  const totalErrores = errores.reduce((s, e) => s + (e.total || 0), 0);
+
+  const erroresRows = errores.length > 0
+    ? errores.map(e => `<tr><td style="padding:7px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#374151">${escH(e.tipo_error)}</td><td style="padding:7px 14px;border-bottom:1px solid #e2e8f0;text-align:right;font-weight:700;font-size:13px;color:#dc2626">${e.total}</td></tr>`).join('')
+    : '<tr><td colspan="2" style="padding:10px 14px;color:#9ca3af;font-style:italic;font-size:13px">Sin errores registrados</td></tr>';
+
+  const comentariosHtml = comentarios.length > 0
+    ? comentarios.map((c, i) => `
+        <div style="padding:12px 0;${i > 0 ? 'border-top:1px solid #f0f0f0;' : ''}">
+          <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:6px">
+            <tr>
+              <td style="font-size:13px;font-weight:700;color:#1e293b">${escH(c.nombre_usuario)} <span style="font-weight:400;color:#94a3b8;font-size:12px">(${ROL_LABELS[c.rol_usuario] || escH(c.rol_usuario)})</span></td>
+              <td style="text-align:right;font-size:11px;color:#94a3b8;white-space:nowrap;font-family:monospace">${escH(c.created_at)}</td>
+            </tr>
+          </table>
+          <div style="font-size:14px;color:#475569;line-height:1.6;white-space:pre-wrap">${escH(c.mensaje)}</div>
+        </div>`).join('')
+    : '<p style="color:#94a3b8;font-style:italic;font-size:13px">No hay comentarios en este tracking.</p>';
+
+  const mensajeSection = mensaje_adicional
+    ? `<div style="margin-bottom:24px;padding:14px 16px;background:#fffbeb;border-left:4px solid #f59e0b;border-radius:0 6px 6px 0">
+         <div style="font-size:11px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:.06em;margin-bottom:8px">Mensaje de ${escH(remitente.nombre)}</div>
+         <div style="font-size:14px;color:#78350f;line-height:1.6">${mensaje_adicional}</div>
+       </div>` : '';
+
+  const now = localNow();
+
+  return `<!DOCTYPE html>
+<html lang="es">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head>
+<body style="margin:0;padding:0;background:#f1f5f9;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f1f5f9;padding:32px 16px">
+<tr><td>
+  <table width="600" cellpadding="0" cellspacing="0" align="center" style="max-width:600px;margin:0 auto">
+
+    <!-- HEADER -->
+    <tr><td style="background:#0f172a;padding:28px 32px;border-radius:12px 12px 0 0">
+      <div style="font-size:10px;letter-spacing:.2em;color:#475569;text-transform:uppercase;margin-bottom:8px">Sistema Logístico de Inspección</div>
+      <div style="font-size:22px;font-weight:700;color:#f8fafc;line-height:1.25">${escH(asunto)}</div>
+      <div style="height:3px;background:${statusColor};margin-top:18px;border-radius:2px;width:80px"></div>
+    </td></tr>
+
+    <!-- TRACKING INFO -->
+    <tr><td style="background:#ffffff;padding:28px 32px;border:1px solid #e2e8f0;border-top:none">
+      <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:16px">Información del Tracking</div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+        <tr style="background:#f8fafc"><td style="padding:10px 14px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0;width:40%">Tracking #</td><td style="padding:10px 14px;font-size:13px;font-weight:700;color:#0f172a;font-family:monospace;border-bottom:1px solid #e2e8f0">${escH(tracking.tracking_number)}</td></tr>
+        <tr><td style="padding:10px 14px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0">Cliente</td><td style="padding:10px 14px;font-size:13px;font-weight:600;color:#0f172a;border-bottom:1px solid #e2e8f0">${escH(tracking.cliente_nombre)}</td></tr>
+        <tr style="background:#f8fafc"><td style="padding:10px 14px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0">Caja / Pallet</td><td style="padding:10px 14px;font-size:13px;font-family:monospace;color:#0f172a;border-bottom:1px solid #e2e8f0">${tracking.caja_id ? escH(tracking.caja_id) : '—'}</td></tr>
+        <tr><td style="padding:10px 14px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0">Grado de confianza</td><td style="padding:10px 14px;font-size:13px;color:#0f172a;border-bottom:1px solid #e2e8f0">${gradoLabel}</td></tr>
+        <tr style="background:#f8fafc"><td style="padding:10px 14px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0">Estado</td><td style="padding:10px 14px;font-size:13px;font-weight:700;color:${statusColor};border-bottom:1px solid #e2e8f0">${statusLabel}</td></tr>
+        <tr><td style="padding:10px 14px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0">Piezas declaradas</td><td style="padding:10px 14px;font-size:13px;color:#0f172a;border-bottom:1px solid #e2e8f0">${tracking.cantidad_declarada || 0}</td></tr>
+        <tr style="background:#f8fafc"><td style="padding:10px 14px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0">Piezas inspeccionadas</td><td style="padding:10px 14px;font-size:13px;color:#0f172a;border-bottom:1px solid #e2e8f0">${tracking.cantidad_final || 0}</td></tr>
+        <tr><td style="padding:10px 14px;font-size:12px;color:#64748b;border-bottom:1px solid #e2e8f0">Total errores</td><td style="padding:10px 14px;font-size:13px;font-weight:700;color:${totalErrores > 0 ? '#dc2626' : '#16a34a'};border-bottom:1px solid #e2e8f0">${totalErrores}</td></tr>
+        <tr style="background:#f8fafc"><td style="padding:10px 14px;font-size:12px;color:#64748b;${tracking.closed_at ? 'border-bottom:1px solid #e2e8f0;' : ''}">Fecha creación</td><td style="padding:10px 14px;font-size:12px;font-family:monospace;color:#64748b;${tracking.closed_at ? 'border-bottom:1px solid #e2e8f0;' : ''}">${escH(tracking.created_at || '—')}</td></tr>
+        ${tracking.closed_at ? `<tr><td style="padding:10px 14px;font-size:12px;color:#64748b">Fecha cierre</td><td style="padding:10px 14px;font-size:12px;font-family:monospace;color:#64748b">${escH(tracking.closed_at)}</td></tr>` : ''}
+      </table>
+
+      ${errores.length > 0 ? `
+      <div style="margin-top:24px">
+        <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:12px">Errores Registrados</div>
+        <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden">
+          <tr style="background:#fef2f2"><th style="padding:8px 14px;text-align:left;font-size:11px;color:#dc2626;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0">Tipo de Error</th><th style="padding:8px 14px;text-align:right;font-size:11px;color:#dc2626;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-bottom:1px solid #e2e8f0">Total</th></tr>
+          ${erroresRows}
+        </table>
+      </div>` : ''}
+    </td></tr>
+
+    <!-- CONVERSACIÓN -->
+    <tr><td style="background:#f8fafc;padding:28px 32px;border:1px solid #e2e8f0;border-top:none">
+      <div style="font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.1em;margin-bottom:20px">Conversación reciente (${comentarios.length} comentario${comentarios.length !== 1 ? 's' : ''})</div>
+      ${mensajeSection}
+      ${comentariosHtml}
+    </td></tr>
+
+    <!-- FOOTER -->
+    <tr><td style="background:#0f172a;padding:20px 32px;border-radius:0 0 12px 12px">
+      <div style="font-size:12px;color:#94a3b8;line-height:1.7">
+        Este correo fue enviado por <strong style="color:#e2e8f0">${escH(remitente.nombre)}</strong> (${ROL_LABELS[remitente.rol] || escH(remitente.rol)}) desde el Sistema Logístico.<br>
+        Fecha de envío: <span style="font-family:monospace">${now}</span>
+      </div>
+      <div style="margin-top:10px;font-size:11px;color:#475569">Este es un correo informativo generado automáticamente.</div>
+    </td></tr>
+
+  </table>
+</td></tr>
+</table>
+</body></html>`;
+}
+
 // ===================== AUTH MIDDLEWARE =====================
 
 const AUTH_BYPASS = [
@@ -450,6 +604,8 @@ function authMiddleware(req, res, next) {
     // Allow posting comments and toggling chat resolved state
     if (req.method === 'POST' && /^\/trackings\/[^/]+\/comentarios$/.test(req.path)) return next();
     if (req.method === 'POST' && /^\/trackings\/[^/]+\/chat-resuelto$/.test(req.path)) return next();
+    // Allow sending email (CLIENTE yes, LOGISTICA no)
+    if (req.method === 'POST' && /^\/trackings\/[^/]+\/enviar-correo$/.test(req.path) && sesion.rol === 'CLIENTE') return next();
     return res.status(403).json({ error: 'Sin permiso para esta operación' });
   }
 
@@ -693,35 +849,45 @@ app.post('/api/skus/importar', (req, res) => {
     return res.status(400).json({ error: 'cliente_id y skus son requeridos' });
 
   let insertados = 0;
+  let actualizados = 0;
   let omitidos = 0;
   skus.forEach(s => {
     const sku_code = (s.sku_code || '').trim().toUpperCase();
     if (!sku_code) { omitidos++; return; }
-    const pais = (s.pais_origen || '').trim();
-    const upc = (s.upc_code || '').trim() || null;
-    // Unique key: sku_code + cliente_id + pais_origen (same SKU can have multiple countries)
+    const pais       = (s.pais_origen || '').trim();
+    const upc        = (s.upc_code   || '').trim() || null;
+    const descripcion = (s.descripcion || '').trim();
+    const insumos    = (s.insumos    || '').trim();
+
+    // If SKU + cliente + país already exists → overwrite descripcion, insumos, upc
     const existeClave = dbGet(
       'SELECT id FROM skus WHERE sku_code=? AND cliente_id=? AND COALESCE(pais_origen,"")=?',
       [sku_code, cliente_id, pais]
     );
-    if (existeClave) { omitidos++; return; }
-    // UPC must be unique across all SKUs (if provided)
+    if (existeClave) {
+      // UPC conflict: if new UPC is already used by a DIFFERENT record, keep old UPC
+      let nuevoUpc = upc;
+      if (upc) {
+        const upcEnOtro = dbGet('SELECT id FROM skus WHERE upc_code=? AND cliente_id=? AND id!=?', [upc, cliente_id, existeClave.id]);
+        if (upcEnOtro) nuevoUpc = null; // don't overwrite UPC to avoid conflict
+      }
+      dbRun('UPDATE skus SET descripcion=?,insumos=?,upc_code=? WHERE id=?',
+        [descripcion, insumos, nuevoUpc !== null ? nuevoUpc : upc, existeClave.id]);
+      actualizados++;
+      return;
+    }
+
+    // New record: check UPC uniqueness within the same client before inserting
     if (upc) {
-      const existeUPC = dbGet('SELECT id FROM skus WHERE upc_code=?', [upc]);
+      const existeUPC = dbGet('SELECT id FROM skus WHERE upc_code=? AND cliente_id=?', [upc, cliente_id]);
       if (existeUPC) { omitidos++; return; }
     }
-    const id = uuidv4();
     dbRun('INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code,created_at) VALUES (?,?,?,?,?,?,?,?)', [
-      id, cliente_id, sku_code,
-      (s.descripcion || '').trim(),
-      pais,
-      (s.insumos || '').trim(),
-      upc,
-      localNow()
+      uuidv4(), cliente_id, sku_code, descripcion, pais, insumos, upc, localNow()
     ]);
     insertados++;
   });
-  res.json({ insertados, omitidos });
+  res.json({ insertados, actualizados, omitidos });
 });
 
 app.put('/api/skus/:id', (req, res) => {
@@ -1802,6 +1968,137 @@ app.put('/api/skus-nuevos/:id', (req, res) => {
 app.delete('/api/skus-nuevos/:id', (req, res) => {
   dbRun('DELETE FROM skus_nuevos WHERE id=?', [req.params.id]);
   res.json({ mensaje: 'Eliminado' });
+});
+
+// ===================== CORREO / SMTP =====================
+
+app.get('/api/config/smtp', requireRol('ADMIN'), (req, res) => {
+  const cfg = getSmtpConfig();
+  res.json({ host: cfg.host, port: cfg.port, user: cfg.user, from_name: cfg.fromName, configured: cfg.configured });
+});
+
+app.post('/api/config/smtp', requireRol('ADMIN'), (req, res) => {
+  const { host, port, user, pass, from_name } = req.body;
+  const existing = dbGet('SELECT id FROM config_smtp WHERE id=1');
+  if (existing) {
+    const updates = [], vals = [];
+    if (host      !== undefined) { updates.push('host=?');      vals.push(host || null); }
+    if (port      !== undefined) { updates.push('port=?');      vals.push(parseInt(port) || 587); }
+    if (user      !== undefined) { updates.push('user=?');      vals.push(user || null); }
+    if (pass      !== undefined && pass !== '') { updates.push('pass=?'); vals.push(pass); }
+    if (from_name !== undefined) { updates.push('from_name=?'); vals.push(from_name || 'Sistema Logístico'); }
+    updates.push('updated_at=?'); vals.push(localNow());
+    vals.push(1);
+    dbRun(`UPDATE config_smtp SET ${updates.join(',')} WHERE id=?`, vals);
+  } else {
+    dbRun('INSERT INTO config_smtp (id,host,port,user,pass,from_name,updated_at) VALUES (1,?,?,?,?,?,?)',
+      [host || null, parseInt(port) || 587, user || null, pass || null, from_name || 'Sistema Logístico', localNow()]);
+  }
+  saveDB();
+  res.json({ ok: true });
+});
+
+app.post('/api/config/smtp/test', requireRol('ADMIN'), async (req, res) => {
+  const cfg = getSmtpConfig();
+  if (!cfg.configured) return res.status(400).json({ error: 'SMTP no configurado. Guarda la configuración primero.' });
+  const transporter = createTransporter();
+  if (!transporter) return res.status(500).json({ error: 'nodemailer no disponible' });
+  try {
+    await transporter.sendMail({
+      from: `"${cfg.fromName}" <${cfg.user}>`,
+      to: req.usuario.email,
+      subject: 'Prueba de correo — Sistema Logístico',
+      html: `<div style="font-family:sans-serif;padding:24px"><h2>✓ Configuración SMTP correcta</h2><p>Este es un correo de prueba del Sistema Logístico enviado a las <strong>${localNow()}</strong>.</p></div>`,
+    });
+    res.json({ ok: true, mensaje: `Correo de prueba enviado a ${req.usuario.email}` });
+  } catch(e) {
+    res.status(500).json({ error: `Error al enviar: ${e.message}` });
+  }
+});
+
+app.post('/api/trackings/:id/enviar-correo', async (req, res) => {
+  const { destinatarios, asunto, mensaje_adicional, incluir_comentarios } = req.body;
+
+  if (!Array.isArray(destinatarios) || destinatarios.length === 0)
+    return res.status(400).json({ error: 'Se requiere al menos un destinatario' });
+  if (destinatarios.length > 10)
+    return res.status(400).json({ error: 'Máximo 10 destinatarios por envío' });
+
+  const emailRe = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const invalid = destinatarios.filter(e => !emailRe.test(String(e).trim()));
+  if (invalid.length) return res.status(400).json({ error: `Emails inválidos: ${invalid.join(', ')}` });
+
+  // Rate limit: max 10 per tracking per hour
+  const recent = dbGet(
+    `SELECT COUNT(*) as cnt FROM correos_enviados WHERE tracking_id=? AND created_at > datetime('now','-1 hour','localtime')`,
+    [req.params.id]
+  );
+  if ((recent?.cnt || 0) >= 10)
+    return res.status(429).json({ error: 'Límite de 10 correos por hora para este tracking alcanzado' });
+
+  const cfg = getSmtpConfig();
+  if (!cfg.configured)
+    return res.status(503).json({ error: 'Configura el servidor de correo en el panel de administración' });
+  const transporter = createTransporter();
+  if (!transporter) return res.status(500).json({ error: 'Servicio de correo no disponible' });
+
+  const tracking = dbGet(`
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza
+    FROM trackings t JOIN clientes c ON c.id=t.cliente_id WHERE t.id=?
+  `, [req.params.id]);
+  if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+
+  const errores = dbAll(
+    `SELECT tipo_error, COUNT(*) as total FROM errores WHERE tracking_id=? GROUP BY tipo_error`,
+    [req.params.id]
+  );
+
+  const nLim = incluir_comentarios === 'todos' ? 9999 : (parseInt(incluir_comentarios) || 10);
+  const comentarios = dbAll(
+    `SELECT * FROM tracking_comentarios WHERE tracking_id=? ORDER BY created_at DESC LIMIT ?`,
+    [req.params.id, nLim]
+  ).reverse();
+
+  const asuntoFinal = (asunto || '').trim()
+    || `Seguimiento: Tracking ${tracking.tracking_number} — ${tracking.cliente_nombre}`;
+
+  // Sanitize mensaje_adicional for HTML
+  const msgHtml = mensaje_adicional
+    ? escH(mensaje_adicional.trim()).replace(/\n/g, '<br>')
+    : null;
+
+  const html = buildEmailHtml({
+    tracking, errores, comentarios,
+    remitente: req.usuario,
+    mensaje_adicional: msgHtml,
+    asunto: asuntoFinal,
+  });
+
+  try {
+    await transporter.sendMail({
+      from: `"${cfg.fromName}" <${cfg.user}>`,
+      to: destinatarios.map(e => String(e).trim()).join(', '),
+      subject: asuntoFinal,
+      html,
+    });
+  } catch(e) {
+    return res.status(500).json({ error: `Error al enviar correo: ${e.message}` });
+  }
+
+  dbRun(
+    `INSERT INTO correos_enviados (id,tracking_id,usuario_id,nombre_usuario,destinatarios,asunto,mensaje_adicional,total_comentarios_incluidos,created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
+    [uuidv4(), req.params.id, req.usuario.id, req.usuario.nombre, JSON.stringify(destinatarios), asuntoFinal, mensaje_adicional || null, comentarios.length, localNow()]
+  );
+  saveDB();
+  res.json({ ok: true, enviados: destinatarios.length });
+});
+
+app.get('/api/trackings/:id/correos-enviados', requireRol('ADMIN', 'SUPERVISOR'), (req, res) => {
+  const rows = dbAll(
+    `SELECT id, nombre_usuario, destinatarios, asunto, total_comentarios_incluidos, created_at FROM correos_enviados WHERE tracking_id=? ORDER BY created_at DESC`,
+    [req.params.id]
+  );
+  res.json(rows.map(r => ({ ...r, destinatarios: JSON.parse(r.destinatarios || '[]') })));
 });
 
 // Iniciar servidor

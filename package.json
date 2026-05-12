@@ -7,5 +7,7 @@
     "start": "node backend/server.js",
     "dev": "node backend/server.js"
   },
-  "dependencies": {}
+  "dependencies": {
+    "nodemailer": "^8.0.7"
+  }
 }

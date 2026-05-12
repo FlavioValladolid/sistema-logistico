@@ -628,6 +628,111 @@ async function loadRanking() {
     body.innerHTML = `<div class="alert alert-error" style="margin:8px">Error cargando ranking</div>`;
   }
 }
+
+// ── SMTP CONFIG (ADMIN only) ──────────────────────────────────────────────────
+if (_pageUser?.rol === 'ADMIN') {
+  const smtpCard = document.createElement('div');
+  smtpCard.className = 'card';
+  smtpCard.style.marginTop = '24px';
+  smtpCard.innerHTML = `
+    <div class="card-header">
+      <span class="card-title" style="display:flex;align-items:center;gap:8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+        Configuración de Correo SMTP
+      </span>
+      <span id="smtp-estado-badge" style="font-size:11px;font-family:'IBM Plex Mono',monospace;padding:3px 8px;border-radius:4px;background:rgba(148,163,184,.15);color:var(--text-muted)">Cargando…</span>
+    </div>
+    <div style="padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:14px">
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">SMTP Host</label>
+        <input id="smtp-host" type="text" class="form-control" placeholder="smtp.gmail.com">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Puerto</label>
+        <input id="smtp-port" type="number" class="form-control" placeholder="587" value="587">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Email remitente</label>
+        <input id="smtp-user" type="email" class="form-control" placeholder="tu@gmail.com">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label class="form-label">Contraseña / App Password</label>
+        <div style="position:relative">
+          <input id="smtp-pass" type="password" class="form-control" placeholder="Dejar vacío para no cambiar" style="padding-right:40px">
+          <button onclick="toggleSmtpPass()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px" title="Mostrar/ocultar">👁</button>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom:0;grid-column:1/-1">
+        <label class="form-label">Nombre del remitente</label>
+        <input id="smtp-from-name" type="text" class="form-control" placeholder="Sistema Logístico">
+      </div>
+    </div>
+    <div id="smtp-msg" style="display:none;margin:0 24px 12px;padding:10px 14px;border-radius:6px;font-size:13px"></div>
+    <div style="padding:0 24px 20px;display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-primary btn-sm" onclick="guardarSmtp()">Guardar configuración</button>
+      <button class="btn btn-secondary btn-sm" onclick="probarSmtp()">Enviar correo de prueba</button>
+    </div>`;
+
+  document.getElementById('page-content').appendChild(smtpCard);
+  loadSmtpConfig();
+}
+
+async function loadSmtpConfig() {
+  try {
+    const cfg = await API.get('/config/smtp');
+    if (document.getElementById('smtp-host')) document.getElementById('smtp-host').value = cfg.host || '';
+    if (document.getElementById('smtp-port')) document.getElementById('smtp-port').value = cfg.port || 587;
+    if (document.getElementById('smtp-user')) document.getElementById('smtp-user').value = cfg.user || '';
+    if (document.getElementById('smtp-from-name')) document.getElementById('smtp-from-name').value = cfg.from_name || '';
+    const badge = document.getElementById('smtp-estado-badge');
+    if (badge) {
+      badge.textContent = cfg.configured ? '● Configurado' : '○ No configurado';
+      badge.style.background = cfg.configured ? 'rgba(39,174,96,.15)' : 'rgba(220,38,38,.1)';
+      badge.style.color = cfg.configured ? 'var(--accent-green)' : 'var(--accent-red)';
+    }
+  } catch(e) {}
+}
+
+function toggleSmtpPass() {
+  const input = document.getElementById('smtp-pass');
+  if (input) input.type = input.type === 'password' ? 'text' : 'password';
+}
+
+function showSmtpMsg(msg, type) {
+  const el = document.getElementById('smtp-msg');
+  if (!el) return;
+  el.style.display = 'block';
+  el.style.background = type === 'error' ? 'rgba(220,38,38,.08)' : 'rgba(39,174,96,.08)';
+  el.style.color = type === 'error' ? 'var(--accent-red)' : 'var(--accent-green)';
+  el.style.border = `1px solid ${type === 'error' ? 'rgba(220,38,38,.25)' : 'rgba(39,174,96,.25)'}`;
+  el.textContent = msg;
+}
+
+async function guardarSmtp() {
+  try {
+    await API.post('/config/smtp', {
+      host:      document.getElementById('smtp-host').value.trim(),
+      port:      parseInt(document.getElementById('smtp-port').value) || 587,
+      user:      document.getElementById('smtp-user').value.trim(),
+      pass:      document.getElementById('smtp-pass').value,
+      from_name: document.getElementById('smtp-from-name').value.trim(),
+    });
+    showSmtpMsg('Configuración guardada correctamente', 'ok');
+    loadSmtpConfig();
+  } catch(e) {
+    showSmtpMsg(e.error || 'Error al guardar', 'error');
+  }
+}
+
+async function probarSmtp() {
+  showSmtpMsg('Enviando correo de prueba…', 'ok');
+  try {
+    const r = await API.post('/config/smtp/test', {});
+    showSmtpMsg(r.mensaje || 'Correo enviado', 'ok');
+  } catch(e) {
+    showSmtpMsg(e.error || 'Error al enviar', 'error');
+  }
+}
 </script>
 </body>
 </html>
