@@ -112,59 +112,59 @@ function renderTabla(data) {
           </tr>
         </thead>
         <tbody>
-          ${data.map(t => {
-            const pct = t.cantidad_declarada > 0 ? Math.round(t.cantidad_final / t.cantidad_declarada * 100) : 0;
-            const discrepancia = t.cantidad_final !== t.cantidad_declarada && t.cantidad_declarada > 0;
-            const numComent = t.total_comentarios || 0;
+          ${data.map(tr => {
+            const pct = tr.cantidad_declarada > 0 ? Math.round(tr.cantidad_final / tr.cantidad_declarada * 100) : 0;
+            const discrepancia = tr.cantidad_final !== tr.cantidad_declarada && tr.cantidad_declarada > 0;
+            const numComent = tr.total_comentarios || 0;
             return `
-              <tr ondblclick="window.location='operacion.html?id=${t.id}'" style="cursor:pointer" title="Doble clic para ver detalle">
-                <td class="td-mono" style="color:var(--accent-cyan);font-weight:700">${escHTML(t.tracking_number)}</td>
-                <td>${escHTML(t.cliente_nombre) || '—'}</td>
+              <tr ondblclick="window.location='operacion.html?id=${tr.id}'" style="cursor:pointer" title="Doble clic para ver detalle">
+                <td class="td-mono" style="color:var(--accent-cyan);font-weight:700">${escHTML(tr.tracking_number)}</td>
+                <td>${escHTML(tr.cliente_nombre) || '—'}</td>
                 <td class="td-mono">
-                  <div>${escHTML(t.caja_id)}</div>
-                  <div style="font-size:10px;color:var(--text-muted)">${t.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja'}</div>
+                  <div>${escHTML(tr.caja_id)}</div>
+                  <div style="font-size:10px;color:var(--text-muted)">${tr.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja'}</div>
                 </td>
-                <td>${escHTML(t.operador) || '—'}</td>
-                <td>${gradoBadge(t.grado_confianza)}</td>
-                <td class="td-mono">${formatNum(t.cantidad_declarada)}</td>
+                <td>${escHTML(tr.operador) || '—'}</td>
+                <td>${gradoBadge(tr.grado_confianza)}</td>
+                <td class="td-mono">${formatNum(tr.cantidad_declarada)}</td>
                 <td>
-                  <div class="td-mono">${formatNum(t.cantidad_final)}</div>
+                  <div class="td-mono">${formatNum(tr.cantidad_final)}</div>
                   <div class="progress-bar" style="width:80px;margin-top:4px">
                     <div class="progress-fill" style="width:${Math.min(pct,100)}%;background:${pct>=100?'var(--accent-green)':'var(--accent-amber)'}"></div>
                   </div>
                   ${discrepancia ? `<span class="badge badge-amber" style="margin-top:2px">${t('trackings.discrepancy')}</span>` : ''}
                 </td>
                 <td>
-                  <span class="badge ${t.estatus === 'cerrado' ? 'badge-green' : t.estatus === 'refunded' ? 'badge-blue' : 'badge-amber'}">
-                    ${t.estatus === 'cerrado' ? t('status.closed') : t.estatus === 'refunded' ? t('status.refunded') : t('status.open')}
+                  <span class="badge ${tr.estatus === 'cerrado' ? 'badge-green' : tr.estatus === 'refunded' ? 'badge-blue' : 'badge-amber'}">
+                    ${tr.estatus === 'cerrado' ? t('status.closed') : tr.estatus === 'refunded' ? t('status.refunded') : t('status.open')}
                   </span>
                 </td>
                 <td class="td-mono" style="font-size:12px">
-                  ${t.nota_credito
-                    ? `<span style="color:var(--accent-cyan)">${escHTML(t.nota_credito)}</span>`
+                  ${tr.nota_credito
+                    ? `<span style="color:var(--accent-cyan)">${escHTML(tr.nota_credito)}</span>`
                     : '<span style="color:var(--text-muted)">—</span>'}
                 </td>
                 <td style="text-align:center">
                   ${numComent > 0
-                    ? t.chat_resuelto
-                      ? `<span onclick="event.stopPropagation();window.location='operacion.html?id=${t.id}&scroll=chat'"
+                    ? tr.chat_resuelto
+                      ? `<span onclick="event.stopPropagation();window.location='operacion.html?id=${tr.id}&scroll=chat'"
                           style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:rgba(39,174,96,.15);color:var(--accent-green);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;cursor:pointer;border:1px solid rgba(39,174,96,.3);transition:all .15s"
                           onmouseover="this.style.background='rgba(39,174,96,.28)'" onmouseout="this.style.background='rgba(39,174,96,.15)'"
                           title="Chat resuelto — ver comentarios">✓ ${numComent}</span>`
-                      : `<span onclick="event.stopPropagation();window.location='operacion.html?id=${t.id}&scroll=chat'"
+                      : `<span onclick="event.stopPropagation();window.location='operacion.html?id=${tr.id}&scroll=chat'"
                           style="display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 6px;border-radius:11px;background:rgba(0,188,212,.2);color:var(--accent-cyan);font-size:11px;font-weight:700;font-family:'IBM Plex Mono',monospace;cursor:pointer;border:1px solid rgba(0,188,212,.3);transition:all .15s"
                           onmouseover="this.style.background='rgba(0,188,212,.35)'" onmouseout="this.style.background='rgba(0,188,212,.2)'"
                           title="Ver comentarios">💬 ${numComent}</span>`
                     : `<span style="color:var(--text-muted);font-size:12px">—</span>`}
                 </td>
-                <td class="td-mono text-muted">${formatDate(t.created_at)}</td>
+                <td class="td-mono text-muted">${formatDate(tr.created_at)}</td>
                 <td>
                   <div class="td-actions">
-                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();window.location='operacion.html?id=${t.id}'">
-                      ${_soloVisibilidad ? t('btn.view') : (t.estatus === 'abierto' ? t('btn.inspect') : t('btn.view'))}
+                    <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();window.location='operacion.html?id=${tr.id}'">
+                      ${_soloVisibilidad ? t('btn.view') : (tr.estatus === 'abierto' ? t('btn.inspect') : t('btn.view'))}
                     </button>
                     ${!_soloVisibilidad ? `
-                      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();window.location='reportes.html?tracking=${t.id}'">
+                      <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();window.location='reportes.html?tracking=${tr.id}'">
                         ${t('btn.report')}
                       </button>
                     ` : ''}
@@ -185,12 +185,12 @@ function applyFilters() {
   const clienteId = document.getElementById('filtro-cliente').value;
   const soloComentarios = document.getElementById('filtro-con-comentarios').checked;
   const soloPendienteRefund = document.getElementById('filtro-pendiente-refund').checked;
-  renderTabla(trackingsData.filter(t => {
-    const matchQ = !q || t.tracking_number.toLowerCase().includes(q) || (t.cliente_nombre||'').toLowerCase().includes(q) || (t.operador||'').toLowerCase().includes(q);
-    const matchE = !estatus || t.estatus === estatus;
-    const matchC = !clienteId || t.cliente_id === clienteId;
-    const matchComent = !soloComentarios || t.tiene_comentarios;
-    const matchPendienteRefund = !soloPendienteRefund || t.estatus === 'cerrado';
+  renderTabla(trackingsData.filter(tr => {
+    const matchQ = !q || tr.tracking_number.toLowerCase().includes(q) || (tr.cliente_nombre||'').toLowerCase().includes(q) || (tr.operador||'').toLowerCase().includes(q);
+    const matchE = !estatus || tr.estatus === estatus;
+    const matchC = !clienteId || tr.cliente_id === clienteId;
+    const matchComent = !soloComentarios || tr.tiene_comentarios;
+    const matchPendienteRefund = !soloPendienteRefund || tr.estatus === 'cerrado';
     return matchQ && matchE && matchC && matchComent && matchPendienteRefund;
   }));
 }

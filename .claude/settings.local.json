@@ -3,7 +3,10 @@
     "allow": [
       "Bash(git -C /Users/flaviovalladolid/Downloads/sistema-logistico ls-files)",
       "Bash(git:*)",
-      "Bash(awk '{print $5, $9}')"
+      "Bash(awk '{print $5, $9}')",
+      "Bash(node server.js)",
+      "Bash(pkill -f \"node server.js\")",
+      "Bash(npm uninstall *)"
     ]
   }
 }

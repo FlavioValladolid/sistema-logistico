@@ -896,23 +896,23 @@ function renderInspeccion() {
   document.getElementById('loading-state').classList.add('hidden');
   document.getElementById('fase-inicio').classList.add('hidden');
 
-  const t = state.tracking;
-  const grado = parseInt(t.grado_confianza);
-  const modCalidad = parseInt(t.modulo_calidad) === 1;
-  const isRefunded = t.estatus === 'refunded';
-  const isClosed = t.estatus === 'cerrado' || isRefunded;
+  const tk = state.tracking;
+  const grado = parseInt(tk.grado_confianza);
+  const modCalidad = parseInt(tk.modulo_calidad) === 1;
+  const isRefunded = tk.estatus === 'refunded';
+  const isClosed = tk.estatus === 'cerrado' || isRefunded;
 
   let muestreoTarget = 0;
   if (grado === 2) {
-    muestreoTarget = Math.ceil(t.cantidad_declarada * (t.porcentaje_muestreo / 100));
+    muestreoTarget = Math.ceil(tk.cantidad_declarada * (tk.porcentaje_muestreo / 100));
   } else if (grado === 3) {
-    muestreoTarget = t.cantidad_declarada;
+    muestreoTarget = tk.cantidad_declarada;
   }
 
   const totalInspeccionado = state.detalles.reduce((s, d) => s + (d.cantidad || 1), 0);
   const pctAvance = muestreoTarget > 0 ? Math.min(Math.round(totalInspeccionado / muestreoTarget * 100), 100) : 100;
   const erroresCount = state.errores.length;
-  const discrepancia = t.cantidad_final !== t.cantidad_declarada && t.cantidad_declarada > 0;
+  const discrepancia = tk.cantidad_final !== tk.cantidad_declarada && tk.cantidad_declarada > 0;
 
   const tieneDanado   = state.errores.some(e => e.tipo_error === 'Calidad' || e.tipo_error === 'Otro');
   const tieneNoMarca  = state.errores.some(e => e.tipo_error === 'Mercancía ajena');
@@ -931,8 +931,8 @@ function renderInspeccion() {
           <div>
             <h1 class="page-title">Inspección de Tracking</h1>
             <p class="page-subtitle">
-              <span class="font-mono" style="color:var(--accent-cyan)">${t.tracking_number}</span>
-              · ${t.cliente_nombre}
+              <span class="font-mono" style="color:var(--accent-cyan)">${tk.tracking_number}</span>
+              · ${tk.cliente_nombre}
             </p>
           </div>
           ${!isClosed ? `
@@ -948,7 +948,7 @@ function renderInspeccion() {
               ${isRefunded
                 ? `<span class="badge badge-blue" style="padding:8px 14px;font-size:12px">${t('op.refunded_badge')}</span>`
                 : `<span class="badge badge-green" style="padding:8px 14px;font-size:12px">${t('op.closed_badge')}</span>`}
-              <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html?tracking=${t.id}'">${t('op.btn_manifest')}</button>
+              <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html?tracking=${tk.id}'">${t('op.btn_manifest')}</button>
               ${_soloLectura ? `
                 <button class="btn btn-secondary btn-sm" onclick="window.location='trackings.html'">${t('op.btn_back')}</button>
               ` : `
@@ -966,7 +966,7 @@ function renderInspeccion() {
 
         ${discrepancia ? `
           <div class="alert alert-warning">
-            ⚠ <strong>Discrepancia de inventario:</strong> Declaradas: ${formatNum(t.cantidad_declarada)} · Contadas: ${formatNum(t.cantidad_final)}
+            ⚠ <strong>Discrepancia de inventario:</strong> Declaradas: ${formatNum(tk.cantidad_declarada)} · Contadas: ${formatNum(tk.cantidad_final)}
           </div>
         ` : ''}
 
@@ -1219,11 +1219,11 @@ function renderInspeccion() {
                 </div>
               ` : ''}
 
-              ${parseInt(grado) === 3 && parseInt(t.fotos_adicionales) > 0 ? `
+              ${parseInt(grado) === 3 && parseInt(tk.fotos_adicionales) > 0 ? `
                 <div style="margin-top:16px">
-                  <div class="section-title" style="margin-bottom:8px">📷 Fotos adicionales requeridas (${t.fotos_adicionales})</div>
-                  <div style="display:grid;grid-template-columns:repeat(${Math.min(parseInt(t.fotos_adicionales), 4)},1fr);gap:10px">
-                    ${Array.from({length: parseInt(t.fotos_adicionales)}, (_, i) => `
+                  <div class="section-title" style="margin-bottom:8px">📷 Fotos adicionales requeridas (${tk.fotos_adicionales})</div>
+                  <div style="display:grid;grid-template-columns:repeat(${Math.min(parseInt(tk.fotos_adicionales), 4)},1fr);gap:10px">
+                    ${Array.from({length: parseInt(tk.fotos_adicionales)}, (_, i) => `
                       <div class="foto-req-card" id="fa-card-${i+1}">
                         <div class="foto-req-label">Foto adicional ${i+1}</div>
 
@@ -1338,13 +1338,13 @@ function renderInspeccion() {
 
         <div class="info-row">
           <span class="info-key">Tracking #</span>
-          <span class="info-val" style="color:var(--accent-cyan)">${t.tracking_number}</span>
+          <span class="info-val" style="color:var(--accent-cyan)">${tk.tracking_number}</span>
         </div>
         <div class="info-row">
           <span class="info-key">${t('op.lbl_box')}</span>
           <span class="info-val">
-            ${t.caja_id
-              ? `<span style="font-family:'IBM Plex Mono',monospace">${t.caja_id}</span>`
+            ${tk.caja_id
+              ? `<span style="font-family:'IBM Plex Mono',monospace">${tk.caja_id}</span>`
               : `<span style="color:var(--text-muted);font-style:italic">—</span>`}
           </span>
         </div>
@@ -1354,18 +1354,18 @@ function renderInspeccion() {
         </div>
         <div class="info-row">
           <span class="info-key">${t('op.lbl_declared')}</span>
-          <span class="info-val">${formatNum(t.cantidad_declarada)}</span>
+          <span class="info-val">${formatNum(tk.cantidad_declarada)}</span>
         </div>
         <div class="info-row">
           <span class="info-key">${t('op.lbl_counted')}</span>
-          <span class="info-val" style="color:${discrepancia?'var(--accent-amber)':'var(--accent-green)'}">${formatNum(t.cantidad_final)}</span>
+          <span class="info-val" style="color:${discrepancia?'var(--accent-amber)':'var(--accent-green)'}">${formatNum(tk.cantidad_final)}</span>
         </div>
 
         ${grado > 1 ? `
           <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
             <div class="info-key" style="margin-bottom:6px">${t('op.lbl_progress')}</div>
             <div class="flex justify-between" style="margin-bottom:4px">
-              <span class="font-mono" style="font-size:11px">${formatNum(totalInspeccionado)} / ${grado===3?formatNum(t.cantidad_declarada):'~'+formatNum(muestreoTarget)}</span>
+              <span class="font-mono" style="font-size:11px">${formatNum(totalInspeccionado)} / ${grado===3?formatNum(tk.cantidad_declarada):'~'+formatNum(muestreoTarget)}</span>
               <span class="font-mono" style="font-size:11px;color:var(--accent-green)">${pctAvance}%</span>
             </div>
             <div class="progress-bar">
@@ -1390,10 +1390,10 @@ function renderInspeccion() {
           <span class="info-key">${t('op.lbl_state')}</span>
           <span class="badge ${isRefunded?'badge-blue':isClosed?'badge-green':'badge-amber'}">${isRefunded?t('status.refunded'):isClosed?t('status.closed'):t('status.open')}</span>
         </div>
-        ${isRefunded && t.nota_credito ? `
+        ${isRefunded && tk.nota_credito ? `
         <div class="info-row">
           <span class="info-key">${t('op.lbl_credit_note')}</span>
-          <span class="info-val" style="color:var(--accent-cyan);font-size:11px">${t.nota_credito}</span>
+          <span class="info-val" style="color:var(--accent-cyan);font-size:11px">${tk.nota_credito}</span>
         </div>
         ` : ''}
 
@@ -1408,7 +1408,7 @@ function renderInspeccion() {
           </div>
         ` : `
           <div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px">
-            <button class="btn btn-secondary w-full" onclick="window.location='reportes.html?tracking=${t.id}'" style="justify-content:center">
+            <button class="btn btn-secondary w-full" onclick="window.location='reportes.html?tracking=${tk.id}'" style="justify-content:center">
               ${t('op.btn_manifest_short')}
             </button>
             ${_soloLectura && !isRefunded ? `
@@ -1416,7 +1416,7 @@ function renderInspeccion() {
                 ${t('op.btn_refunded')}
               </button>
             ` : ''}
-            ${_soloLectura && isRefunded && parseInt(t.requiere_nota_credito) && !t.nota_credito ? `
+            ${_soloLectura && isRefunded && parseInt(tk.requiere_nota_credito) && !tk.nota_credito ? `
               <button class="btn btn-secondary w-full" onclick="capturarNotaCredito()" style="justify-content:center">
                 ${t('op.btn_credit_note')}
               </button>
@@ -2406,7 +2406,7 @@ async function abrirReasignarCaja(tipo) {
     'Good Condition':        'Buen Estado (Good Condition)',
     'Non-brand merchandise': 'Sin Marca (Non-brand)',
   };
-  const t = state.tracking;
+  const tk = state.tracking;
 
   const infoEl = document.getElementById('reasignar-info');
   if (infoEl) infoEl.textContent = `La calidad del SKU cambió — tipo de caja requerido: ${labels[tipo] || tipo}.`;
@@ -2415,13 +2415,13 @@ async function abrirReasignarCaja(tipo) {
   sel.innerHTML = '<option value="">— Cargando... —</option>';
 
   try {
-    const cajas = await API.get(`/cajas?cliente_id=${t.cliente_id}&estatus=Abierta&tipo=${encodeURIComponent(tipo)}`);
+    const cajas = await API.get(`/cajas?cliente_id=${tk.cliente_id}&estatus=Abierta&tipo=${encodeURIComponent(tipo)}`);
     const tipoBadge = { 'Damage': 'DMG', 'Good Condition': 'GDC', 'Non-brand merchandise': 'NBM' };
     if (cajas.length === 0) {
       sel.innerHTML = `<option value="">— Sin cajas "${tipoBadge[tipo] || tipo}" abiertas —</option>`;
     } else {
       sel.innerHTML = '<option value="">— Seleccionar caja —</option>'
-        + cajas.map(c => `<option value="${c.id}">[${tipoBadge[c.tipo] || c.tipo}] ${c.nombre}${c.id === t.caja_pallet_id ? ' (actual)' : ''}</option>`).join('');
+        + cajas.map(c => `<option value="${c.id}">[${tipoBadge[c.tipo] || c.tipo}] ${c.nombre}${c.id === tk.caja_pallet_id ? ' (actual)' : ''}</option>`).join('');
     }
   } catch(e) {
     sel.innerHTML = '<option value="">— Error al cargar —</option>';
@@ -2955,7 +2955,7 @@ async function cerrarTracking() {
     return;
   }
 
-  const t = state.tracking;
+  const tk = state.tracking;
   const modalBody = document.querySelector('#modal-cierre .modal-body');
 
   const tieneDanado  = state.errores.some(e => e.tipo_error === 'Calidad' || e.tipo_error === 'Otro');
@@ -2964,7 +2964,7 @@ async function cerrarTracking() {
   let tieneRetrabajos = false;
   if (tieneDanado) {
     try {
-      const rts = await API.get(`/trackings/${t.id}/retrabajos`);
+      const rts = await API.get(`/trackings/${tk.id}/retrabajos`);
       tieneRetrabajos = rts.length > 0;
     } catch(e) {}
   }
@@ -2982,7 +2982,7 @@ async function cerrarTracking() {
   const tipoBadgeText = { 'Damage': 'DMG', 'Good Condition': 'GDC', 'Non-brand merchandise': 'NBM' };
   let optionsHtml = '<option value="">— Cargando... —</option>';
   try {
-    const cajas = await API.get(`/cajas?cliente_id=${t.cliente_id}&estatus=Abierta&tipo=${encodeURIComponent(tipoCajaReq)}`);
+    const cajas = await API.get(`/cajas?cliente_id=${tk.cliente_id}&estatus=Abierta&tipo=${encodeURIComponent(tipoCajaReq)}`);
     if (cajas.length === 0) {
       optionsHtml = `<option value="">— Sin cajas "${tipoBadgeText[tipoCajaReq]}" abiertas —</option>`;
     } else {

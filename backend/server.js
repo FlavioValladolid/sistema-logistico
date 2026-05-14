@@ -4,7 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
-const initSqlJs = require('sql.js');
+const Database = require('better-sqlite3');
 const bcrypt = require('bcrypt');
 let nodemailer; try { nodemailer = require('nodemailer'); } catch(e) { nodemailer = null; }
 
@@ -55,16 +55,11 @@ const DB_PATH = path.join(__dirname, 'database.bin');
 let db;
 
 async function initDB() {
-  const SQL = await initSqlJs();
+  db = new Database(DB_PATH);
+  db.pragma('journal_mode = WAL');
+  db.pragma('foreign_keys = ON');
 
-  if (fs.existsSync(DB_PATH)) {
-    const fileBuffer = fs.readFileSync(DB_PATH);
-    db = new SQL.Database(fileBuffer);
-  } else {
-    db = new SQL.Database();
-  }
-
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS clientes (
       id TEXT PRIMARY KEY,
       nombre TEXT NOT NULL,
@@ -78,26 +73,26 @@ async function initDB() {
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `);
-  try { db.run("ALTER TABLE clientes ADD COLUMN tipo_almacenamiento TEXT DEFAULT 'caja'"); } catch(e) {}
-  try { db.run("ALTER TABLE clientes ADD COLUMN uph INTEGER DEFAULT 0"); } catch(e) {}
-  try { db.run("ALTER TABLE clientes ADD COLUMN tipo_mercancia TEXT DEFAULT 'textil'"); } catch(e) {}
-  try { db.run("ALTER TABLE clientes ADD COLUMN fotos_adicionales INTEGER DEFAULT 0"); } catch(e) {}
-  try { db.run("ALTER TABLE clientes ADD COLUMN requiere_orden INTEGER DEFAULT 0"); } catch(e) {}
-  try { db.run("ALTER TABLE clientes ADD COLUMN requiere_tipo_retorno INTEGER DEFAULT 0"); } catch(e) {}
-  try { db.run("ALTER TABLE clientes ADD COLUMN requiere_nota_credito INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.exec("ALTER TABLE clientes ADD COLUMN tipo_almacenamiento TEXT DEFAULT 'caja'"); } catch(e) {}
+  try { db.exec("ALTER TABLE clientes ADD COLUMN uph INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.exec("ALTER TABLE clientes ADD COLUMN tipo_mercancia TEXT DEFAULT 'textil'"); } catch(e) {}
+  try { db.exec("ALTER TABLE clientes ADD COLUMN fotos_adicionales INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.exec("ALTER TABLE clientes ADD COLUMN requiere_orden INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.exec("ALTER TABLE clientes ADD COLUMN requiere_tipo_retorno INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.exec("ALTER TABLE clientes ADD COLUMN requiere_nota_credito INTEGER DEFAULT 0"); } catch(e) {}
 
   // Materializar valores NULL de columnas migradas (sql.js omite undefined en JSON)
-  db.run("UPDATE clientes SET tipo_almacenamiento = 'caja'   WHERE tipo_almacenamiento IS NULL");
-  db.run("UPDATE clientes SET uph               = 0          WHERE uph IS NULL");
-  db.run("UPDATE clientes SET tipo_mercancia    = 'textil'   WHERE tipo_mercancia IS NULL");
-  db.run("UPDATE clientes SET fotos_adicionales = 0          WHERE fotos_adicionales IS NULL");
-  db.run("UPDATE clientes SET requiere_orden = 0            WHERE requiere_orden IS NULL");
-  db.run("UPDATE clientes SET requiere_tipo_retorno = 0     WHERE requiere_tipo_retorno IS NULL");
-  db.run("UPDATE clientes SET requiere_nota_credito = 0     WHERE requiere_nota_credito IS NULL");
+  db.exec("UPDATE clientes SET tipo_almacenamiento = 'caja'   WHERE tipo_almacenamiento IS NULL");
+  db.exec("UPDATE clientes SET uph               = 0          WHERE uph IS NULL");
+  db.exec("UPDATE clientes SET tipo_mercancia    = 'textil'   WHERE tipo_mercancia IS NULL");
+  db.exec("UPDATE clientes SET fotos_adicionales = 0          WHERE fotos_adicionales IS NULL");
+  db.exec("UPDATE clientes SET requiere_orden = 0            WHERE requiere_orden IS NULL");
+  db.exec("UPDATE clientes SET requiere_tipo_retorno = 0     WHERE requiere_tipo_retorno IS NULL");
+  db.exec("UPDATE clientes SET requiere_nota_credito = 0     WHERE requiere_nota_credito IS NULL");
 
-  console.log('📋 Columnas clientes:', db.exec("PRAGMA table_info(clientes)")[0]?.values.map(r=>r[1]).join(', '));
+  console.log('📋 Columnas clientes:', db.prepare("PRAGMA table_info(clientes)").all().map(r => r.name).join(', '));
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS skus (
       id TEXT PRIMARY KEY,
       cliente_id TEXT NOT NULL,
@@ -110,11 +105,11 @@ async function initDB() {
     )
   `);
   // Migración: agregar upc_code si la tabla ya existía sin esa columna
-  try { db.run('ALTER TABLE skus ADD COLUMN upc_code TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE skus ADD COLUMN created_at TEXT'); } catch(e) {}
-  db.run("UPDATE skus SET created_at = datetime('now','localtime') WHERE created_at IS NULL");
+  try { db.exec('ALTER TABLE skus ADD COLUMN upc_code TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE skus ADD COLUMN created_at TEXT'); } catch(e) {}
+  db.exec("UPDATE skus SET created_at = datetime('now','localtime') WHERE created_at IS NULL");
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS trackings (
       id TEXT PRIMARY KEY,
       tracking_number TEXT NOT NULL UNIQUE,
@@ -133,7 +128,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS detalle_skus (
       id TEXT PRIMARY KEY,
       tracking_id TEXT NOT NULL,
@@ -157,21 +152,21 @@ async function initDB() {
   `);
 
   // Columna impresa en trackings
-  try { db.run('ALTER TABLE trackings ADD COLUMN impresa INTEGER DEFAULT 0'); } catch(e) {}
-  try { db.run('ALTER TABLE trackings ADD COLUMN numero_orden TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE trackings ADD COLUMN tipo_retorno TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE trackings ADD COLUMN razon_retorno TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_etiqueta TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_insumos TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_pieza TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_1 TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_2 TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_3 TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_4 TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE trackings ADD COLUMN impresa INTEGER DEFAULT 0'); } catch(e) {}
+  try { db.exec('ALTER TABLE trackings ADD COLUMN numero_orden TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE trackings ADD COLUMN tipo_retorno TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE trackings ADD COLUMN razon_retorno TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE detalle_skus ADD COLUMN foto_etiqueta TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE detalle_skus ADD COLUMN foto_insumos TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE detalle_skus ADD COLUMN foto_pieza TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_1 TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_2 TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_3 TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE detalle_skus ADD COLUMN foto_adicional_4 TEXT'); } catch(e) {}
   // Materializar NULLs de columnas migradas en trackings
-  db.run("UPDATE trackings SET impresa = 0 WHERE impresa IS NULL");
+  db.exec("UPDATE trackings SET impresa = 0 WHERE impresa IS NULL");
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS errores (
       id TEXT PRIMARY KEY,
       tracking_id TEXT NOT NULL,
@@ -184,7 +179,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS alertas_discrepancia (
       id TEXT PRIMARY KEY,
       tracking_id TEXT NOT NULL,
@@ -195,7 +190,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS cajas_pallets (
       id TEXT PRIMARY KEY,
       cliente_id TEXT NOT NULL,
@@ -208,10 +203,10 @@ async function initDB() {
       FOREIGN KEY (cliente_id) REFERENCES clientes(id)
     )
   `);
-  try { db.run('ALTER TABLE trackings ADD COLUMN caja_pallet_id TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE trackings ADD COLUMN nota_credito TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE trackings ADD COLUMN caja_pallet_id TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE trackings ADD COLUMN nota_credito TEXT'); } catch(e) {}
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS retrabajos (
       id TEXT PRIMARY KEY,
       tracking_id TEXT NOT NULL,
@@ -227,10 +222,10 @@ async function initDB() {
       FOREIGN KEY (tracking_id) REFERENCES trackings(id)
     )
   `);
-  try { db.run('ALTER TABLE retrabajos ADD COLUMN detalle_sku_id TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE retrabajos ADD COLUMN retrabajo_otro TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE retrabajos ADD COLUMN detalle_sku_id TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE retrabajos ADD COLUMN retrabajo_otro TEXT'); } catch(e) {}
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS foto_sesiones (
       id TEXT PRIMARY KEY,
       token TEXT UNIQUE NOT NULL,
@@ -243,9 +238,9 @@ async function initDB() {
       expires_at TEXT NOT NULL
     )
   `);
-  db.run("DELETE FROM foto_sesiones WHERE expires_at < datetime('now')");
+  db.exec("DELETE FROM foto_sesiones WHERE expires_at < datetime('now')");
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS skus_nuevos (
       id TEXT PRIMARY KEY,
       tracking_id TEXT NOT NULL,
@@ -264,13 +259,13 @@ async function initDB() {
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `);
-  try { db.run('ALTER TABLE detalle_skus ADD COLUMN es_nuevo INTEGER DEFAULT 0'); } catch(e) {}
+  try { db.exec('ALTER TABLE detalle_skus ADD COLUMN es_nuevo INTEGER DEFAULT 0'); } catch(e) {}
 
   // Config table for migration markers
-  db.run(`CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)`);
+  db.exec(`CREATE TABLE IF NOT EXISTS config (key TEXT PRIMARY KEY, value TEXT)`);
 
   // Auth tables
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS usuarios (
       id TEXT PRIMARY KEY,
       nombre TEXT NOT NULL,
@@ -282,14 +277,14 @@ async function initDB() {
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `);
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS usuario_clientes (
       usuario_id TEXT NOT NULL,
       cliente_id TEXT NOT NULL,
       PRIMARY KEY (usuario_id, cliente_id)
     )
   `);
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS sesiones (
       token TEXT PRIMARY KEY,
       usuario_id TEXT NOT NULL,
@@ -297,9 +292,9 @@ async function initDB() {
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `);
-  db.run("DELETE FROM sesiones WHERE expires_at < datetime('now','localtime')");
+  db.exec("DELETE FROM sesiones WHERE expires_at < datetime('now','localtime')");
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS config_smtp (
       id INTEGER PRIMARY KEY DEFAULT 1,
       host TEXT,
@@ -311,7 +306,7 @@ async function initDB() {
     )
   `);
 
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS correos_enviados (
       id TEXT PRIMARY KEY,
       tracking_id TEXT NOT NULL,
@@ -324,7 +319,7 @@ async function initDB() {
       created_at TEXT DEFAULT (datetime('now', 'localtime'))
     )
   `);
-  db.run(`
+  db.exec(`
     CREATE TABLE IF NOT EXISTS tracking_comentarios (
       id TEXT PRIMARY KEY,
       tracking_id TEXT NOT NULL,
@@ -338,51 +333,43 @@ async function initDB() {
   `);
 
   // One-time migration: convert all UTC timestamps stored before the localtime fix
-  const migDone = db.exec("SELECT value FROM config WHERE key='utc_to_local_v1'");
-  if (!migDone[0]?.values?.length) {
+  const migDone = db.prepare("SELECT value FROM config WHERE key='utc_to_local_v1'").get();
+  if (!migDone) {
     const tsTables = [
       'clientes', 'skus', 'cajas_pallets', 'trackings',
       'detalle_skus', 'skus_nuevos', 'errores', 'retrabajos', 'alertas_discrepancia'
     ];
     tsTables.forEach(t => {
-      try { db.run(`UPDATE ${t} SET created_at = datetime(created_at, 'localtime') WHERE created_at IS NOT NULL`); } catch(e) {}
+      try { db.exec(`UPDATE ${t} SET created_at = datetime(created_at, 'localtime') WHERE created_at IS NOT NULL`); } catch(e) {}
     });
-    try { db.run("UPDATE trackings SET closed_at = datetime(closed_at, 'localtime') WHERE closed_at IS NOT NULL"); } catch(e) {}
-    try { db.run("UPDATE cajas_pallets SET closed_at = datetime(closed_at, 'localtime') WHERE closed_at IS NOT NULL"); } catch(e) {}
-    try { db.run("UPDATE retrabajos SET updated_at = datetime(updated_at, 'localtime') WHERE updated_at IS NOT NULL"); } catch(e) {}
-    db.run("INSERT INTO config (key,value) VALUES ('utc_to_local_v1','done')");
+    try { db.exec("UPDATE trackings SET closed_at = datetime(closed_at, 'localtime') WHERE closed_at IS NOT NULL"); } catch(e) {}
+    try { db.exec("UPDATE cajas_pallets SET closed_at = datetime(closed_at, 'localtime') WHERE closed_at IS NOT NULL"); } catch(e) {}
+    try { db.exec("UPDATE retrabajos SET updated_at = datetime(updated_at, 'localtime') WHERE updated_at IS NOT NULL"); } catch(e) {}
+    db.prepare("INSERT INTO config (key,value) VALUES (?,?)").run('utc_to_local_v1', 'done');
     console.log('✅ Migración UTC→local completada');
   }
 
   // Migrations: chat resolved state
-  try { db.run('ALTER TABLE trackings ADD COLUMN chat_resuelto INTEGER DEFAULT 0'); } catch(e) {}
-  try { db.run('ALTER TABLE trackings ADD COLUMN chat_resuelto_por TEXT'); } catch(e) {}
-  try { db.run('ALTER TABLE trackings ADD COLUMN chat_resuelto_at TEXT'); } catch(e) {}
-
-  saveDB();
+  try { db.exec('ALTER TABLE trackings ADD COLUMN chat_resuelto INTEGER DEFAULT 0'); } catch(e) {}
+  try { db.exec('ALTER TABLE trackings ADD COLUMN chat_resuelto_por TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE trackings ADD COLUMN chat_resuelto_at TEXT'); } catch(e) {}
 
   // Datos demo
-  const check = db.exec("SELECT COUNT(*) as cnt FROM clientes");
-  if (check[0].values[0][0] === 0) {
+  const check = db.prepare("SELECT COUNT(*) as cnt FROM clientes").get();
+  if (check.cnt === 0) {
     seedData();
   }
 
   // Crear admin por defecto si no existe ningún usuario
-  const adminCheck = db.exec("SELECT COUNT(*) as cnt FROM usuarios");
-  if (adminCheck[0].values[0][0] === 0) {
+  const adminCheck = db.prepare("SELECT COUNT(*) as cnt FROM usuarios").get();
+  if (adminCheck.cnt === 0) {
     const hash = await bcrypt.hash('Admin123!', 10);
-    db.run(`INSERT INTO usuarios (id,nombre,email,password_hash,rol,activo,created_at) VALUES (?,?,?,?,?,?,?)`,
-      [uuidv4(), 'Administrador', 'admin@sistema.com', hash, 'ADMIN', 1, localNow()]);
-    saveDB();
+    db.prepare(`INSERT INTO usuarios (id,nombre,email,password_hash,rol,activo,created_at) VALUES (?,?,?,?,?,?,?)`)
+      .run(uuidv4(), 'Administrador', 'admin@sistema.com', hash, 'ADMIN', 1, localNow());
     console.log('👤 Usuario admin creado: admin@sistema.com / Admin123!');
   }
 
   console.log('✅ Base de datos inicializada');
-}
-
-function saveDB() {
-  const data = db.export();
-  fs.writeFileSync(DB_PATH, Buffer.from(data));
 }
 
 function seedData() {
@@ -393,7 +380,7 @@ function seedData() {
   ];
 
   clientes.forEach(c => {
-    db.run(`INSERT INTO clientes VALUES (?,?,?,?,?,?,?)`,
+    dbRun(`INSERT INTO clientes VALUES (?,?,?,?,?,?,?)`,
       [c.id, c.nombre, c.grado, c.pct, c.calidad, c.retrabajo, localNow()]);
 
     // SKUs demo por cliente
@@ -403,25 +390,17 @@ function seedData() {
       { id: uuidv4(), code: `SKU-${c.nombre.substring(0,3).toUpperCase()}-003`, desc: 'Vestido Floral', pais: 'Vietnam', insumos: '100% Viscosa' },
     ];
     skusDemo.forEach(s => {
-      db.run(`INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code) VALUES (?,?,?,?,?,?,?)`,
+      dbRun(`INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code) VALUES (?,?,?,?,?,?,?)`,
         [s.id, c.id, s.code, s.desc, s.pais, s.insumos, null]);
     });
   });
 
-  saveDB();
   console.log('✅ Datos demo insertados');
 }
 
 function dbAll(sql, params = []) {
   try {
-    const result = db.exec(sql, params);
-    if (!result.length) return [];
-    const { columns, values } = result[0];
-    return values.map(row => {
-      const obj = {};
-      columns.forEach((col, i) => obj[col] = row[i]);
-      return obj;
-    });
+    return db.prepare(sql).all(...params);
   } catch (e) {
     console.error('DB Error:', e.message, sql);
     return [];
@@ -429,14 +408,17 @@ function dbAll(sql, params = []) {
 }
 
 function dbGet(sql, params = []) {
-  const rows = dbAll(sql, params);
-  return rows[0] || null;
+  try {
+    return db.prepare(sql).get(...params) ?? null;
+  } catch (e) {
+    console.error('DB Error:', e.message, sql);
+    return null;
+  }
 }
 
 function dbRun(sql, params = []) {
   try {
-    db.run(sql, params);
-    saveDB();
+    db.prepare(sql).run(...params);
     return true;
   } catch (e) {
     console.error('DB Run Error:', e.message);
@@ -2106,7 +2088,6 @@ app.post('/api/config/smtp', requireRol('ADMIN'), (req, res) => {
     dbRun('INSERT INTO config_smtp (id,host,port,user,pass,from_name,updated_at) VALUES (1,?,?,?,?,?,?)',
       [host || null, parseInt(port) || 587, user || null, pass || null, from_name || 'Sistema Logístico', localNow()]);
   }
-  saveDB();
   res.json({ ok: true });
 });
 
@@ -2201,7 +2182,6 @@ app.post('/api/trackings/:id/enviar-correo', async (req, res) => {
     `INSERT INTO correos_enviados (id,tracking_id,usuario_id,nombre_usuario,destinatarios,asunto,mensaje_adicional,total_comentarios_incluidos,created_at) VALUES (?,?,?,?,?,?,?,?,?)`,
     [uuidv4(), req.params.id, req.usuario.id, req.usuario.nombre, JSON.stringify(destinatarios), asuntoFinal, mensaje_adicional || null, comentarios.length, localNow()]
   );
-  saveDB();
   res.json({ ok: true, enviados: destinatarios.length });
 });
 
