@@ -208,8 +208,8 @@ function setActivePage() {
 // GRADO LABELS
 // =====================================================
 function gradoBadge(grado) {
-  const classes = { 1: 'grado-1', 2: 'grado-2', 3: 'grado-3' };
-  const cls = classes[grado] || 'grado-2';
+  const classes = { 0: 'grado-0', 1: 'grado-1', 2: 'grado-2', 3: 'grado-3' };
+  const cls = classes[grado] !== undefined ? classes[grado] : 'grado-2';
   const label = (typeof t === 'function') ? t(`grade.${grado}`) : `G${grado}`;
   return `<span class="grado-badge ${cls}">${label}</span>`;
 }

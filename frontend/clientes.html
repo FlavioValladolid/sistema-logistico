@@ -60,6 +60,7 @@ const modalHtml = `
         <div class="form-group">
           <label class="form-label">${t('clients.field_grade')}</label>
           <select class="form-control" id="cliente-grado" onchange="onGradoChange()">
+            <option value="0">${t('grade.0_opt')}</option>
             <option value="1">${t('grade.1_opt')}</option>
             <option value="2" selected>${t('grade.2_opt')}</option>
             <option value="3">${t('grade.3_opt')}</option>
@@ -190,6 +191,32 @@ const modalHtml = `
             <div class="form-hint">Se exigirán estas fotos durante cada inspección de SKU. Solo disponible para clientes G3.</div>
           </div>
         </div>
+
+        <div id="seccion-g0" class="hidden" style="margin-top:16px">
+          <div class="section-title" style="margin-top:0">${t('clients.g0_section')}</div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
+              <div>
+                <div style="font-weight:600;font-size:13px">${t('clients.g0_piezas')}</div>
+                <div class="form-hint" style="margin:0">${t('clients.g0_piezas_hint')}</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="cliente-validacion-piezas">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+            <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
+              <div>
+                <div style="font-weight:600;font-size:13px">${t('clients.g0_condicion')}</div>
+                <div class="form-hint" style="margin:0">${t('clients.g0_condicion_hint')}</div>
+              </div>
+              <label class="toggle">
+                <input type="checkbox" id="cliente-validacion-condicion">
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-cliente')">Cancelar</button>
@@ -227,13 +254,15 @@ document.querySelectorAll('input[name="tipo-almacenamiento"]').forEach(r =>
 function onGradoChange() {
   const g = parseInt(document.getElementById('cliente-grado').value);
   const hints = {
+    0: t('clients.grade_hint_0'),
     1: t('clients.grade_hint_1'),
     2: t('clients.grade_hint_2'),
     3: t('clients.grade_hint_3')
   };
-  document.getElementById('grado-hint').textContent = hints[g];
+  document.getElementById('grado-hint').textContent = hints[g] || '';
   document.getElementById('pct-group').style.display = g === 2 ? 'block' : 'none';
   document.getElementById('seccion-fotos-adicionales').classList.toggle('hidden', g !== 3);
+  document.getElementById('seccion-g0').classList.toggle('hidden', g !== 0);
   if (g !== 3) document.getElementById('cliente-fotos-adicionales').value = '0';
 }
 
@@ -340,6 +369,9 @@ function abrirNuevo() {
   document.getElementById('cliente-requiere-nota-credito').checked = false;
   document.getElementById('seccion-tipo-mercancia').classList.add('hidden');
   document.getElementById('seccion-fotos-adicionales').classList.add('hidden');
+  document.getElementById('seccion-g0').classList.add('hidden');
+  document.getElementById('cliente-validacion-piezas').checked = false;
+  document.getElementById('cliente-validacion-condicion').checked = false;
   document.getElementById('modal-cliente-title').textContent = t('clients.modal_new');
   onGradoChange();
   onTipoAlmacenamientoChange();
@@ -366,8 +398,11 @@ function editarCliente(id) {
   document.getElementById('cliente-requiere-orden').checked = !!c.requiere_orden;
   document.getElementById('cliente-requiere-tipo-retorno').checked = !!c.requiere_tipo_retorno;
   document.getElementById('cliente-requiere-nota-credito').checked = !!c.requiere_nota_credito;
+  document.getElementById('cliente-validacion-piezas').checked = !!c.validacion_piezas;
+  document.getElementById('cliente-validacion-condicion').checked = !!c.validacion_condicion;
   document.getElementById('seccion-tipo-mercancia').classList.toggle('hidden', !c.modulo_retrabajo);
   document.getElementById('seccion-fotos-adicionales').classList.toggle('hidden', parseInt(c.grado_confianza) !== 3);
+  document.getElementById('seccion-g0').classList.toggle('hidden', parseInt(c.grado_confianza) !== 0);
   document.getElementById('modal-cliente-title').textContent = t('clients.modal_edit');
   onGradoChange();
   onTipoAlmacenamientoChange();
@@ -392,6 +427,8 @@ async function guardarCliente() {
     requiere_orden: document.getElementById('cliente-requiere-orden').checked,
     requiere_tipo_retorno: document.getElementById('cliente-requiere-tipo-retorno').checked,
     requiere_nota_credito: document.getElementById('cliente-requiere-nota-credito').checked,
+    validacion_piezas: document.getElementById('cliente-validacion-piezas').checked,
+    validacion_condicion: document.getElementById('cliente-validacion-condicion').checked,
   };
 
   try {

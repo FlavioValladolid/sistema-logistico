@@ -154,6 +154,7 @@
 [data-theme="light"] .badge-muted { background: #f9fafb; color: #6B7280; border: 1px solid #E5E7EB; }
 
 /* Light mode refined grado badges */
+[data-theme="light"] .grado-0 { background: #e0f7fa; color: #0277bd; border-color: #b2ebf2; }
 [data-theme="light"] .grado-1 { background: #f0fdf4; color: #15803D; border-color: #bbf7d0; }
 [data-theme="light"] .grado-2 { background: #fffbeb; color: #b45309; border-color: #fde68a; }
 [data-theme="light"] .grado-3 { background: #fef2f2; color: #b91c1c; border-color: #fecaca; }
@@ -764,6 +765,7 @@ tbody td {
   white-space: nowrap;
 }
 
+.grado-0 { background: rgba(0,188,212,0.12);  color: var(--accent-cyan); border: 1px solid rgba(0,188,212,0.25); }
 .grado-1 { background: rgba(0,230,118,0.12); color: var(--g1-color); border: 1px solid rgba(0,230,118,0.25); }
 .grado-2 { background: rgba(255,179,0,0.12);  color: var(--g2-color); border: 1px solid rgba(255,179,0,0.25); }
 .grado-3 { background: rgba(255,61,61,0.12);  color: var(--g3-color); border: 1px solid rgba(255,61,61,0.25); }

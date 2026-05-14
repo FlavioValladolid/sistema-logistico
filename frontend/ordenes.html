@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Órdenes G0 — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<script src="js/i18n.js"></script>
+<script src="js/app.js"></script>
+<script src="js/shell.js"></script>
+<script>
+const _pageUser = checkAuth(['ADMIN','SUPERVISOR','CLIENTE']);
+buildShell('Órdenes G0', 'ADMINISTRACIÓN / ÓRDENES G0', `
+  <button class="btn btn-secondary btn-sm" onclick="descargarLayout()">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+    Descargar Layout
+  </button>
+  <button class="btn btn-primary btn-sm" onclick="openModal('modal-orden')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+    ${t('ordenes.new')}
+  </button>
+`, _pageUser);
+
+document.getElementById('page-content').innerHTML = `
+  <div class="flex justify-between items-center mb-24">
+    <div>
+      <h1 class="page-title">${t('ordenes.title')}</h1>
+      <p class="page-subtitle">${t('ordenes.subtitle')}</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header">
+      <span class="card-title">${t('ordenes.card_title')}</span>
+      <input type="text" class="form-control" id="search-ordenes" placeholder="${t('ordenes.search')}" style="width:220px">
+    </div>
+    <div id="tabla-ordenes">
+      <div class="text-center" style="padding:32px"><div class="spinner"></div></div>
+    </div>
+  </div>
+
+  <!-- DETAIL CARD (hidden by default) -->
+  <div id="detalle-card" class="card hidden" style="margin-top:20px">
+    <div class="card-header">
+      <span class="card-title" id="detalle-titulo">${t('ordenes.detail_title')}</span>
+      <button class="btn btn-ghost btn-sm" onclick="ocultarDetalle()">✕ Cerrar</button>
+    </div>
+    <div id="detalle-content">
+      <div class="text-center" style="padding:32px"><div class="spinner"></div></div>
+    </div>
+  </div>
+`;
+
+// Upload modal
+const modalHtml = `
+  <div id="modal-orden" class="modal-overlay">
+    <div class="modal" style="max-width:620px">
+      <div class="modal-header">
+        <span class="modal-title">${t('ordenes.modal_title')}</span>
+        <button class="modal-close" onclick="closeModal('modal-orden')">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="upload-alert"></div>
+
+        <div class="form-group">
+          <label class="form-label">${t('ordenes.field_client')}</label>
+          <select class="form-control" id="orden-cliente">
+            <option value="">— Selecciona cliente G0 —</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">${t('ordenes.field_file')}</label>
+          <input type="file" class="form-control" id="orden-csv" accept=".csv,text/csv" onchange="previewCsv()">
+          <div class="form-hint" style="margin-top:6px">
+            Columnas requeridas: <span style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--accent-cyan)">tracking_number, sku</span>.
+            Opcionales: order_number, product_title, barcode, quantity, country_of_origin, content
+          </div>
+        </div>
+
+        <div id="csv-preview" class="hidden">
+          <div class="section-title" style="margin-bottom:8px">${t('ordenes.preview_title')}</div>
+          <div style="overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius-sm)">
+            <table id="preview-table" style="width:100%;min-width:600px">
+              <thead id="preview-head"></thead>
+              <tbody id="preview-body"></tbody>
+            </table>
+          </div>
+          <div id="preview-summary" style="margin-top:8px;font-size:12px;color:var(--text-muted)"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-orden')">Cancelar</button>
+        <button class="btn btn-primary" id="btn-upload" onclick="subirOrden()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg>
+          ${t('ordenes.btn_upload')}
+        </button>
+      </div>
+    </div>
+  </div>
+`;
+document.body.insertAdjacentHTML('beforeend', modalHtml);
+
+let ordenesData = [];
+let clientesG0 = [];
+let _parsedCsv = null;
+
+async function loadOrdenes() {
+  try {
+    const [ordenes, clientes] = await Promise.all([
+      API.get('/ordenes'),
+      API.get('/clientes')
+    ]);
+    ordenesData = ordenes;
+    clientesG0 = clientes.filter(c => parseInt(c.grado_confianza) === 0);
+
+    // Populate client selector
+    const sel = document.getElementById('orden-cliente');
+    sel.innerHTML = '<option value="">— Selecciona cliente G0 —</option>';
+    clientesG0.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.id;
+      opt.textContent = c.nombre;
+      sel.appendChild(opt);
+    });
+
+    renderTabla(ordenesData);
+  } catch(e) {
+    document.getElementById('tabla-ordenes').innerHTML =
+      `<div class="alert alert-error">Error: ${e.error || 'No se pudo cargar'}</div>`;
+  }
+}
+
+function renderTabla(data) {
+  const el = document.getElementById('tabla-ordenes');
+  if (data.length === 0) {
+    el.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-state-icon">📋</div>
+        <div class="empty-state-title">${t('ordenes.empty_title')}</div>
+        <div class="empty-state-text">${t('ordenes.empty_text')}</div>
+      </div>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="table-wrapper table-scroll" style="border:none">
+      <table>
+        <thead>
+          <tr>
+            <th>${t('ordenes.col_file')}</th>
+            <th>${t('ordenes.col_client')}</th>
+            <th>${t('ordenes.col_trackings')}</th>
+            <th>${t('ordenes.col_piezas')}</th>
+            <th>${t('ordenes.col_upload')}</th>
+            <th>${t('label.actions')}</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${data.map(o => `
+            <tr ondblclick="verDetalle('${o.id}')" style="cursor:pointer" title="Doble clic para ver detalle">
+              <td>
+                <div style="font-weight:600;font-size:13px">${escHTML(o.archivo_nombre)}</div>
+              </td>
+              <td>${escHTML(o.cliente_nombre) || '—'}</td>
+              <td class="td-mono">${o.total_trackings}</td>
+              <td class="td-mono">${o.total_piezas}</td>
+              <td class="td-mono text-muted">${formatDate(o.created_at)}</td>
+              <td>
+                <div class="td-actions">
+                  <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();verDetalle('${o.id}')">Ver detalle</button>
+                  <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();eliminarOrden('${o.id}')">Eliminar</button>
+                </div>
+              </td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    </div>
+  `;
+}
+
+async function verDetalle(id) {
+  const card = document.getElementById('detalle-card');
+  const content = document.getElementById('detalle-content');
+  const orden = ordenesData.find(o => o.id === id);
+  document.getElementById('detalle-titulo').textContent = `${t('ordenes.detail_title')} — ${orden?.archivo_nombre || ''}`;
+  card.classList.remove('hidden');
+  content.innerHTML = '<div class="text-center" style="padding:24px"><div class="spinner"></div></div>';
+  card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  try {
+    const items = await API.get(`/ordenes/${id}/items`);
+    if (items.length === 0) {
+      content.innerHTML = '<div class="text-center" style="padding:24px;color:var(--text-muted)">Sin ítems</div>';
+      return;
+    }
+
+    content.innerHTML = `
+      <div class="table-wrapper table-scroll" style="border:none">
+        <table>
+          <thead>
+            <tr>
+              <th>${t('ordenes.col_order')}</th>
+              <th>${t('ordenes.col_sku')}</th>
+              <th>${t('ordenes.col_product')}</th>
+              <th>${t('ordenes.col_barcode')}</th>
+              <th>${t('ordenes.col_qty')}</th>
+              <th>${t('ordenes.col_country')}</th>
+              <th>${t('ordenes.col_tracking')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${items.map(i => `
+              <tr>
+                <td class="td-mono" style="font-size:12px">${escHTML(i.order_number) || '—'}</td>
+                <td class="td-mono" style="color:var(--accent-cyan);font-weight:700">${escHTML(i.sku)}</td>
+                <td>${escHTML(i.product_title) || '—'}</td>
+                <td class="td-mono" style="font-size:11px">${escHTML(i.barcode) || '—'}</td>
+                <td class="td-mono">${i.quantity}</td>
+                <td>${escHTML(i.country_of_origin) || '—'}</td>
+                <td class="td-mono" style="font-size:11px;color:var(--accent-cyan)">${escHTML(i.tracking_number)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch(e) {
+    content.innerHTML = `<div class="alert alert-error">Error al cargar detalle</div>`;
+  }
+}
+
+function ocultarDetalle() {
+  document.getElementById('detalle-card').classList.add('hidden');
+}
+
+function previewCsv() {
+  const file = document.getElementById('orden-csv').files[0];
+  const previewDiv = document.getElementById('csv-preview');
+  _parsedCsv = null;
+
+  if (!file) { previewDiv.classList.add('hidden'); return; }
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    const text = e.target.result;
+    const lines = text.split(/\r?\n/).filter(l => l.trim());
+    if (lines.length < 2) {
+      previewDiv.classList.add('hidden');
+      document.getElementById('upload-alert').innerHTML = '<div class="alert alert-error">El archivo está vacío o solo tiene encabezados.</div>';
+      return;
+    }
+
+    // Simple CSV parse for preview (split by comma respecting quotes)
+    const parseRow = row => {
+      const result = [];
+      let inQuote = false, cur = '';
+      for (let i = 0; i < row.length; i++) {
+        const ch = row[i];
+        if (ch === '"') { inQuote = !inQuote; }
+        else if (ch === ',' && !inQuote) { result.push(cur.trim()); cur = ''; }
+        else { cur += ch; }
+      }
+      result.push(cur.trim());
+      return result;
+    };
+
+    const headers = parseRow(lines[0]).map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+    const dataRows = lines.slice(1, 6).map(l => parseRow(l).map(v => v.replace(/^"|"$/g, '')));
+
+    document.getElementById('preview-head').innerHTML = `<tr>${headers.map(h => `<th style="font-size:11px;white-space:nowrap">${escHTML(h)}</th>`).join('')}</tr>`;
+    document.getElementById('preview-body').innerHTML = dataRows.map(row =>
+      `<tr>${headers.map((_, i) => `<td style="font-size:11px;white-space:nowrap;max-width:200px;overflow:hidden;text-overflow:ellipsis">${escHTML(row[i] || '')}</td>`).join('')}</tr>`
+    ).join('');
+
+    document.getElementById('preview-summary').textContent = `${lines.length - 1} filas totales`;
+
+    const required = ['tracking_number', 'sku'];
+    const missing = required.filter(col => !headers.includes(col));
+    if (missing.length > 0) {
+      document.getElementById('upload-alert').innerHTML = `<div class="alert alert-error">${t('ordenes.error_columns', { cols: missing.join(', ') })}</div>`;
+    } else {
+      document.getElementById('upload-alert').innerHTML = '';
+    }
+
+    previewDiv.classList.remove('hidden');
+    _parsedCsv = true;
+  };
+  reader.readAsText(file);
+}
+
+async function subirOrden() {
+  const clienteId = document.getElementById('orden-cliente').value;
+  const file = document.getElementById('orden-csv').files[0];
+  const alertEl = document.getElementById('upload-alert');
+
+  if (!clienteId) { alertEl.innerHTML = `<div class="alert alert-error">${t('ordenes.error_no_client')}</div>`; return; }
+  if (!file) { alertEl.innerHTML = `<div class="alert alert-error">${t('ordenes.error_no_file')}</div>`; return; }
+
+  const btn = document.getElementById('btn-upload');
+  btn.disabled = true;
+  btn.textContent = 'Procesando...';
+
+  try {
+    const fd = new FormData();
+    fd.append('cliente_id', clienteId);
+    fd.append('csv', file);
+
+    const res = await API.postForm('/ordenes/upload', fd);
+    toast(t('ordenes.upload_ok', { trackings: res.trackings, piezas: res.piezas }));
+    closeModal('modal-orden');
+    document.getElementById('orden-csv').value = '';
+    document.getElementById('csv-preview').classList.add('hidden');
+    document.getElementById('upload-alert').innerHTML = '';
+    _parsedCsv = null;
+    loadOrdenes();
+  } catch(e) {
+    alertEl.innerHTML = `<div class="alert alert-error">${e.error || 'Error al subir'}</div>`;
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 16 12 12 8 16"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3"/></svg> ${t('ordenes.btn_upload')}`;
+  }
+}
+
+async function eliminarOrden(id) {
+  const ok = await confirm(t('ordenes.confirm_delete'), t('ordenes.confirm_delete_title'));
+  if (!ok) return;
+  try {
+    await API.del(`/ordenes/${id}`);
+    toast(t('ordenes.deleted'));
+    document.getElementById('detalle-card').classList.add('hidden');
+    loadOrdenes();
+  } catch(e) {
+    toast(e.error || 'Error al eliminar', 'error');
+  }
+}
+
+document.getElementById('search-ordenes').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase();
+  renderTabla(ordenesData.filter(o =>
+    o.archivo_nombre.toLowerCase().includes(q) ||
+    (o.cliente_nombre || '').toLowerCase().includes(q)
+  ));
+});
+
+function descargarLayout() {
+  const header = 'tracking_number,order_number,product_title,sku,barcode,quantity,country_of_origin,content';
+  const example = 'TRK123456,ORD-001,Blue T-Shirt,SKU-TEX-001,1234567890,5,China,';
+  const csv = header + '\n' + example + '\n';
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'layout_orden_g0.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// Override new button
+document.querySelector('.topbar-actions .btn-primary').onclick = () => {
+  document.getElementById('upload-alert').innerHTML = '';
+  document.getElementById('csv-preview').classList.add('hidden');
+  document.getElementById('orden-csv').value = '';
+  _parsedCsv = null;
+  openModal('modal-orden');
+};
+
+loadOrdenes();
+</script>
+</body>
+</html>

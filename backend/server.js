@@ -6,6 +6,7 @@ const fs = require('fs');
 const { v4: uuidv4 } = require('uuid');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcrypt');
+const Papa = require('papaparse');
 let nodemailer; try { nodemailer = require('nodemailer'); } catch(e) { nodemailer = null; }
 
 const app = express();
@@ -353,6 +354,58 @@ async function initDB() {
   try { db.exec('ALTER TABLE trackings ADD COLUMN chat_resuelto INTEGER DEFAULT 0'); } catch(e) {}
   try { db.exec('ALTER TABLE trackings ADD COLUMN chat_resuelto_por TEXT'); } catch(e) {}
   try { db.exec('ALTER TABLE trackings ADD COLUMN chat_resuelto_at TEXT'); } catch(e) {}
+
+  // Migrations: G0 Procesamiento
+  try { db.exec('ALTER TABLE clientes ADD COLUMN validacion_piezas INTEGER DEFAULT 0'); } catch(e) {}
+  try { db.exec('ALTER TABLE clientes ADD COLUMN validacion_condicion INTEGER DEFAULT 0'); } catch(e) {}
+  db.exec("UPDATE clientes SET validacion_piezas = 0 WHERE validacion_piezas IS NULL");
+  db.exec("UPDATE clientes SET validacion_condicion = 0 WHERE validacion_condicion IS NULL");
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS ordenes (
+      id TEXT PRIMARY KEY,
+      cliente_id TEXT NOT NULL,
+      archivo_nombre TEXT NOT NULL,
+      usuario_id TEXT NOT NULL,
+      total_trackings INTEGER DEFAULT 0,
+      total_piezas INTEGER DEFAULT 0,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS orden_items (
+      id TEXT PRIMARY KEY,
+      orden_id TEXT NOT NULL,
+      cliente_id TEXT NOT NULL,
+      order_number TEXT,
+      product_title TEXT,
+      sku TEXT NOT NULL,
+      barcode TEXT,
+      quantity INTEGER DEFAULT 1,
+      country_of_origin TEXT,
+      tracking_number TEXT NOT NULL,
+      content TEXT,
+      FOREIGN KEY (orden_id) REFERENCES ordenes(id)
+    )
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS g0_piezas (
+      id TEXT PRIMARY KEY,
+      tracking_id TEXT NOT NULL,
+      orden_item_id TEXT,
+      sku TEXT,
+      product_title TEXT,
+      order_number TEXT,
+      barcode TEXT,
+      condicion TEXT DEFAULT 'Buena',
+      operador TEXT,
+      created_at TEXT DEFAULT (datetime('now','localtime')),
+      FOREIGN KEY (tracking_id) REFERENCES trackings(id)
+    )
+  `);
 
   // Datos demo
   const check = db.prepare("SELECT COUNT(*) as cnt FROM clientes").get();
@@ -767,28 +820,30 @@ app.get('/api/clientes/:id', (req, res) => {
 });
 
 app.post('/api/clientes', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito, validacion_piezas, validacion_condicion } = req.body;
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   const id = uuidv4();
-  const grado = parseInt(grado_confianza) || 2;
+  const grado = grado_confianza !== undefined && grado_confianza !== null && grado_confianza !== '' ? parseInt(grado_confianza) : 2;
   const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
-  console.log(`POST /clientes → nombre="${nombre}" grado=${grado} fotos_adicionales=${fa}`);
-  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno,requiere_nota_credito,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, localNow()]);
+  const vp = grado === 0 ? (validacion_piezas ? 1 : 0) : 0;
+  const vc = grado === 0 ? (validacion_condicion ? 1 : 0) : 0;
+  console.log(`POST /clientes → nombre="${nombre}" grado=${grado}`);
+  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno,requiere_nota_credito,validacion_piezas,validacion_condicion,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, vp, vc, localNow()]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos' });
   res.json({ id, mensaje: 'Cliente creado' });
 });
 
 app.put('/api/clientes/:id', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito } = req.body;
-  const grado = parseInt(grado_confianza) || 2;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito, validacion_piezas, validacion_condicion } = req.body;
+  const grado = grado_confianza !== undefined && grado_confianza !== null && grado_confianza !== '' ? parseInt(grado_confianza) : 2;
   const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
-  console.log(`PUT /clientes/${req.params.id} → grado=${grado} fotos_adicionales=${fa}`);
-  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=?,requiere_orden=?,requiere_tipo_retorno=?,requiere_nota_credito=? WHERE id=?`,
-    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, req.params.id]);
+  const vp = grado === 0 ? (validacion_piezas ? 1 : 0) : 0;
+  const vc = grado === 0 ? (validacion_condicion ? 1 : 0) : 0;
+  console.log(`PUT /clientes/${req.params.id} → grado=${grado}`);
+  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=?,requiere_orden=?,requiere_tipo_retorno=?,requiere_nota_credito=?,validacion_piezas=?,validacion_condicion=? WHERE id=?`,
+    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, vp, vc, req.params.id]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos — revisa la consola del servidor' });
-  const updated = dbGet('SELECT * FROM clientes WHERE id=?', [req.params.id]);
-  console.log(`  → guardado: fotos_adicionales=${updated?.fotos_adicionales}`);
   res.json({ mensaje: 'Cliente actualizado' });
 });
 
@@ -998,7 +1053,7 @@ app.get('/api/reportes/tipo-caja', (req, res) => {
 app.get('/api/trackings', (req, res) => {
   const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
   const rows = dbAll(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito,
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.validacion_piezas, c.validacion_condicion,
       COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) as total_comentarios,
       CASE WHEN COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) > 0 AND COALESCE(t.chat_resuelto, 0) = 0 THEN 1 ELSE 0 END as tiene_comentarios
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
@@ -1010,7 +1065,7 @@ app.get('/api/trackings', (req, res) => {
 
 app.get('/api/trackings/:id', (req, res) => {
   const row = dbGet(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.validacion_piezas, c.validacion_condicion
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     WHERE t.id = ?
   `, [req.params.id]);
@@ -2191,6 +2246,132 @@ app.get('/api/trackings/:id/correos-enviados', requireRol('ADMIN', 'SUPERVISOR')
     [req.params.id]
   );
   res.json(rows.map(r => ({ ...r, destinatarios: JSON.parse(r.destinatarios || '[]') })));
+});
+
+// ── ÓRDENES G0 ──────────────────────────────────────────────────────────────
+
+const uploadCsv = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+
+app.get('/api/ordenes', (req, res) => {
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 'o', 'cliente_id');
+  const rows = dbAll(`
+    SELECT o.*, c.nombre as cliente_nombre
+    FROM ordenes o LEFT JOIN clientes c ON o.cliente_id = c.id
+    WHERE 1=1${cf}
+    ORDER BY o.created_at DESC
+  `, cp);
+  res.json(rows);
+});
+
+app.get('/api/ordenes/:id/items', (req, res) => {
+  const items = dbAll('SELECT * FROM orden_items WHERE orden_id = ? ORDER BY order_number, sku', [req.params.id]);
+  res.json(items);
+});
+
+app.post('/api/ordenes/upload', requireRol('ADMIN', 'SUPERVISOR', 'CLIENTE'), uploadCsv.single('csv'), (req, res) => {
+  const { cliente_id } = req.body;
+  if (!cliente_id) return res.status(400).json({ error: 'cliente_id requerido' });
+  if (!req.file) return res.status(400).json({ error: 'Archivo CSV requerido' });
+
+  const cliente = dbGet('SELECT id, grado_confianza FROM clientes WHERE id = ?', [cliente_id]);
+  if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (parseInt(cliente.grado_confianza) !== 0) return res.status(400).json({ error: 'El cliente debe ser G0 para subir órdenes' });
+
+  const csvText = req.file.buffer.toString('utf8');
+  const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true, trimHeaders: true });
+
+  if (parsed.errors.length > 0 && parsed.data.length === 0) {
+    return res.status(400).json({ error: 'Error al parsear el CSV: ' + parsed.errors[0].message });
+  }
+
+  const headers = parsed.meta.fields || [];
+  const required = ['tracking_number', 'sku'];
+  const missing = required.filter(col => !headers.some(h => h.trim().toLowerCase() === col));
+  if (missing.length > 0) {
+    return res.status(400).json({ error: `El CSV no tiene las columnas requeridas: ${missing.join(', ')}` });
+  }
+
+  // Normalize header names (case-insensitive)
+  const normalize = row => {
+    const out = {};
+    Object.entries(row).forEach(([k, v]) => { out[k.trim().toLowerCase()] = (v || '').trim(); });
+    return out;
+  };
+
+  const rows = parsed.data.map(normalize).filter(r => r.tracking_number && r.sku);
+  if (rows.length === 0) return res.status(400).json({ error: 'El CSV no tiene filas válidas (tracking_number y sku son requeridos)' });
+
+  const trackingsUnicos = new Set(rows.map(r => r.tracking_number)).size;
+  const totalPiezas = rows.reduce((s, r) => s + (parseInt(r.quantity) || 1), 0);
+
+  const ordenId = uuidv4();
+  dbRun(`INSERT INTO ordenes (id,cliente_id,archivo_nombre,usuario_id,total_trackings,total_piezas,created_at) VALUES (?,?,?,?,?,?,?)`,
+    [ordenId, cliente_id, req.file.originalname, req.usuario.id, trackingsUnicos, totalPiezas, localNow()]);
+
+  const stmt = db.prepare(`INSERT INTO orden_items (id,orden_id,cliente_id,order_number,product_title,sku,barcode,quantity,country_of_origin,tracking_number,content) VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+  const insertMany = db.transaction(items => {
+    for (const r of items) {
+      stmt.run(uuidv4(), ordenId, cliente_id, r.order_number || null, r.product_title || null, r.sku.toUpperCase(), r.barcode || null, parseInt(r.quantity) || 1, r.country_of_origin || null, r.tracking_number, r.content || null);
+    }
+  });
+  insertMany(rows);
+
+  res.json({ id: ordenId, trackings: trackingsUnicos, piezas: totalPiezas, items: rows.length });
+});
+
+app.delete('/api/ordenes/:id', requireRol('ADMIN', 'SUPERVISOR'), (req, res) => {
+  const orden = dbGet('SELECT id FROM ordenes WHERE id = ?', [req.params.id]);
+  if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+  dbRun('DELETE FROM orden_items WHERE orden_id = ?', [req.params.id]);
+  dbRun('DELETE FROM ordenes WHERE id = ?', [req.params.id]);
+  res.json({ mensaje: 'Orden eliminada' });
+});
+
+app.get('/api/ordenes/buscar-tracking', (req, res) => {
+  const { codigo, cliente_id } = req.query;
+  if (!codigo || !cliente_id) return res.status(400).json({ error: 'codigo y cliente_id requeridos' });
+  // Subcadena match: tracking_number from CSV is contained WITHIN the scanned code
+  const item = dbGet(`
+    SELECT * FROM orden_items
+    WHERE cliente_id = ?
+      AND length(tracking_number) > 0
+      AND instr(?, tracking_number) > 0
+    ORDER BY length(tracking_number) DESC
+    LIMIT 1
+  `, [cliente_id, codigo]);
+  res.json(item || null);
+});
+
+// ── G0 PIEZAS ────────────────────────────────────────────────────────────────
+
+app.get('/api/trackings/:id/g0-piezas', (req, res) => {
+  const rows = dbAll('SELECT * FROM g0_piezas WHERE tracking_id = ? ORDER BY created_at ASC', [req.params.id]);
+  res.json(rows);
+});
+
+app.post('/api/trackings/:id/g0-piezas', (req, res) => {
+  const tracking = dbGet('SELECT id, estatus FROM trackings WHERE id = ?', [req.params.id]);
+  if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+  if (tracking.estatus === 'cerrado') return res.status(400).json({ error: 'El tracking ya está cerrado' });
+
+  const { orden_item_id, sku, product_title, order_number, barcode, condicion } = req.body;
+  const id = uuidv4();
+  dbRun(`INSERT INTO g0_piezas (id,tracking_id,orden_item_id,sku,product_title,order_number,barcode,condicion,operador,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.params.id, orden_item_id || null, sku || null, product_title || null, order_number || null, barcode || null, condicion || 'Buena', req.usuario.nombre, localNow()]);
+
+  const cnt = dbGet('SELECT COUNT(*) as n FROM g0_piezas WHERE tracking_id = ?', [req.params.id]);
+  dbRun('UPDATE trackings SET cantidad_final = ? WHERE id = ?', [cnt.n, req.params.id]);
+
+  res.json({ id, mensaje: 'Pieza registrada' });
+});
+
+app.delete('/api/trackings/:id/g0-piezas/:pid', (req, res) => {
+  const pieza = dbGet('SELECT id FROM g0_piezas WHERE id = ? AND tracking_id = ?', [req.params.pid, req.params.id]);
+  if (!pieza) return res.status(404).json({ error: 'Pieza no encontrada' });
+  dbRun('DELETE FROM g0_piezas WHERE id = ?', [req.params.pid]);
+  const cnt = dbGet('SELECT COUNT(*) as n FROM g0_piezas WHERE tracking_id = ?', [req.params.id]);
+  dbRun('UPDATE trackings SET cantidad_final = ? WHERE id = ?', [cnt.n, req.params.id]);
+  res.json({ mensaje: 'Pieza eliminada' });
 });
 
 // Iniciar servidor
