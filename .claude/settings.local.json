@@ -6,7 +6,9 @@
       "Bash(awk '{print $5, $9}')",
       "Bash(node server.js)",
       "Bash(pkill -f \"node server.js\")",
-      "Bash(npm uninstall *)"
+      "Bash(npm uninstall *)",
+      "Bash(curl -s http://localhost:3000/api/auth/login -X POST -H \"Content-Type: application/json\" -d '{\"email\":\"admin@sistema.com\",\"password\":\"Admin123!\"}')",
+      "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);const p=JSON.parse\\(d\\);console.log\\(p.token?'✅ Servidor OK, login exitoso':'❌ Error:',p.error||''\\)\")"
     ]
   }
 }
