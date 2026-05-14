@@ -216,9 +216,14 @@ function gradoBadge(grado) {
 
 function formatDate(dateStr) {
   if (!dateStr) return '—';
-  return new Date(dateStr).toLocaleString('es-MX', {
+  // Replace space with T so all browsers parse as local time per ISO 8601 spec.
+  // Without this, Chrome/Safari may parse "yyyy-mm-dd HH:MM:SS" as UTC, adding 5h.
+  const d = new Date(dateStr.replace(' ', 'T'));
+  if (isNaN(d.getTime())) return '—';
+  return d.toLocaleString('es-MX', {
     day: '2-digit', month: '2-digit', year: 'numeric',
-    hour: '2-digit', minute: '2-digit'
+    hour: '2-digit', minute: '2-digit',
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
   });
 }
 
