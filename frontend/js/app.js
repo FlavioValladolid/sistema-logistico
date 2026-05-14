@@ -194,15 +194,11 @@ function setActivePage() {
 // =====================================================
 // GRADO LABELS
 // =====================================================
-const GRADO_INFO = {
-  1: { label: 'G1 – Flujo Rápido', class: 'grado-1', desc: 'Solo datos logísticos' },
-  2: { label: 'G2 – Muestreo', class: 'grado-2', desc: 'Inspección estadística 30%' },
-  3: { label: 'G3 – Control Total', class: 'grado-3', desc: 'Inspección 100% obligatoria' },
-};
-
 function gradoBadge(grado) {
-  const info = GRADO_INFO[grado] || GRADO_INFO[2];
-  return `<span class="grado-badge ${info.class}">${info.label}</span>`;
+  const classes = { 1: 'grado-1', 2: 'grado-2', 3: 'grado-3' };
+  const cls = classes[grado] || 'grado-2';
+  const label = (typeof t === 'function') ? t(`grade.${grado}`) : `G${grado}`;
+  return `<span class="grado-badge ${cls}">${label}</span>`;
 }
 
 function formatDate(dateStr) {

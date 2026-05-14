@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="css/main.css">
 </head>
 <body>
+<script src="js/i18n.js"></script>
 <script src="js/app.js"></script>
 <script src="js/shell.js"></script>
 <script>
@@ -16,35 +17,40 @@ const _soloVisibilidad = ['OPERADOR','CLIENTE'].includes(_pageUser?.rol);
 buildShell('Trackings', 'TRACKINGS', _soloVisibilidad ? '' : `
   <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    Nueva Operación
+    ${t('trackings.new_op')}
   </button>
 `, _pageUser);
 
 document.getElementById('page-content').innerHTML = `
   <div class="flex justify-between items-center mb-24">
     <div>
-      <h1 class="page-title">Trackings</h1>
-      <p class="page-subtitle">Historial de envíos y sus inspecciones</p>
+      <h1 class="page-title">${t('trackings.title')}</h1>
+      <p class="page-subtitle">${t('trackings.subtitle')}</p>
     </div>
   </div>
 
   <div class="card">
     <div class="card-header" style="flex-wrap:wrap;gap:10px">
-      <span class="card-title">Todos los Trackings</span>
+      <span class="card-title">${t('trackings.card_title')}</span>
       <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center">
         <select class="form-control" id="filtro-cliente" style="width:200px">
-          <option value="">Todos los clientes</option>
+          <option value="">${t('label.all_clients')}</option>
         </select>
         <select class="form-control" id="filtro-estatus" style="width:160px">
-          <option value="">Todos los estados</option>
-          <option value="abierto">Abiertos</option>
-          <option value="cerrado">Cerrados</option>
+          <option value="">${t('label.all_statuses')}</option>
+          <option value="abierto">${t('status.open_badge')}</option>
+          <option value="cerrado">${t('status.closed_badge')}</option>
+          <option value="refunded">${t('status.refunded_badge')}</option>
         </select>
         <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);white-space:nowrap;user-select:none">
-          <input type="checkbox" id="filtro-con-comentarios" onchange="applyFilters()" style="accent-color:var(--accent-cyan)">
-          Solo con chat activo
+          <input type="checkbox" id="filtro-pendiente-refund" onchange="applyFilters()" style="accent-color:var(--accent-amber)">
+          ${t('trackings.filter_pending_refund')}
         </label>
-        <input type="text" class="form-control" id="search-tracking" placeholder="Buscar tracking..." style="width:200px">
+        <label style="display:flex;align-items:center;gap:6px;cursor:pointer;font-size:12px;color:var(--text-secondary);white-space:nowrap;user-select:none">
+          <input type="checkbox" id="filtro-con-comentarios" onchange="applyFilters()" style="accent-color:var(--accent-cyan)">
+          ${t('trackings.filter_comments')}
+        </label>
+        <input type="text" class="form-control" id="search-tracking" placeholder="${t('trackings.search')}" style="width:200px">
       </div>
     </div>
     <div id="tabla-trackings">
@@ -80,8 +86,8 @@ function renderTabla(data) {
     el.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">📦</div>
-        <div class="empty-state-title">Sin trackings registrados</div>
-        <div class="empty-state-text">Inicia una nueva operación para registrar el primero</div>
+        <div class="empty-state-title">${t('trackings.empty_title')}</div>
+        <div class="empty-state-text">${t('trackings.empty_text')}</div>
       </div>`;
     return;
   }
@@ -91,17 +97,18 @@ function renderTabla(data) {
       <table>
         <thead>
           <tr>
-            <th>Tracking #</th>
-            <th>Cliente</th>
-            <th>Caja / Pallet</th>
-            <th>Inspector</th>
-            <th>Grado</th>
-            <th>Declaradas</th>
-            <th>Inspeccionadas</th>
-            <th>Estado</th>
-            <th>Comentarios</th>
-            <th>Fecha</th>
-            <th>Acciones</th>
+            <th>${t('trackings.col_tracking')}</th>
+            <th>${t('label.client')}</th>
+            <th>${t('trackings.col_box')}</th>
+            <th>${t('trackings.col_inspector')}</th>
+            <th>${t('label.grade')}</th>
+            <th>${t('trackings.col_declared')}</th>
+            <th>${t('trackings.col_inspected')}</th>
+            <th>${t('label.status')}</th>
+            <th>${t('trackings.col_credit_note')}</th>
+            <th>${t('trackings.col_comments')}</th>
+            <th>${t('label.date')}</th>
+            <th>${t('label.actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -125,12 +132,17 @@ function renderTabla(data) {
                   <div class="progress-bar" style="width:80px;margin-top:4px">
                     <div class="progress-fill" style="width:${Math.min(pct,100)}%;background:${pct>=100?'var(--accent-green)':'var(--accent-amber)'}"></div>
                   </div>
-                  ${discrepancia ? `<span class="badge badge-amber" style="margin-top:2px">⚠ Discrepancia</span>` : ''}
+                  ${discrepancia ? `<span class="badge badge-amber" style="margin-top:2px">${t('trackings.discrepancy')}</span>` : ''}
                 </td>
                 <td>
-                  <span class="badge ${t.estatus === 'cerrado' ? 'badge-green' : 'badge-amber'}">
-                    ${t.estatus === 'cerrado' ? '✓ Cerrado' : '⟳ Abierto'}
+                  <span class="badge ${t.estatus === 'cerrado' ? 'badge-green' : t.estatus === 'refunded' ? 'badge-blue' : 'badge-amber'}">
+                    ${t.estatus === 'cerrado' ? t('status.closed') : t.estatus === 'refunded' ? t('status.refunded') : t('status.open')}
                   </span>
+                </td>
+                <td class="td-mono" style="font-size:12px">
+                  ${t.nota_credito
+                    ? `<span style="color:var(--accent-cyan)">${t.nota_credito}</span>`
+                    : '<span style="color:var(--text-muted)">—</span>'}
                 </td>
                 <td style="text-align:center">
                   ${numComent > 0
@@ -149,11 +161,11 @@ function renderTabla(data) {
                 <td>
                   <div class="td-actions">
                     <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation();window.location='operacion.html?id=${t.id}'">
-                      ${_soloVisibilidad ? 'Ver' : (t.estatus === 'abierto' ? 'Inspeccionar' : 'Ver')}
+                      ${_soloVisibilidad ? t('btn.view') : (t.estatus === 'abierto' ? t('btn.inspect') : t('btn.view'))}
                     </button>
                     ${!_soloVisibilidad ? `
                       <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();window.location='reportes.html?tracking=${t.id}'">
-                        Reporte
+                        ${t('btn.report')}
                       </button>
                     ` : ''}
                   </div>
@@ -172,18 +184,21 @@ function applyFilters() {
   const estatus = document.getElementById('filtro-estatus').value;
   const clienteId = document.getElementById('filtro-cliente').value;
   const soloComentarios = document.getElementById('filtro-con-comentarios').checked;
+  const soloPendienteRefund = document.getElementById('filtro-pendiente-refund').checked;
   renderTabla(trackingsData.filter(t => {
     const matchQ = !q || t.tracking_number.toLowerCase().includes(q) || (t.cliente_nombre||'').toLowerCase().includes(q) || (t.operador||'').toLowerCase().includes(q);
     const matchE = !estatus || t.estatus === estatus;
     const matchC = !clienteId || t.cliente_id === clienteId;
     const matchComent = !soloComentarios || t.tiene_comentarios;
-    return matchQ && matchE && matchC && matchComent;
+    const matchPendienteRefund = !soloPendienteRefund || t.estatus === 'cerrado';
+    return matchQ && matchE && matchC && matchComent && matchPendienteRefund;
   }));
 }
 
 document.getElementById('search-tracking').addEventListener('input', applyFilters);
 document.getElementById('filtro-estatus').addEventListener('change', applyFilters);
 document.getElementById('filtro-cliente').addEventListener('change', applyFilters);
+document.getElementById('filtro-pendiente-refund').addEventListener('change', applyFilters);
 
 loadTrackings();
 </script>

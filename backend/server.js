@@ -40,10 +40,15 @@ const storage = multer.diskStorage({
     cb(null, dir);
   },
   filename: (req, file, cb) => {
-    cb(null, `${uuidv4()}${path.extname(file.originalname)}`);
+    const ext = path.extname(file.originalname).toLowerCase();
+    // HEIC/HEIF → canvas converts to JPEG on frontend; normalize to .jpg
+    // Missing/unknown extension → derive from MIME type (covers Android octet-stream uploads)
+    const mimeExt = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/heic': '.jpg', 'image/heif': '.jpg' };
+    const safeExt = ['.heic', '.heif'].includes(ext) ? '.jpg' : (ext || mimeExt[file.mimetype] || '.jpg');
+    cb(null, `${uuidv4()}${safeExt}`);
   }
 });
-const upload = multer({ storage });
+const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
 
 // DB en memoria con persistencia en archivo
 const DB_PATH = path.join(__dirname, 'database.bin');
@@ -79,6 +84,7 @@ async function initDB() {
   try { db.run("ALTER TABLE clientes ADD COLUMN fotos_adicionales INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE clientes ADD COLUMN requiere_orden INTEGER DEFAULT 0"); } catch(e) {}
   try { db.run("ALTER TABLE clientes ADD COLUMN requiere_tipo_retorno INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.run("ALTER TABLE clientes ADD COLUMN requiere_nota_credito INTEGER DEFAULT 0"); } catch(e) {}
 
   // Materializar valores NULL de columnas migradas (sql.js omite undefined en JSON)
   db.run("UPDATE clientes SET tipo_almacenamiento = 'caja'   WHERE tipo_almacenamiento IS NULL");
@@ -87,6 +93,7 @@ async function initDB() {
   db.run("UPDATE clientes SET fotos_adicionales = 0          WHERE fotos_adicionales IS NULL");
   db.run("UPDATE clientes SET requiere_orden = 0            WHERE requiere_orden IS NULL");
   db.run("UPDATE clientes SET requiere_tipo_retorno = 0     WHERE requiere_tipo_retorno IS NULL");
+  db.run("UPDATE clientes SET requiere_nota_credito = 0     WHERE requiere_nota_credito IS NULL");
 
   console.log('📋 Columnas clientes:', db.exec("PRAGMA table_info(clientes)")[0]?.values.map(r=>r[1]).join(', '));
 
@@ -202,6 +209,7 @@ async function initDB() {
     )
   `);
   try { db.run('ALTER TABLE trackings ADD COLUMN caja_pallet_id TEXT'); } catch(e) {}
+  try { db.run('ALTER TABLE trackings ADD COLUMN nota_credito TEXT'); } catch(e) {}
 
   db.run(`
     CREATE TABLE IF NOT EXISTS retrabajos (
@@ -606,6 +614,9 @@ function authMiddleware(req, res, next) {
     if (req.method === 'POST' && /^\/trackings\/[^/]+\/chat-resuelto$/.test(req.path)) return next();
     // Allow sending email (CLIENTE yes, LOGISTICA no)
     if (req.method === 'POST' && /^\/trackings\/[^/]+\/enviar-correo$/.test(req.path) && sesion.rol === 'CLIENTE') return next();
+    // Allow CLIENTE to mark refunded and capture nota de crédito
+    if (req.method === 'PUT' && /^\/trackings\/[^/]+\/refunded$/.test(req.path) && sesion.rol === 'CLIENTE') return next();
+    if (req.method === 'PUT' && /^\/trackings\/[^/]+\/nota-credito$/.test(req.path) && sesion.rol === 'CLIENTE') return next();
     return res.status(403).json({ error: 'Sin permiso para esta operación' });
   }
 
@@ -774,25 +785,25 @@ app.get('/api/clientes/:id', (req, res) => {
 });
 
 app.post('/api/clientes', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito } = req.body;
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   const id = uuidv4();
   const grado = parseInt(grado_confianza) || 2;
   const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
   console.log(`POST /clientes → nombre="${nombre}" grado=${grado} fotos_adicionales=${fa}`);
-  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, localNow()]);
+  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno,requiere_nota_credito,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, localNow()]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos' });
   res.json({ id, mensaje: 'Cliente creado' });
 });
 
 app.put('/api/clientes/:id', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito } = req.body;
   const grado = parseInt(grado_confianza) || 2;
   const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
   console.log(`PUT /clientes/${req.params.id} → grado=${grado} fotos_adicionales=${fa}`);
-  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=?,requiere_orden=?,requiere_tipo_retorno=? WHERE id=?`,
-    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, req.params.id]);
+  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=?,requiere_orden=?,requiere_tipo_retorno=?,requiere_nota_credito=? WHERE id=?`,
+    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, req.params.id]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos — revisa la consola del servidor' });
   const updated = dbGet('SELECT * FROM clientes WHERE id=?', [req.params.id]);
   console.log(`  → guardado: fotos_adicionales=${updated?.fotos_adicionales}`);
@@ -1005,7 +1016,7 @@ app.get('/api/reportes/tipo-caja', (req, res) => {
 app.get('/api/trackings', (req, res) => {
   const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
   const rows = dbAll(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno,
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito,
       COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) as total_comentarios,
       CASE WHEN COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) > 0 AND COALESCE(t.chat_resuelto, 0) = 0 THEN 1 ELSE 0 END as tiene_comentarios
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
@@ -1017,7 +1028,7 @@ app.get('/api/trackings', (req, res) => {
 
 app.get('/api/trackings/:id', (req, res) => {
   const row = dbGet(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     WHERE t.id = ?
   `, [req.params.id]);
@@ -1091,6 +1102,27 @@ app.put('/api/trackings/:id', (req, res) => {
   dbRun(`UPDATE trackings SET cantidad_final=?, estatus=? WHERE id=?`,
     [cantidad_final, estatus, req.params.id]);
   res.json({ mensaje: 'Tracking actualizado' });
+});
+
+app.put('/api/trackings/:id/refunded', (req, res) => {
+  const tracking = dbGet('SELECT * FROM trackings WHERE id=?', [req.params.id]);
+  if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+  if (tracking.estatus === 'refunded') return res.json({ mensaje: 'Ya está en estatus refunded' });
+  dbRun("UPDATE trackings SET estatus='refunded' WHERE id=?", [req.params.id]);
+  res.json({ mensaje: 'Estatus actualizado a refunded' });
+});
+
+app.put('/api/trackings/:id/nota-credito', (req, res) => {
+  const { nota_credito } = req.body;
+  if (!nota_credito?.trim()) return res.status(400).json({ error: 'Número de nota de crédito requerido' });
+  const tracking = dbGet('SELECT * FROM trackings WHERE id=?', [req.params.id]);
+  if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+  const duplicate = dbGet(
+    'SELECT id, tracking_number FROM trackings WHERE nota_credito=? AND cliente_id=? AND id!=?',
+    [nota_credito.trim(), tracking.cliente_id, tracking.id]
+  );
+  dbRun('UPDATE trackings SET nota_credito=? WHERE id=?', [nota_credito.trim(), tracking.id]);
+  res.json({ mensaje: 'Nota de crédito guardada', duplicate: duplicate ? { tracking_number: duplicate.tracking_number } : null });
 });
 
 // Cerrar tracking
@@ -1659,12 +1691,17 @@ function buildMobilePhotoPage(pageState, token) {
       <p class="sub">Toma la fotografía del defecto o discrepancia encontrada en el producto.</p>
       <img id="preview" class="preview-img" alt="Vista previa">
       <div id="status-msg"></div>
-      <label class="btn btn-primary" id="btn-capture">
-        📷 Tomar Foto / Seleccionar
-        <input type="file" id="foto-input" accept="image/*" capture="environment">
-      </label>
+
+      <!-- Hidden inputs: triggered programmatically to avoid label-wrapping bugs on iOS/Android -->
+      <input type="file" id="foto-input-camera"  accept="image/*" capture="environment" style="display:none">
+      <input type="file" id="foto-input-gallery" accept="image/*" style="display:none">
+
+      <div id="btn-wrap">
+        <button class="btn btn-primary"   id="btn-camera"  onclick="triggerInput('camera')">📷 Abrir Cámara</button>
+        <button class="btn btn-secondary" id="btn-gallery" onclick="triggerInput('gallery')">🖼 Elegir de Galería</button>
+      </div>
       <button class="btn btn-secondary hidden" id="btn-retomar" onclick="retomar()">↩ Retomar foto</button>
-      <button class="btn btn-primary hidden" id="btn-enviar" onclick="enviarFoto()">✓ Enviar foto</button>
+      <button class="btn btn-primary hidden"   id="btn-enviar"  onclick="enviarFoto()">✓ Enviar foto</button>
       <div class="spinner hidden" id="loading-spinner"></div>
     `,
   }[pageState] || '';
@@ -1674,71 +1711,124 @@ function buildMobilePhotoPage(pageState, token) {
       const TOKEN = '${token}';
       let selectedFile = null;
 
-      document.getElementById('foto-input').addEventListener('change', function() {
-        const file = this.files[0];
+      // Trigger the correct hidden file input — avoids label-wrapping bugs on iOS/Android WebViews
+      function triggerInput(type) {
+        document.getElementById('foto-input-' + type).click();
+      }
+
+      function onFileSelected(file) {
         if (!file) return;
         selectedFile = file;
-        const reader = new FileReader();
-        reader.onload = e => {
-          const img = document.getElementById('preview');
-          img.src = e.target.result;
-          img.style.display = 'block';
+
+        // createObjectURL works with HEIC on iOS Safari and all Android types;
+        // avoids FileReader MIME-type errors on certain devices
+        var objUrl = URL.createObjectURL(file);
+        var img = document.getElementById('preview');
+        img.onload = function() { URL.revokeObjectURL(objUrl); };
+        img.onerror = function() {
+          URL.revokeObjectURL(objUrl);
+          img.style.display = 'none'; // preview failed but upload can still proceed
         };
-        reader.readAsDataURL(file);
-        document.getElementById('btn-capture').classList.add('hidden');
+        img.src = objUrl;
+        img.style.display = 'block';
+
+        document.getElementById('btn-wrap').classList.add('hidden');
         document.getElementById('btn-retomar').classList.remove('hidden');
         document.getElementById('btn-enviar').classList.remove('hidden');
         clearStatus();
-      });
+      }
+
+      document.getElementById('foto-input-camera').addEventListener('change',  function() { onFileSelected(this.files[0]); });
+      document.getElementById('foto-input-gallery').addEventListener('change', function() { onFileSelected(this.files[0]); });
 
       function retomar() {
         selectedFile = null;
-        document.getElementById('preview').style.display = 'none';
-        document.getElementById('foto-input').value = '';
-        document.getElementById('btn-capture').classList.remove('hidden');
+        var img = document.getElementById('preview');
+        img.src = '';
+        img.style.display = 'none';
+        // Reset both inputs (assigning empty string can throw in some browsers — guard it)
+        try { document.getElementById('foto-input-camera').value  = ''; } catch(e) {}
+        try { document.getElementById('foto-input-gallery').value = ''; } catch(e) {}
+        document.getElementById('btn-wrap').classList.remove('hidden');
         document.getElementById('btn-retomar').classList.add('hidden');
         document.getElementById('btn-enviar').classList.add('hidden');
         clearStatus();
       }
 
+      // Compress to JPEG 80% / max 1920 px if file > 5 MB.
+      // Falls back to original file if canvas fails (e.g. HEIC on old iOS without canvas support).
+      function comprimirImagen(file) {
+        return new Promise(function(resolve) {
+          if (file.size <= 5 * 1024 * 1024) { resolve(file); return; }
+
+          var objUrl = URL.createObjectURL(file);
+          var img = new Image();
+
+          img.onload = function() {
+            URL.revokeObjectURL(objUrl);
+            var MAX = 1920;
+            var w = img.naturalWidth, h = img.naturalHeight;
+            if (w > MAX || h > MAX) {
+              if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
+              else        { w = Math.round(w * MAX / h); h = MAX; }
+            }
+            try {
+              var canvas = document.createElement('canvas');
+              canvas.width = w;
+              canvas.height = h;
+              canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+              canvas.toBlob(function(blob) {
+                if (!blob) { resolve(file); return; }
+                resolve(new File([blob], 'foto.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
+              }, 'image/jpeg', 0.80);
+            } catch(e) { resolve(file); }
+          };
+
+          img.onerror = function() { URL.revokeObjectURL(objUrl); resolve(file); };
+          img.src = objUrl;
+        });
+      }
+
       async function enviarFoto() {
         if (!selectedFile) return;
-        const btnEnviar = document.getElementById('btn-enviar');
-        const spinner = document.getElementById('loading-spinner');
+        var btnEnviar = document.getElementById('btn-enviar');
+        var spinner   = document.getElementById('loading-spinner');
         btnEnviar.disabled = true;
-        btnEnviar.textContent = 'Enviando...';
         document.getElementById('btn-retomar').classList.add('hidden');
         spinner.classList.remove('hidden');
-        clearStatus();
-
-        const fd = new FormData();
-        fd.append('foto', selectedFile);
 
         try {
-          const res = await fetch('/api/foto-sesion/' + TOKEN + '/upload', { method: 'POST', body: fd });
-          const data = await res.json();
+          setStatus('Procesando imagen…', 'warning');
+          var fileToUpload = await comprimirImagen(selectedFile);
+
+          setStatus('Enviando…', 'warning');
+          var fd = new FormData();
+          fd.append('foto', fileToUpload, fileToUpload.name || 'foto.jpg');
+
+          var res  = await fetch('/api/foto-sesion/' + TOKEN + '/upload', { method: 'POST', body: fd });
+          var data = await res.json();
           if (!res.ok) throw new Error(data.error || 'Error al enviar');
+
           spinner.classList.add('hidden');
           btnEnviar.classList.add('hidden');
           document.getElementById('btn-retomar').classList.add('hidden');
-          document.getElementById('btn-capture').classList.add('hidden');
           setStatus('✅ ¡Foto enviada! Puedes cerrar esta pantalla.', 'success');
         } catch(e) {
           spinner.classList.add('hidden');
           btnEnviar.disabled = false;
           btnEnviar.textContent = '✓ Enviar foto';
           document.getElementById('btn-retomar').classList.remove('hidden');
-          setStatus('❌ Error: ' + e.message, 'error');
+          setStatus('❌ Error: ' + (e.message || 'Intenta de nuevo'), 'error');
         }
       }
 
       function setStatus(msg, type) {
-        const el = document.getElementById('status-msg');
+        var el = document.getElementById('status-msg');
         el.className = 'status status-' + type;
         el.textContent = msg;
       }
       function clearStatus() {
-        const el = document.getElementById('status-msg');
+        var el = document.getElementById('status-msg');
         el.className = '';
         el.textContent = '';
       }
@@ -1806,7 +1896,15 @@ app.get('/api/foto-sesion/:token', (req, res) => {
   res.json(sesion);
 });
 
-app.post('/api/foto-sesion/:token/upload', upload.single('foto'), (req, res) => {
+app.post('/api/foto-sesion/:token/upload', (req, res, next) => {
+  upload.single('foto')(req, res, err => {
+    if (err) {
+      if (err.code === 'LIMIT_FILE_SIZE') return res.status(413).json({ error: 'La foto excede el límite de 50 MB' });
+      return res.status(400).json({ error: err.message || 'Error al procesar el archivo' });
+    }
+    next();
+  });
+}, (req, res) => {
   const sesion = dbGet('SELECT * FROM foto_sesiones WHERE token = ?', [req.params.token]);
   if (!sesion) return res.status(404).json({ error: 'Sesión inválida' });
   if (sesion.estatus === 'completada') return res.status(400).json({ error: 'Esta sesión ya fue utilizada' });

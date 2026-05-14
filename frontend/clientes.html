@@ -7,6 +7,7 @@
   <link rel="stylesheet" href="css/main.css">
 </head>
 <body>
+<script src="js/i18n.js"></script>
 <script src="js/app.js"></script>
 <script src="js/shell.js"></script>
 <script>
@@ -14,7 +15,7 @@ const _pageUser = checkAuth(['ADMIN','SUPERVISOR']);
 buildShell('Clientes', 'ADMINISTRACIÓN / CLIENTES', `
   <button class="btn btn-primary btn-sm" onclick="openModal('modal-cliente')">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-    Nuevo Cliente
+    ${t('clients.new')}
   </button>
 `, _pageUser);
 
@@ -22,8 +23,8 @@ buildShell('Clientes', 'ADMINISTRACIÓN / CLIENTES', `
 document.getElementById('page-content').innerHTML = `
   <div class="flex justify-between items-center mb-24">
     <div>
-      <h1 class="page-title">Clientes</h1>
-      <p class="page-subtitle">Configuración de grados de confianza y módulos por proveedor</p>
+      <h1 class="page-title">${t('clients.title')}</h1>
+      <p class="page-subtitle">${t('clients.subtitle')}</p>
     </div>
   </div>
 
@@ -31,8 +32,8 @@ document.getElementById('page-content').innerHTML = `
 
   <div class="card">
     <div class="card-header">
-      <span class="card-title">Maestro de Clientes</span>
-      <input type="text" class="form-control" id="search-clientes" placeholder="Buscar cliente..." style="width:220px">
+      <span class="card-title">${t('clients.card_title')}</span>
+      <input type="text" class="form-control" id="search-clientes" placeholder="${t('clients.search')}" style="width:220px">
     </div>
     <div id="tabla-clientes">
       <div class="text-center" style="padding:32px"><div class="spinner"></div></div>
@@ -45,67 +46,67 @@ const modalHtml = `
   <div id="modal-cliente" class="modal-overlay">
     <div class="modal">
       <div class="modal-header">
-        <span class="modal-title" id="modal-cliente-title">Nuevo Cliente</span>
+        <span class="modal-title" id="modal-cliente-title">${t('clients.modal_new')}</span>
         <button class="modal-close" onclick="closeModal('modal-cliente')">×</button>
       </div>
       <div class="modal-body">
         <input type="hidden" id="cliente-id">
 
         <div class="form-group">
-          <label class="form-label">Nombre del Cliente / Proveedor *</label>
+          <label class="form-label">${t('clients.field_name')}</label>
           <input type="text" class="form-control" id="cliente-nombre" placeholder="Ej: Textiles Express SA">
         </div>
 
         <div class="form-group">
-          <label class="form-label">Grado de Confianza *</label>
+          <label class="form-label">${t('clients.field_grade')}</label>
           <select class="form-control" id="cliente-grado" onchange="onGradoChange()">
-            <option value="1">G1 — Flujo Rápido (Mínimo)</option>
-            <option value="2" selected>G2 — Muestreo Estadístico</option>
-            <option value="3">G3 — Control Total (Máximo)</option>
+            <option value="1">${t('grade.1_opt')}</option>
+            <option value="2" selected>${t('grade.2_opt')}</option>
+            <option value="3">${t('grade.3_opt')}</option>
           </select>
           <div class="form-hint" id="grado-hint">Inspección estadística: 30% de las piezas</div>
         </div>
 
         <div id="pct-group" class="form-group">
-          <label class="form-label">Porcentaje de Muestreo (%)</label>
+          <label class="form-label">${t('clients.field_pct')}</label>
           <input type="number" class="form-control" id="cliente-pct" value="30" min="1" max="100">
-          <div class="form-hint">Solo aplica para G2. Se calculará automáticamente sobre la cantidad ingresada.</div>
+          <div class="form-hint">${t('clients.pct_hint')}</div>
         </div>
 
-        <div class="section-title" style="margin-top:20px">Tipo de Almacenamiento</div>
+        <div class="section-title" style="margin-top:20px">${t('clients.field_storage')}</div>
 
         <div class="form-group">
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
             <label id="btn-tipo-caja" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);border:2px solid var(--accent-green);background:rgba(0,230,118,0.08);cursor:pointer">
               <input type="radio" name="tipo-almacenamiento" id="tipo-caja" value="caja" checked style="accent-color:var(--accent-green)">
               <div>
-                <div style="font-weight:600;font-size:13px">Por Caja</div>
-                <div class="form-hint" style="margin:0">Número de caja por envío</div>
+                <div style="font-weight:600;font-size:13px">${t('clients.storage_box')}</div>
+                <div class="form-hint" style="margin:0">${t('clients.storage_box_hint')}</div>
               </div>
             </label>
             <label id="btn-tipo-pallet" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-elevated);cursor:pointer">
               <input type="radio" name="tipo-almacenamiento" id="tipo-pallet" value="pallet" style="accent-color:var(--accent-green)">
               <div>
-                <div style="font-weight:600;font-size:13px">Por Pallet</div>
-                <div class="form-hint" style="margin:0">Número de pallet por envío</div>
+                <div style="font-weight:600;font-size:13px">${t('clients.storage_pallet')}</div>
+                <div class="form-hint" style="margin:0">${t('clients.storage_pallet_hint')}</div>
               </div>
             </label>
           </div>
         </div>
 
         <div class="form-group">
-          <label class="form-label">UPH — Unidades por Hora</label>
+          <label class="form-label">${t('clients.field_uph')}</label>
           <input type="number" class="form-control" id="cliente-uph" value="0" min="0" placeholder="Ej: 30">
-          <div class="form-hint">Meta de productividad por operador por hora. Usado en la gráfica hora por hora del dashboard.</div>
+          <div class="form-hint">${t('clients.uph_hint')}</div>
         </div>
 
-        <div class="section-title" style="margin-top:4px">Módulos Activos</div>
+        <div class="section-title" style="margin-top:4px">${t('clients.field_modules')}</div>
 
         <div style="display:flex;flex-direction:column;gap:14px">
           <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
             <div>
-              <div style="font-weight:600;font-size:13px">Módulo de Calidad</div>
-              <div class="form-hint" style="margin:0">Registra estado "Buena" o "Mala" por pieza</div>
+              <div style="font-weight:600;font-size:13px">${t('clients.mod_quality')}</div>
+              <div class="form-hint" style="margin:0">${t('clients.mod_quality_hint')}</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="cliente-calidad">
@@ -115,8 +116,8 @@ const modalHtml = `
 
           <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
             <div>
-              <div style="font-weight:600;font-size:13px">Módulo de Retrabajos</div>
-              <div class="form-hint" style="margin:0">Habilita flujo de corrección de prendas</div>
+              <div style="font-weight:600;font-size:13px">${t('clients.mod_rework')}</div>
+              <div class="form-hint" style="margin:0">${t('clients.mod_rework_hint')}</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="cliente-retrabajo" onchange="onRetrabajoToggle()">
@@ -125,13 +126,13 @@ const modalHtml = `
           </div>
         </div>
 
-        <div class="section-title" style="margin-top:20px">Información de Paquete</div>
+        <div class="section-title" style="margin-top:20px">${t('clients.field_pkg_info')}</div>
 
         <div style="display:flex;flex-direction:column;gap:14px">
           <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
             <div>
-              <div style="font-weight:600;font-size:13px">Número de Orden</div>
-              <div class="form-hint" style="margin:0">Al iniciar operación solicita capturar el número de orden del cliente</div>
+              <div style="font-weight:600;font-size:13px">${t('clients.order_num')}</div>
+              <div class="form-hint" style="margin:0">${t('clients.order_num_hint')}</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="cliente-requiere-orden">
@@ -141,11 +142,22 @@ const modalHtml = `
 
           <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
             <div>
-              <div style="font-weight:600;font-size:13px">Tipo de Retorno (RMA / RTS)</div>
-              <div class="form-hint" style="margin:0">Al iniciar operación solicita indicar si el paquete es RMA o RTS. Si es RTS, requiere razón de retorno.</div>
+              <div style="font-weight:600;font-size:13px">${t('clients.return_type')}</div>
+              <div class="form-hint" style="margin:0">${t('clients.return_type_hint')}</div>
             </div>
             <label class="toggle">
               <input type="checkbox" id="cliente-requiere-tipo-retorno">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+
+          <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
+            <div>
+              <div style="font-weight:600;font-size:13px">${t('clients.credit_note')}</div>
+              <div class="form-hint" style="margin:0">${t('clients.credit_note_hint')}</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="cliente-requiere-nota-credito">
               <span class="toggle-slider"></span>
             </label>
           </div>
@@ -215,9 +227,9 @@ document.querySelectorAll('input[name="tipo-almacenamiento"]').forEach(r =>
 function onGradoChange() {
   const g = parseInt(document.getElementById('cliente-grado').value);
   const hints = {
-    1: 'Solo se valida Tracking Number y Cantidad. Sin inspección de productos.',
-    2: 'Inspección estadística configurable. Por defecto 30% de las piezas.',
-    3: 'Inspección obligatoria al 100%. Validación exhaustiva de cada SKU.'
+    1: t('clients.grade_hint_1'),
+    2: t('clients.grade_hint_2'),
+    3: t('clients.grade_hint_3')
   };
   document.getElementById('grado-hint').textContent = hints[g];
   document.getElementById('pct-group').style.display = g === 2 ? 'block' : 'none';
@@ -241,8 +253,8 @@ function renderTabla(clientes) {
     el.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">👥</div>
-        <div class="empty-state-title">Sin clientes registrados</div>
-        <div class="empty-state-text">Agrega el primer proveedor para comenzar</div>
+        <div class="empty-state-title">${t('clients.empty_title')}</div>
+        <div class="empty-state-text">${t('clients.empty_text')}</div>
       </div>`;
     return;
   }
@@ -252,17 +264,17 @@ function renderTabla(clientes) {
       <table>
         <thead>
           <tr>
-            <th>Nombre</th>
-            <th>Grado de Confianza</th>
-            <th>% Muestreo</th>
-            <th>Almacenamiento</th>
+            <th>${t('label.name')}</th>
+            <th>${t('clients.col_trust_grade')}</th>
+            <th>${t('clients.col_sampling')}</th>
+            <th>${t('clients.col_storage')}</th>
             <th>UPH</th>
-            <th>Calidad</th>
-            <th>Retrabajos</th>
-            <th>Mercancía</th>
-            <th>Info Paquete</th>
-            <th>Registrado</th>
-            <th>Acciones</th>
+            <th>${t('clients.col_quality')}</th>
+            <th>${t('clients.col_rework')}</th>
+            <th>${t('clients.col_merch')}</th>
+            <th>${t('clients.col_pkg_info')}</th>
+            <th>${t('label.registered')}</th>
+            <th>${t('label.actions')}</th>
           </tr>
         </thead>
         <tbody>
@@ -279,12 +291,12 @@ function renderTabla(clientes) {
               <td class="td-mono">${c.uph > 0 ? c.uph + ' u/h' : '—'}</td>
               <td>
                 <span class="badge ${c.modulo_calidad ? 'badge-green' : 'badge-muted'}">
-                  ${c.modulo_calidad ? '✓ Activo' : 'Inactivo'}
+                  ${c.modulo_calidad ? t('label.active') : t('label.inactive')}
                 </span>
               </td>
               <td>
                 <span class="badge ${c.modulo_retrabajo ? 'badge-blue' : 'badge-muted'}">
-                  ${c.modulo_retrabajo ? '✓ Activo' : 'Inactivo'}
+                  ${c.modulo_retrabajo ? t('label.active') : t('label.inactive')}
                 </span>
               </td>
               <td>
@@ -292,15 +304,16 @@ function renderTabla(clientes) {
                 ${parseInt(c.grado_confianza) === 3 && c.fotos_adicionales > 0 ? `<span class="badge badge-blue" style="margin-left:4px">📷 +${c.fotos_adicionales}</span>` : ''}
               </td>
               <td>
-                ${c.requiere_orden ? '<span class="badge badge-green" style="margin-bottom:3px;display:inline-block"># Orden</span>' : ''}
-                ${c.requiere_tipo_retorno ? '<span class="badge badge-amber" style="display:inline-block">RMA/RTS</span>' : ''}
-                ${!c.requiere_orden && !c.requiere_tipo_retorno ? '<span style="color:var(--text-muted);font-size:12px">—</span>' : ''}
+                ${c.requiere_orden ? `<span class="badge badge-green" style="margin-bottom:3px;display:inline-block">${t('clients.badge_order')}</span>` : ''}
+                ${c.requiere_tipo_retorno ? `<span class="badge badge-amber" style="margin-bottom:3px;display:inline-block">${t('clients.badge_rma')}</span>` : ''}
+                ${c.requiere_nota_credito ? `<span class="badge badge-blue" style="display:inline-block">${t('clients.badge_credit')}</span>` : ''}
+                ${!c.requiere_orden && !c.requiere_tipo_retorno && !c.requiere_nota_credito ? `<span style="color:var(--text-muted);font-size:12px">${t('label.none')}</span>` : ''}
               </td>
               <td class="td-mono text-muted">${formatDate(c.created_at).split(',')[0]}</td>
               <td>
                 <div class="td-actions">
-                  <button class="btn btn-secondary btn-sm" onclick="editarCliente('${c.id}')">Editar</button>
-                  <button class="btn btn-danger btn-sm" onclick="eliminarCliente('${c.id}','${c.nombre}')">Eliminar</button>
+                  <button class="btn btn-secondary btn-sm" onclick="editarCliente('${c.id}')">${t('btn.edit')}</button>
+                  <button class="btn btn-danger btn-sm" onclick="eliminarCliente('${c.id}','${c.nombre}')">${t('btn.delete')}</button>
                 </div>
               </td>
             </tr>
@@ -324,9 +337,10 @@ function abrirNuevo() {
   document.getElementById('cliente-fotos-adicionales').value = '0';
   document.getElementById('cliente-requiere-orden').checked = false;
   document.getElementById('cliente-requiere-tipo-retorno').checked = false;
+  document.getElementById('cliente-requiere-nota-credito').checked = false;
   document.getElementById('seccion-tipo-mercancia').classList.add('hidden');
   document.getElementById('seccion-fotos-adicionales').classList.add('hidden');
-  document.getElementById('modal-cliente-title').textContent = 'Nuevo Cliente';
+  document.getElementById('modal-cliente-title').textContent = t('clients.modal_new');
   onGradoChange();
   onTipoAlmacenamientoChange();
   openModal('modal-cliente');
@@ -351,9 +365,10 @@ function editarCliente(id) {
   document.getElementById('cliente-fotos-adicionales').value = String(parseInt(c.fotos_adicionales) || 0);
   document.getElementById('cliente-requiere-orden').checked = !!c.requiere_orden;
   document.getElementById('cliente-requiere-tipo-retorno').checked = !!c.requiere_tipo_retorno;
+  document.getElementById('cliente-requiere-nota-credito').checked = !!c.requiere_nota_credito;
   document.getElementById('seccion-tipo-mercancia').classList.toggle('hidden', !c.modulo_retrabajo);
   document.getElementById('seccion-fotos-adicionales').classList.toggle('hidden', parseInt(c.grado_confianza) !== 3);
-  document.getElementById('modal-cliente-title').textContent = 'Editar Cliente';
+  document.getElementById('modal-cliente-title').textContent = t('clients.modal_edit');
   onGradoChange();
   onTipoAlmacenamientoChange();
   openModal('modal-cliente');
@@ -362,7 +377,7 @@ function editarCliente(id) {
 async function guardarCliente() {
   const id = document.getElementById('cliente-id').value;
   const nombre = document.getElementById('cliente-nombre').value.trim();
-  if (!nombre) { toast('El nombre es requerido', 'error'); return; }
+  if (!nombre) { toast(t('clients.error_name'), 'error'); return; }
 
   const payload = {
     nombre,
@@ -376,15 +391,16 @@ async function guardarCliente() {
     fotos_adicionales: Math.max(0, parseInt(document.getElementById('cliente-fotos-adicionales')?.value) || 0),
     requiere_orden: document.getElementById('cliente-requiere-orden').checked,
     requiere_tipo_retorno: document.getElementById('cliente-requiere-tipo-retorno').checked,
+    requiere_nota_credito: document.getElementById('cliente-requiere-nota-credito').checked,
   };
 
   try {
     if (id) {
       await API.put(`/clientes/${id}`, payload);
-      toast('Cliente actualizado correctamente');
+      toast(t('clients.saved'));
     } else {
       await API.post('/clientes', payload);
-      toast('Cliente creado correctamente');
+      toast(t('clients.created'));
     }
     closeModal('modal-cliente');
     loadClientes();
@@ -394,11 +410,11 @@ async function guardarCliente() {
 }
 
 async function eliminarCliente(id, nombre) {
-  const ok = await confirm(`¿Eliminar al cliente "${nombre}"? Esta acción no se puede deshacer.`, 'Eliminar Cliente');
+  const ok = await confirm(t('clients.confirm_delete', { name: nombre }), t('clients.confirm_delete_title'));
   if (!ok) return;
   try {
     await API.del(`/clientes/${id}`);
-    toast('Cliente eliminado');
+    toast(t('clients.deleted'));
     loadClientes();
   } catch(e) {
     toast(e.error || 'Error al eliminar', 'error');

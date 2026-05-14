@@ -8,6 +8,7 @@
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
 </head>
 <body>
+<script src="js/i18n.js"></script>
 <script src="js/app.js"></script>
 <script src="js/shell.js"></script>
 <script>
@@ -126,19 +127,19 @@ async function loadDashboard() {
           </div>
           <div style="display:flex;flex-direction:column;gap:16px;padding:4px 0">
             ${[1,2,3].map(g => {
-              const info = GRADO_INFO[g];
+              const gradeClasses = { 1: 'grado-1', 2: 'grado-2', 3: 'grado-3' };
               const count = trackings.filter(t => t.grado_confianza === g).length;
               const pct = resumen.totalTrackings > 0 ? Math.round(count / resumen.totalTrackings * 100) : 0;
               return `
                 <div>
                   <div class="flex justify-between items-center mb-8">
-                    <span class="grado-badge ${info.class}">${info.label}</span>
+                    <span class="grado-badge ${gradeClasses[g]}">${t('grade.' + g)}</span>
                     <span class="font-mono" style="font-size:12px;color:var(--text-muted)">${count} trackings</span>
                   </div>
                   <div class="progress-bar">
                     <div class="progress-fill" style="width:${pct}%;background:${g===1?'var(--g1-color)':g===2?'var(--g2-color)':'var(--g3-color)'}"></div>
                   </div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${info.desc}</div>
+                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${t('grade.' + g + '_desc')}</div>
                 </div>
               `;
             }).join('')}

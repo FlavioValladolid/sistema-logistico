@@ -76,6 +76,7 @@
   </style>
 </head>
 <body>
+<script src="js/i18n.js"></script>
 <script src="js/app.js"></script>
 <script src="js/shell.js"></script>
 <script>
@@ -146,6 +147,35 @@ document.getElementById('page-content').innerHTML = `
     <div style="margin-top:16px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;font-size:12px">CARGANDO...</div>
   </div>
 `;
+
+// Modal Nota de Crédito
+document.body.insertAdjacentHTML('beforeend', `
+  <div id="modal-nota-credito" class="modal-overlay">
+    <div class="modal" style="max-width:420px">
+      <div class="modal-header">
+        <span class="modal-title">${t('op.credit_modal_title')}</span>
+        <button class="modal-close" onclick="closeModal('modal-nota-credito')">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="font-size:13px;color:var(--text-secondary);margin-bottom:16px">
+          ${t('op.credit_modal_hint')}
+        </p>
+        <div class="form-group">
+          <label class="form-label">${t('op.credit_label')}</label>
+          <input type="text" class="form-control" id="nota-credito-input" placeholder="${t('op.credit_placeholder')}"
+            onkeydown="if(event.key==='Enter') guardarNotaCredito()">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-nota-credito')">${t('btn.cancel')}</button>
+        <button class="btn btn-primary" onclick="guardarNotaCredito()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><polyline points="20 6 9 17 4 12"/></svg>
+          ${t('btn.save')}
+        </button>
+      </div>
+    </div>
+  </div>
+`);
 
 // Modal Editar Detalle SKU
 document.body.insertAdjacentHTML('beforeend', `
@@ -752,7 +782,7 @@ function onClienteChange(sel) {
   }
 
   const grado = parseInt(opt.dataset.grado);
-  const info = GRADO_INFO[grado];
+  const gradeClasses = { 1: 'grado-1', 2: 'grado-2', 3: 'grado-3' };
   const calidad = opt.dataset.calidad === '1';
   const retrabajo = opt.dataset.retrabajo === '1';
   const pct = opt.dataset.pct;
@@ -762,7 +792,7 @@ function onClienteChange(sel) {
   const requiereTipoRetorno = opt.dataset.requiereTipoRetorno === '1';
 
   badges.innerHTML = `
-    <span class="grado-badge ${info.class}">${info.label}</span>
+    <span class="grado-badge ${gradeClasses[grado]}">${t('grade.' + grado)}</span>
     ${calidad ? '<span class="badge badge-blue">✓ Calidad</span>' : ''}
     ${retrabajo ? '<span class="badge badge-amber">✓ Retrabajos</span>' : ''}
     ${grado === 2 ? `<span class="badge badge-muted">Muestreo ${pct}%</span>` : ''}
@@ -869,7 +899,8 @@ function renderInspeccion() {
   const t = state.tracking;
   const grado = parseInt(t.grado_confianza);
   const modCalidad = parseInt(t.modulo_calidad) === 1;
-  const isClosed = t.estatus === 'cerrado';
+  const isRefunded = t.estatus === 'refunded';
+  const isClosed = t.estatus === 'cerrado' || isRefunded;
 
   let muestreoTarget = 0;
   if (grado === 2) {
@@ -907,19 +938,21 @@ function renderInspeccion() {
           ${!isClosed ? `
             <div style="display:flex;gap:8px;flex-wrap:wrap">
               ${_soloLectura ? '' : `
-                <button class="btn btn-secondary btn-sm" onclick="abrirDiscrepancia()">⚠ Discrepancia</button>
-                <button class="btn btn-secondary btn-sm" style="border-color:rgba(255,61,61,.4);color:var(--accent-red)" onclick="abrirMercanciaAjena()">⛔ No pertenece a cliente</button>
-                <button class="btn btn-primary btn-sm" onclick="cerrarTracking()">✓ Cerrar Tracking</button>
+                <button class="btn btn-secondary btn-sm" onclick="abrirDiscrepancia()">${t('op.btn_discrepancy')}</button>
+                <button class="btn btn-secondary btn-sm" style="border-color:rgba(255,61,61,.4);color:var(--accent-red)" onclick="abrirMercanciaAjena()">${t('op.btn_no_client')}</button>
+                <button class="btn btn-primary btn-sm" onclick="cerrarTracking()">${t('op.btn_close_tracking')}</button>
               `}
             </div>
           ` : `
             <div style="display:flex;gap:8px;flex-wrap:wrap">
-              <span class="badge badge-green" style="padding:8px 14px;font-size:12px">✓ CERRADO</span>
-              <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html?tracking=${t.id}'">📄 Manifiesto</button>
+              ${isRefunded
+                ? `<span class="badge badge-blue" style="padding:8px 14px;font-size:12px">${t('op.refunded_badge')}</span>`
+                : `<span class="badge badge-green" style="padding:8px 14px;font-size:12px">${t('op.closed_badge')}</span>`}
+              <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html?tracking=${t.id}'">${t('op.btn_manifest')}</button>
               ${_soloLectura ? `
-                <button class="btn btn-secondary btn-sm" onclick="window.location='trackings.html'">← Volver a Trackings</button>
+                <button class="btn btn-secondary btn-sm" onclick="window.location='trackings.html'">${t('op.btn_back')}</button>
               ` : `
-                <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">▶ Iniciar otra operación</button>
+                <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">${t('op.btn_new_op')}</button>
               `}
             </div>
           `}
@@ -1301,38 +1334,38 @@ function renderInspeccion() {
 
       <!-- PANEL DERECHO -->
       <div class="panel-right">
-        <div class="panel-header">Estado del Tracking</div>
+        <div class="panel-header">${t('op.panel_title')}</div>
 
         <div class="info-row">
           <span class="info-key">Tracking #</span>
           <span class="info-val" style="color:var(--accent-cyan)">${t.tracking_number}</span>
         </div>
         <div class="info-row">
-          <span class="info-key">Caja / Pallet</span>
+          <span class="info-key">${t('op.lbl_box')}</span>
           <span class="info-val">
             ${t.caja_id
               ? `<span style="font-family:'IBM Plex Mono',monospace">${t.caja_id}</span>`
-              : '<span style="color:var(--text-muted);font-style:italic">Sin asignar</span>'}
+              : `<span style="color:var(--text-muted);font-style:italic">—</span>`}
           </span>
         </div>
         <div class="info-row">
-          <span class="info-key">Grado</span>
+          <span class="info-key">${t('label.grade')}</span>
           <span>${gradoBadge(grado)}</span>
         </div>
         <div class="info-row">
-          <span class="info-key">Declaradas</span>
+          <span class="info-key">${t('op.lbl_declared')}</span>
           <span class="info-val">${formatNum(t.cantidad_declarada)}</span>
         </div>
         <div class="info-row">
-          <span class="info-key">Contadas</span>
+          <span class="info-key">${t('op.lbl_counted')}</span>
           <span class="info-val" style="color:${discrepancia?'var(--accent-amber)':'var(--accent-green)'}">${formatNum(t.cantidad_final)}</span>
         </div>
 
         ${grado > 1 ? `
           <div style="padding:12px 16px;border-bottom:1px solid var(--border)">
-            <div class="info-key" style="margin-bottom:6px">Avance de Inspección</div>
+            <div class="info-key" style="margin-bottom:6px">${t('op.lbl_progress')}</div>
             <div class="flex justify-between" style="margin-bottom:4px">
-              <span class="font-mono" style="font-size:11px">${formatNum(totalInspeccionado)} / ${grado===3?formatNum(t.cantidad_declarada):'~'+formatNum(muestreoTarget)} piezas</span>
+              <span class="font-mono" style="font-size:11px">${formatNum(totalInspeccionado)} / ${grado===3?formatNum(t.cantidad_declarada):'~'+formatNum(muestreoTarget)}</span>
               <span class="font-mono" style="font-size:11px;color:var(--accent-green)">${pctAvance}%</span>
             </div>
             <div class="progress-bar">
@@ -1342,36 +1375,52 @@ function renderInspeccion() {
         ` : ''}
 
         <div class="info-row">
-          <span class="info-key">SKUs registrados</span>
+          <span class="info-key">${t('op.lbl_skus')}</span>
           <span class="info-val">${state.detalles.length}</span>
         </div>
         <div class="info-row">
-          <span class="info-key">Errores</span>
+          <span class="info-key">${t('op.lbl_errors')}</span>
           <span class="info-val" style="color:${erroresCount>0?'var(--accent-red)':'inherit'}">${erroresCount}</span>
         </div>
         <div class="info-row">
-          <span class="info-key">Tipo</span>
+          <span class="info-key">${t('op.lbl_type')}</span>
           <span class="badge ${tipoBadgeClass}" style="font-size:10px;font-family:'IBM Plex Mono',monospace">${tipoContenido}</span>
         </div>
         <div class="info-row">
-          <span class="info-key">Estado</span>
-          <span class="badge ${isClosed?'badge-green':'badge-amber'}">${isClosed?'✓ Cerrado':'⟳ Abierto'}</span>
+          <span class="info-key">${t('op.lbl_state')}</span>
+          <span class="badge ${isRefunded?'badge-blue':isClosed?'badge-green':'badge-amber'}">${isRefunded?t('status.refunded'):isClosed?t('status.closed'):t('status.open')}</span>
         </div>
+        ${isRefunded && t.nota_credito ? `
+        <div class="info-row">
+          <span class="info-key">${t('op.lbl_credit_note')}</span>
+          <span class="info-val" style="color:var(--accent-cyan);font-size:11px">${t.nota_credito}</span>
+        </div>
+        ` : ''}
 
         ${!isClosed ? `
           <div style="padding:12px 16px">
             <button class="btn btn-primary w-full" onclick="cerrarTracking()" style="justify-content:center">
-              ✓ Cerrar Tracking
+              ${t('op.btn_close_tracking')}
             </button>
             <button class="btn btn-secondary w-full mt-8" onclick="abrirDiscrepancia()" style="justify-content:center">
-              ⚠ Registrar Discrepancia
+              ${t('op.btn_discrepancy')}
             </button>
           </div>
         ` : `
-          <div style="padding:12px 16px">
+          <div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px">
             <button class="btn btn-secondary w-full" onclick="window.location='reportes.html?tracking=${t.id}'" style="justify-content:center">
-              📄 Ver Manifiesto
+              ${t('op.btn_manifest_short')}
             </button>
+            ${_soloLectura && !isRefunded ? `
+              <button class="btn btn-primary w-full" onclick="marcarRefunded()" style="justify-content:center;background:var(--accent-blue,#2563eb);border-color:var(--accent-blue,#2563eb)">
+                ${t('op.btn_refunded')}
+              </button>
+            ` : ''}
+            ${_soloLectura && isRefunded && parseInt(t.requiere_nota_credito) && !t.nota_credito ? `
+              <button class="btn btn-secondary w-full" onclick="capturarNotaCredito()" style="justify-content:center">
+                ${t('op.btn_credit_note')}
+              </button>
+            ` : ''}
           </div>
         `}
       </div>
@@ -2976,6 +3025,50 @@ async function confirmarCierre() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch(e) {
     toast(e.error || 'Error al cerrar', 'error');
+  }
+}
+
+// ========================
+// REFUNDED / NOTA DE CRÉDITO
+// ========================
+async function marcarRefunded() {
+  const ok = await confirm(t('op.confirm_refunded'), t('op.confirm_refunded_title'));
+  if (!ok) return;
+  try {
+    await API.put(`/trackings/${state.tracking.id}/refunded`, {});
+    state.tracking = await API.get(`/trackings/${state.tracking.id}`);
+    renderInspeccion();
+    if (parseInt(state.tracking.requiere_nota_credito)) {
+      setTimeout(() => capturarNotaCredito(), 200);
+    } else {
+      toast(t('op.refunded_ok'));
+    }
+  } catch(e) {
+    toast(e.error || 'Error al marcar como refunded', 'error');
+  }
+}
+
+async function capturarNotaCredito() {
+  openModal('modal-nota-credito');
+  document.getElementById('nota-credito-input').value = state.tracking.nota_credito || '';
+  document.getElementById('nota-credito-input').focus();
+}
+
+async function guardarNotaCredito() {
+  const numero = document.getElementById('nota-credito-input').value.trim();
+  if (!numero) { toast('Ingresa el número de nota de crédito', 'error'); return; }
+  try {
+    const result = await API.put(`/trackings/${state.tracking.id}/nota-credito`, { nota_credito: numero });
+    state.tracking.nota_credito = numero;
+    closeModal('modal-nota-credito');
+    renderInspeccion();
+    if (result.duplicate) {
+      toast(t('op.credit_duplicate', { tn: result.duplicate.tracking_number }), 'warning');
+    } else {
+      toast(t('op.credit_saved'));
+    }
+  } catch(e) {
+    toast(e.error || 'Error al guardar nota de crédito', 'error');
   }
 }
 
