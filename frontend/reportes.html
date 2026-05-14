@@ -862,21 +862,23 @@ async function generarReporteRt() {
 
 function exportarCSVRt() {
   if (!rrtData.length) return;
+  const SEP = '|';
+  const esc = v => String(v ?? '').replace(/\|/g, '/');
   const header = ['Fecha', 'Tracking #', 'SKU', 'Retrabajos realizados', 'Operador', 'Pallet / Caja', 'Estatus'];
-  const lines = [header.join(',')];
+  const lines = [header.join(SEP)];
   rrtData.forEach(r => {
     let lista = [];
     try { lista = JSON.parse(r.retrabajos_seleccionados || '[]'); } catch(e) {}
     if (r.retrabajo_otro) lista.push(r.retrabajo_otro);
     lines.push([
-      `"${(r.created_at || '').slice(0,10)}"`,
-      `"${r.tracking_number}"`,
-      `"${r.sku_code || ''}"`,
-      `"${lista.join(' | ').replace(/"/g,'""')}"`,
-      `"${(r.operador || '').replace(/"/g,'""')}"`,
-      `"${r.caja_id || ''}"`,
-      `"${r.estatus}"`,
-    ].join(','));
+      esc((r.created_at || '').slice(0,10)),
+      esc(r.tracking_number),
+      esc(r.sku_code || ''),
+      esc(lista.join('; ')),
+      esc(r.operador || ''),
+      esc(r.caja_id || ''),
+      esc(r.estatus),
+    ].join(SEP));
   });
   const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);

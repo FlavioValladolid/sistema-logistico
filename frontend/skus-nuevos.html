@@ -168,13 +168,13 @@ function renderTabla() {
         <td style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-muted)">${fecha}</td>
         <td>${r.cliente_nombre || '—'}</td>
         <td style="font-family:'IBM Plex Mono',monospace">
-          <a href="operacion.html?id=${r.tracking_id}" style="color:var(--accent-cyan)">${r.tracking_number || '—'}</a>
+          <a href="operacion.html?id=${r.tracking_id}" style="color:var(--accent-cyan)">${escHTML(r.tracking_number) || '—'}</a>
         </td>
-        <td style="font-family:'IBM Plex Mono',monospace;font-weight:700">${r.sku_code}</td>
-        <td style="font-family:'IBM Plex Mono',monospace">${r.upc || '<span style="color:var(--text-muted)">—</span>'}</td>
-        <td style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.descripcion || ''}">${r.descripcion || '—'}</td>
-        <td>${r.pais_origen || '—'}</td>
-        <td style="max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${r.insumos || ''}">${r.insumos || '—'}</td>
+        <td style="font-family:'IBM Plex Mono',monospace;font-weight:700">${escHTML(r.sku_code)}</td>
+        <td style="font-family:'IBM Plex Mono',monospace">${r.upc ? escHTML(r.upc) : '<span style="color:var(--text-muted)">—</span>'}</td>
+        <td style="max-width:140px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHTML(r.descripcion) || ''}">${escHTML(r.descripcion) || '—'}</td>
+        <td>${escHTML(r.pais_origen) || '—'}</td>
+        <td style="max-width:120px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${escHTML(r.insumos) || ''}">${escHTML(r.insumos) || '—'}</td>
         <td style="text-align:center">${fotoIcon(r.url_foto_etiqueta)}</td>
         <td style="text-align:center">${fotoIcon(r.url_foto_insumos_origen)}</td>
         <td style="text-align:center">${fotoIcon(r.url_foto_producto_completo)}</td>
@@ -184,8 +184,9 @@ function renderTabla() {
         }</td>
         <td style="font-size:11px;color:var(--text-muted)">${r.operador || '—'}</td>
         <td>
-          <div style="display:flex;gap:4px">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
             <button class="btn btn-secondary btn-sm btn-xs" onclick="abrirEditar('${r.id}')">✏️ Editar</button>
+            ${!r.dado_de_alta && !incompleto ? `<button class="btn btn-primary btn-sm btn-xs" onclick="darDeAlta('${r.id}')" title="Marcar como dado de alta en el catálogo">✓ Dar de alta</button>` : ''}
             <button class="btn btn-secondary btn-sm btn-xs" onclick="eliminar('${r.id}')" style="color:var(--accent-red)">✕</button>
           </div>
         </td>
@@ -300,6 +301,20 @@ async function eliminar(id) {
     await buscar();
   } catch(e) {
     toast(e.error || 'Error', 'error');
+  }
+}
+
+// ─── DAR DE ALTA ─────────────────────────────────────────────────────────────
+async function darDeAlta(id) {
+  const r = datos.find(x => x.id === id);
+  const ok = await confirm(`¿Marcar el SKU "${r?.sku_code}" como dado de alta en el catálogo? Esto actualizará el catálogo con los datos actuales.`, 'Dar de alta en catálogo');
+  if (!ok) return;
+  try {
+    await API.put(`/skus-nuevos/${id}`, { dado_de_alta: true });
+    toast('SKU dado de alta en catálogo ✓');
+    await buscar();
+  } catch(e) {
+    toast(e.error || 'Error al dar de alta', 'error');
   }
 }
 

@@ -605,10 +605,10 @@ function authMiddleware(req, res, next) {
 
   // Block write operations for read-only roles
   if (['CLIENTE', 'LOGISTICA'].includes(sesion.rol) && ['POST','PUT','DELETE'].includes(req.method)) {
-    // Allow password change
-    if (req.path === '/api/auth/cambiar-password') return next();
+    // Allow password change (req.path is relative to /api mount)
+    if (req.path === '/auth/cambiar-password') return next();
     // Allow logout
-    if (req.path === '/api/auth/logout') return next();
+    if (req.path === '/auth/logout') return next();
     // Allow posting comments and toggling chat resolved state
     if (req.method === 'POST' && /^\/trackings\/[^/]+\/comentarios$/.test(req.path)) return next();
     if (req.method === 'POST' && /^\/trackings\/[^/]+\/chat-resuelto$/.test(req.path)) return next();
@@ -1129,6 +1129,7 @@ app.put('/api/trackings/:id/nota-credito', (req, res) => {
 app.post('/api/trackings/:id/cerrar', (req, res) => {
   const tracking = dbGet('SELECT * FROM trackings WHERE id=?', [req.params.id]);
   if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+  if (tracking.estatus !== 'abierto') return res.status(400).json({ error: `El tracking ya está en estatus "${tracking.estatus}"` });
 
   // Validar que no esté vacío (SKUs o mercancía ajena)
   const totalSkus = dbGet('SELECT COUNT(*) as cnt FROM detalle_skus WHERE tracking_id=?', [req.params.id]);
@@ -1208,7 +1209,7 @@ app.post('/api/trackings/:id/detalles', (req, res) => {
 
   const tracking = dbGet('SELECT * FROM trackings WHERE id=?', [req.params.id]);
   if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
-  if (tracking.estatus === 'cerrado') return res.status(400).json({ error: 'Tracking cerrado' });
+  if (tracking.estatus !== 'abierto') return res.status(400).json({ error: `El tracking está en estatus "${tracking.estatus}" y no acepta nuevos SKUs` });
 
   const id = uuidv4();
   const esNuevoFlag = es_nuevo ? 1 : 0;
@@ -2060,6 +2061,19 @@ app.put('/api/skus-nuevos/:id', (req, res) => {
   if (!updates.length) return res.status(400).json({ error: 'Nada que actualizar' });
   vals.push(req.params.id);
   dbRun(`UPDATE skus_nuevos SET ${updates.join(',')} WHERE id=?`, vals);
+
+  // When marking as dado_de_alta, sync updated info to the SKU catalog
+  if (dado_de_alta) {
+    const sn = dbGet('SELECT * FROM skus_nuevos WHERE id=?', [req.params.id]);
+    if (sn) {
+      const skuExistente = dbGet('SELECT id FROM skus WHERE sku_code=? AND cliente_id=?', [sn.sku_code, sn.cliente_id]);
+      if (skuExistente) {
+        dbRun(`UPDATE skus SET descripcion=?, pais_origen=?, insumos=?, upc_code=? WHERE id=?`,
+          [sn.descripcion || null, sn.pais_origen || null, sn.insumos || null, sn.upc || null, skuExistente.id]);
+      }
+    }
+  }
+
   res.json({ mensaje: 'Actualizado' });
 });
 

@@ -118,13 +118,13 @@ function renderTabla(data) {
             const numComent = t.total_comentarios || 0;
             return `
               <tr ondblclick="window.location='operacion.html?id=${t.id}'" style="cursor:pointer" title="Doble clic para ver detalle">
-                <td class="td-mono" style="color:var(--accent-cyan);font-weight:700">${t.tracking_number}</td>
-                <td>${t.cliente_nombre || '—'}</td>
+                <td class="td-mono" style="color:var(--accent-cyan);font-weight:700">${escHTML(t.tracking_number)}</td>
+                <td>${escHTML(t.cliente_nombre) || '—'}</td>
                 <td class="td-mono">
-                  <div>${t.caja_id}</div>
+                  <div>${escHTML(t.caja_id)}</div>
                   <div style="font-size:10px;color:var(--text-muted)">${t.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja'}</div>
                 </td>
-                <td>${t.operador || '—'}</td>
+                <td>${escHTML(t.operador) || '—'}</td>
                 <td>${gradoBadge(t.grado_confianza)}</td>
                 <td class="td-mono">${formatNum(t.cantidad_declarada)}</td>
                 <td>
@@ -141,7 +141,7 @@ function renderTabla(data) {
                 </td>
                 <td class="td-mono" style="font-size:12px">
                   ${t.nota_credito
-                    ? `<span style="color:var(--accent-cyan)">${t.nota_credito}</span>`
+                    ? `<span style="color:var(--accent-cyan)">${escHTML(t.nota_credito)}</span>`
                     : '<span style="color:var(--text-muted)">—</span>'}
                 </td>
                 <td style="text-align:center">

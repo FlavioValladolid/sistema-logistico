@@ -127,6 +127,19 @@ const API = {
 };
 
 // =====================================================
+// XSS HELPER — escape user-provided text before innerHTML insertion
+// =====================================================
+function escHTML(s) {
+  if (s == null) return '';
+  return String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// =====================================================
 // TOAST NOTIFICATIONS
 // =====================================================
 function toast(message, type = 'success') {
