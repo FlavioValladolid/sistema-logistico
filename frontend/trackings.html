@@ -58,6 +58,12 @@ document.getElementById('page-content').innerHTML = `
           <option value="3">G3</option>
         </select>
         <input type="text" class="form-control" id="search-tracking" placeholder="Buscar por tracking, cliente u orden..." style="width:220px">
+        <select class="form-control" id="page-size-selector" style="width:100px" onchange="changePageSize(this.value)">
+          <option value="50">50 / pág</option>
+          <option value="100">100 / pág</option>
+          <option value="200">200 / pág</option>
+          <option value="500">500 / pág</option>
+        </select>
       </div>
     </div>
     <div id="tabla-trackings">
@@ -67,6 +73,9 @@ document.getElementById('page-content').innerHTML = `
 `;
 
 let trackingsData = [];
+let filteredTrackings = [];
+let currentPage = 1;
+let pageSize = 50;
 
 async function loadTrackings() {
   const [trackings, clientes] = await Promise.all([
@@ -92,9 +101,10 @@ async function loadTrackings() {
   applyFilters();
 }
 
-function renderTabla(data) {
+function renderTabla() {
   const el = document.getElementById('tabla-trackings');
-  if (data.length === 0) {
+  const total = filteredTrackings.length;
+  if (total === 0) {
     el.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">📦</div>
@@ -102,6 +112,25 @@ function renderTabla(data) {
         <div class="empty-state-text">${t('trackings.empty_text')}</div>
       </div>`;
     return;
+  }
+
+  const totalPages = Math.ceil(total / pageSize);
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * pageSize;
+  const end = Math.min(start + pageSize, total);
+  const pageData = filteredTrackings.slice(start, end);
+
+  function paginationHtml() {
+    if (totalPages <= 1) return '';
+    const pages = [];
+    for (let p = 1; p <= totalPages; p++) {
+      if (p === 1 || p === totalPages || Math.abs(p - currentPage) <= 2) {
+        pages.push(`<button class="btn btn-sm ${p === currentPage ? 'btn-primary' : 'btn-ghost'}" onclick="goToPage(${p})">${p}</button>`);
+      } else if (pages[pages.length - 1] !== '…') {
+        pages.push('…');
+      }
+    }
+    return `<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">${pages.join('')}</div>`;
   }
 
   el.innerHTML = `
@@ -125,7 +154,7 @@ function renderTabla(data) {
           </tr>
         </thead>
         <tbody>
-          ${data.map(tr => {
+          ${pageData.map(tr => {
             const pct = tr.cantidad_declarada > 0 ? Math.round(tr.cantidad_final / tr.cantidad_declarada * 100) : 0;
             const discrepancia = tr.cantidad_final !== tr.cantidad_declarada && tr.cantidad_declarada > 0;
             const numComent = tr.total_comentarios || 0;
@@ -196,7 +225,23 @@ function renderTabla(data) {
         </tbody>
       </table>
     </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-top:1px solid var(--border);flex-wrap:wrap;gap:8px">
+      <span style="font-size:12px;color:var(--text-muted)">Mostrando ${start + 1}–${end} de ${total} trackings</span>
+      ${paginationHtml()}
+    </div>
   `;
+}
+
+function goToPage(p) {
+  currentPage = p;
+  renderTabla();
+  document.getElementById('tabla-trackings').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function changePageSize(val) {
+  pageSize = parseInt(val);
+  currentPage = 1;
+  renderTabla();
 }
 
 function applyFilters() {
@@ -206,7 +251,7 @@ function applyFilters() {
   const grado = document.getElementById('filtro-grado').value;
   const soloComentarios = document.getElementById('filtro-con-comentarios').checked;
   const soloPendienteRefund = document.getElementById('filtro-pendiente-refund').checked;
-  renderTabla(trackingsData.filter(tr => {
+  filteredTrackings = trackingsData.filter(tr => {
     const matchQ = !q
       || tr.tracking_number.toLowerCase().includes(q)
       || (tr.cliente_nombre||'').toLowerCase().includes(q)
@@ -218,7 +263,9 @@ function applyFilters() {
     const matchComent = !soloComentarios || tr.tiene_comentarios;
     const matchPendienteRefund = !soloPendienteRefund || tr.estatus === 'cerrado';
     return matchQ && matchE && matchC && matchG && matchComent && matchPendienteRefund;
-  }));
+  });
+  currentPage = 1;
+  renderTabla();
 }
 
 async function verOrden(numeroOrden) {
