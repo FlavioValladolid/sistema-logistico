@@ -2381,7 +2381,11 @@ app.post('/api/ordenes/upload', requireRol('ADMIN', 'SUPERVISOR', 'CLIENTE'), up
   if (parseInt(cliente.grado_confianza) !== 0) return res.status(400).json({ error: 'El cliente debe ser G0 para subir órdenes' });
 
   const csvText = req.file.buffer.toString('utf8');
-  const parsed = Papa.parse(csvText, { header: true, skipEmptyLines: true, trimHeaders: true });
+  const parsed = Papa.parse(csvText, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: h => h.trim().toLowerCase().replace(/\s+/g, '_'),
+  });
 
   if (parsed.errors.length > 0 && parsed.data.length === 0) {
     return res.status(400).json({ error: 'Error al parsear el CSV: ' + parsed.errors[0].message });
@@ -2389,19 +2393,16 @@ app.post('/api/ordenes/upload', requireRol('ADMIN', 'SUPERVISOR', 'CLIENTE'), up
 
   const headers = parsed.meta.fields || [];
   const required = ['tracking_number', 'sku'];
-  const missing = required.filter(col => !headers.some(h => h.trim().toLowerCase() === col));
+  const missing = required.filter(col => !headers.includes(col));
   if (missing.length > 0) {
     return res.status(400).json({ error: `El CSV no tiene las columnas requeridas: ${missing.join(', ')}` });
   }
 
-  // Normalize header names (case-insensitive)
-  const normalize = row => {
+  const rows = parsed.data.map(r => {
     const out = {};
-    Object.entries(row).forEach(([k, v]) => { out[k.trim().toLowerCase()] = (v || '').trim(); });
+    Object.entries(r).forEach(([k, v]) => { out[k] = (v || '').trim(); });
     return out;
-  };
-
-  const rows = parsed.data.map(normalize).filter(r => r.tracking_number && r.sku);
+  }).filter(r => r.tracking_number && r.sku);
   if (rows.length === 0) return res.status(400).json({ error: 'El CSV no tiene filas válidas (tracking_number y sku son requeridos)' });
 
   const trackingsUnicos = new Set(rows.map(r => r.tracking_number)).size;
@@ -2431,31 +2432,30 @@ app.delete('/api/ordenes/:id', requireRol('ADMIN', 'SUPERVISOR'), (req, res) => 
 });
 
 app.get('/api/ordenes/buscar-tracking', (req, res) => {
-  const { codigo, cliente_id } = req.query;
-  if (!codigo || !cliente_id) return res.status(400).json({ error: 'codigo y cliente_id requeridos' });
+  const { codigo } = req.query;
+  if (!codigo) return res.status(400).json({ error: 'codigo requerido' });
 
   // 1. Exact barcode match
   const byBarcode = dbGet(
-    'SELECT * FROM orden_items WHERE cliente_id = ? AND barcode = ? LIMIT 1',
-    [cliente_id, codigo]
+    'SELECT * FROM orden_items WHERE barcode = ? LIMIT 1',
+    [codigo]
   );
   if (byBarcode) return res.json({ type: 'single', item: byBarcode });
 
   // 2. Exact SKU match
   const bySku = dbGet(
-    'SELECT * FROM orden_items WHERE cliente_id = ? AND UPPER(sku) = UPPER(?) LIMIT 1',
-    [cliente_id, codigo]
+    'SELECT * FROM orden_items WHERE UPPER(sku) = UPPER(?) LIMIT 1',
+    [codigo]
   );
   if (bySku) return res.json({ type: 'single', item: bySku });
 
-  // 3. Tracking number match — return ALL items for that tracking
+  // 3. Tracking number match (exact or substring) — return ALL items for that tracking
   const byTracking = dbAll(`
     SELECT * FROM orden_items
-    WHERE cliente_id = ?
-      AND length(tracking_number) > 0
+    WHERE length(tracking_number) > 0
       AND (tracking_number = ? OR instr(?, tracking_number) > 0)
     ORDER BY order_number, sku
-  `, [cliente_id, codigo, codigo]);
+  `, [codigo, codigo]);
   if (byTracking.length > 0) return res.json({ type: 'tracking', items: byTracking });
 
   res.json(null);
@@ -2470,6 +2470,46 @@ app.get('/api/ordenes/items-por-tracking', (req, res) => {
     [tracking_number]
   );
   res.json(items);
+});
+
+// ── G0 CONFIRMAR RECEPCIÓN (validacion_piezas=false) ────────────────────────
+
+app.post('/api/trackings/:id/confirmar-recepcion-g0', (req, res) => {
+  const tracking = dbGet('SELECT * FROM trackings WHERE id = ?', [req.params.id]);
+  if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+  if (tracking.estatus !== 'abierto') return res.status(400).json({ error: `El tracking ya está en estatus "${tracking.estatus}"` });
+
+  const { caja_pallet_id } = req.body;
+  if (!caja_pallet_id) return res.status(400).json({ error: 'caja_pallet_id requerido' });
+
+  const caja = dbGet('SELECT * FROM cajas_pallets WHERE id = ?', [caja_pallet_id]);
+  if (!caja) return res.status(404).json({ error: 'Caja/pallet no encontrada' });
+
+  // Auto-crear g0_piezas desde orden_items si no hay ninguna registrada
+  const existentes = dbGet('SELECT COUNT(*) as cnt FROM g0_piezas WHERE tracking_id = ?', [req.params.id]);
+  if ((existentes?.cnt || 0) === 0) {
+    const items = dbAll('SELECT * FROM orden_items WHERE tracking_number = ?', [tracking.tracking_number]);
+    if (items.length === 0) return res.status(400).json({ error: 'No hay items de orden para este tracking. Sube el CSV primero.' });
+
+    const stmt = db.prepare(`INSERT INTO g0_piezas
+      (id,tracking_id,orden_item_id,sku,product_title,order_number,barcode,condicion,pais_coincide,pais_real,insumos_coincide,insumos_real,operador,created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`);
+    const insertAll = db.transaction(rows => {
+      for (const r of rows) {
+        for (let i = 0; i < (r.quantity || 1); i++) {
+          stmt.run(uuidv4(), req.params.id, r.id, r.sku, r.product_title, r.order_number, r.barcode,
+            'Buena', 1, null, 1, null, req.usuario?.email || null, localNow());
+        }
+      }
+    });
+    insertAll(items);
+  }
+
+  const totalG0 = dbGet('SELECT COUNT(*) as cnt FROM g0_piezas WHERE tracking_id = ?', [req.params.id]);
+  dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now','localtime'), caja_id=?, caja_pallet_id=?, cantidad_final=? WHERE id=?`,
+    [caja.nombre, caja_pallet_id, totalG0?.cnt || 0, req.params.id]);
+
+  res.json({ mensaje: 'Tracking cerrado correctamente', piezas: totalG0?.cnt || 0 });
 });
 
 // ── G0 PIEZAS ────────────────────────────────────────────────────────────────

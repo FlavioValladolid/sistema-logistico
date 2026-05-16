@@ -268,7 +268,7 @@ function previewCsv() {
       return result;
     };
 
-    const headers = parseRow(lines[0]).map(h => h.replace(/^"|"$/g, '').trim().toLowerCase());
+    const headers = parseRow(lines[0]).map(h => h.replace(/^"|"$/g, '').trim().toLowerCase().replace(/\s+/g, '_'));
     const dataRows = lines.slice(1, 6).map(l => parseRow(l).map(v => v.replace(/^"|"$/g, '')));
 
     document.getElementById('preview-head').innerHTML = `<tr>${headers.map(h => `<th style="font-size:11px;white-space:nowrap">${escHTML(h)}</th>`).join('')}</tr>`;
