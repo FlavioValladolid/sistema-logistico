@@ -1040,13 +1040,24 @@ app.get('/api/reportes/tipo-caja', (req, res) => {
     SELECT cp.id, cp.nombre, cp.tipo, cp.consecutivo, cp.estatus,
            cp.created_at, cp.closed_at,
            c.nombre as cliente_nombre,
-           COUNT(DISTINCT t.id)         as num_trackings,
-           COUNT(DISTINCT d.id)         as num_skus,
-           COALESCE(SUM(d.cantidad), 0) as total_piezas
+           COUNT(DISTINCT t.id) as num_trackings,
+           (
+             SELECT COUNT(DISTINCT d.sku_code) FROM detalle_skus d
+             JOIN trackings t2 ON d.tracking_id = t2.id AND t2.caja_pallet_id = cp.id
+           ) + (
+             SELECT COUNT(DISTINCT g.sku) FROM g0_piezas g
+             JOIN trackings t3 ON g.tracking_id = t3.id AND t3.caja_pallet_id = cp.id
+           ) as num_skus,
+           (
+             SELECT COALESCE(SUM(d.cantidad), 0) FROM detalle_skus d
+             JOIN trackings t2 ON d.tracking_id = t2.id AND t2.caja_pallet_id = cp.id
+           ) + (
+             SELECT COUNT(*) FROM g0_piezas g
+             JOIN trackings t3 ON g.tracking_id = t3.id AND t3.caja_pallet_id = cp.id
+           ) as total_piezas
     FROM cajas_pallets cp
     JOIN clientes c ON cp.cliente_id = c.id
     LEFT JOIN trackings t ON t.caja_pallet_id = cp.id
-    LEFT JOIN detalle_skus d ON d.tracking_id = t.id
     WHERE 1=1${clienteFilter(req.usuario, 'cp').sql}
   `;
   const params = [...clienteFilter(req.usuario, 'cp').params];
@@ -1567,14 +1578,25 @@ app.get('/api/reportes/cajas', (req, res) => {
       COUNT(DISTINCT t.id)         AS num_trackings,
       GROUP_CONCAT(t.id, '|')      AS tracking_ids,
       GROUP_CONCAT(t.tracking_number, ', ') AS tracking_numbers,
-      COUNT(DISTINCT d.id)         AS num_skus,
-      COALESCE(SUM(d.cantidad), 0) AS total_piezas,
+      (
+        SELECT COUNT(DISTINCT d.sku_code) FROM detalle_skus d
+        WHERE d.tracking_id IN (SELECT id FROM trackings WHERE caja_id = t.caja_id AND cliente_id = t.cliente_id)
+      ) + (
+        SELECT COUNT(DISTINCT g.sku) FROM g0_piezas g
+        WHERE g.tracking_id IN (SELECT id FROM trackings WHERE caja_id = t.caja_id AND cliente_id = t.cliente_id)
+      ) AS num_skus,
+      (
+        SELECT COALESCE(SUM(d.cantidad), 0) FROM detalle_skus d
+        WHERE d.tracking_id IN (SELECT id FROM trackings WHERE caja_id = t.caja_id AND cliente_id = t.cliente_id)
+      ) + (
+        SELECT COUNT(*) FROM g0_piezas g
+        WHERE g.tracking_id IN (SELECT id FROM trackings WHERE caja_id = t.caja_id AND cliente_id = t.cliente_id)
+      ) AS total_piezas,
       MAX(t.closed_at)             AS closed_at,
       MAX(t.impresa)               AS impresa
     FROM trackings t
     LEFT JOIN clientes c ON t.cliente_id = c.id
     LEFT JOIN cajas_pallets cp ON cp.nombre = t.caja_id
-    LEFT JOIN detalle_skus d ON d.tracking_id = t.id
     ${where}
     GROUP BY t.caja_id, t.cliente_id
     ORDER BY MAX(t.closed_at) DESC
