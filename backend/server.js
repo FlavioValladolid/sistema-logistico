@@ -2462,10 +2462,11 @@ app.get('/api/ordenes/buscar-tracking', (req, res) => {
 
 app.get('/api/ordenes/items-por-tracking', (req, res) => {
   const { tracking_number, cliente_id } = req.query;
-  if (!tracking_number || !cliente_id) return res.status(400).json({ error: 'tracking_number y cliente_id requeridos' });
+  if (!tracking_number) return res.status(400).json({ error: 'tracking_number requerido' });
+  // Search by tracking_number only — numbers are globally unique, so cliente_id is not needed
   const items = dbAll(
-    'SELECT * FROM orden_items WHERE cliente_id = ? AND tracking_number = ? ORDER BY order_number, sku',
-    [cliente_id, tracking_number]
+    'SELECT * FROM orden_items WHERE tracking_number = ? ORDER BY order_number, sku',
+    [tracking_number]
   );
   res.json(items);
 });
