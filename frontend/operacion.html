@@ -608,6 +608,7 @@ let state = {
   errores: [],
   retrabajos: [],
   g0piezas: [],
+  g0ordenitems: [],
   skuActual: null,
   paisCoincide: true,
   insumosCoincide: true,
@@ -626,16 +627,18 @@ async function init() {
       state.tracking = tracking;
       state.cliente = tracking;
       const grado = parseInt(tracking.grado_confianza);
-      const [detalles, errores, retrabajos, g0piezas] = await Promise.all([
+      const [detalles, errores, retrabajos, g0piezas, g0ordenitems] = await Promise.all([
         grado !== 0 ? API.get(`/trackings/${trackingIdParam}/detalles`) : Promise.resolve([]),
         grado !== 0 ? API.get(`/trackings/${trackingIdParam}/errores`) : Promise.resolve([]),
         grado !== 0 ? API.get(`/trackings/${trackingIdParam}/retrabajos`) : Promise.resolve([]),
         grado === 0 ? API.get(`/trackings/${trackingIdParam}/g0-piezas`) : Promise.resolve([]),
+        grado === 0 ? API.get(`/ordenes/items-por-tracking?tracking_number=${encodeURIComponent(tracking.tracking_number)}&cliente_id=${encodeURIComponent(tracking.cliente_id)}`) : Promise.resolve([]),
       ]);
       state.detalles = detalles;
       state.errores = errores;
       state.retrabajos = retrabajos;
       state.g0piezas = g0piezas;
+      state.g0ordenitems = g0ordenitems;
       state.fase = 'inspeccion';
       renderInspeccion();
     } catch(e) {
@@ -884,6 +887,13 @@ async function iniciarTracking() {
     state.g0piezas = [];
     state.fase = 'inspeccion';
 
+    const grado = parseInt(state.tracking.grado_confianza);
+    if (grado === 0 && state.tracking.tracking_number) {
+      state.g0ordenitems = await API.get(`/ordenes/items-por-tracking?tracking_number=${encodeURIComponent(state.tracking.tracking_number)}&cliente_id=${encodeURIComponent(state.tracking.cliente_id)}`).catch(() => []);
+    } else {
+      state.g0ordenitems = [];
+    }
+
     // Update URL
     window.history.pushState({}, '', `?id=${res.id}`);
 
@@ -897,6 +907,87 @@ async function iniciarTracking() {
 // ========================
 // FASE 2 — G0 PROCESAMIENTO
 // ========================
+
+function renderG0Manifiesto() {
+  const scanCountByBarcode = {};
+  const scanCountBySku = {};
+  for (const p of state.g0piezas) {
+    if (p.barcode) scanCountByBarcode[p.barcode] = (scanCountByBarcode[p.barcode] || 0) + 1;
+    if (p.sku)     scanCountBySku[p.sku]         = (scanCountBySku[p.sku]         || 0) + 1;
+  }
+
+  const ordenBarcodes = new Set(state.g0ordenitems.map(i => i.barcode).filter(Boolean));
+  const ordenSkus     = new Set(state.g0ordenitems.map(i => i.sku).filter(Boolean));
+
+  const rows = state.g0ordenitems.map(item => {
+    const esperado = item.quantity || 1;
+    const cnt = item.barcode ? (scanCountByBarcode[item.barcode] || 0)
+                             : (scanCountBySku[item.sku] || 0);
+    let status = 'pending'; // none scanned
+    if (cnt >= esperado) status = 'done';
+    else if (cnt > 0)    status = 'partial';
+    const sobrante = cnt > esperado ? cnt - esperado : 0;
+    return { item, cnt, esperado, status, sobrante };
+  });
+
+  // Extra pieces not in this order
+  const extras = state.g0piezas.filter(p =>
+    !(p.barcode && ordenBarcodes.has(p.barcode)) &&
+    !(p.sku     && ordenSkus.has(p.sku))
+  );
+
+  const completados = rows.filter(r => r.status === 'done').length;
+  const total = rows.length;
+  const hayProblemas = rows.some(r => r.status !== 'done' || r.sobrante > 0) || extras.length > 0;
+
+  const statusIcon = {
+    done:    { icon: '✓', bg: 'rgba(0,200,100,.15)', color: 'var(--accent-green)', border: 'var(--accent-green)' },
+    partial: { icon: '½', bg: 'rgba(255,170,0,.12)',  color: 'var(--accent-amber)', border: 'var(--accent-amber)' },
+    pending: { icon: '○', bg: 'rgba(255,255,255,.06)', color: 'var(--text-muted)',  border: 'var(--border)' },
+  };
+
+  return `
+    <div class="card" style="margin-bottom:16px">
+      <div class="card-header">
+        <span class="card-title">Contenido de la Orden</span>
+        <span class="badge ${!hayProblemas ? 'badge-green' : completados > 0 ? 'badge-amber' : 'badge-red'}" style="font-family:'IBM Plex Mono',monospace">${completados}/${total}</span>
+      </div>
+      <div style="padding:0 16px 12px">
+        ${rows.map(({ item, cnt, esperado, status, sobrante }) => {
+          const s = statusIcon[status];
+          const textStyle = status === 'done' ? 'text-decoration:line-through;opacity:.6' : '';
+          return `
+          <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--border-subtle)">
+            <div style="width:18px;height:18px;flex-shrink:0;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;
+              background:${s.bg};color:${s.color};border:1px solid ${s.border}">
+              ${s.icon}
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:${status === 'done' ? 'var(--text-muted)' : 'var(--accent-cyan)'};${textStyle}">${escHTML(item.sku)}</div>
+              <div style="font-size:11px;color:var(--text-muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHTML(item.product_title || '')}</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-size:11px;font-family:'IBM Plex Mono',monospace;font-weight:700;color:${status === 'done' ? 'var(--accent-green)' : status === 'partial' ? 'var(--accent-amber)' : 'var(--text-muted)'}">
+                ${cnt}/${esperado}
+              </div>
+              ${sobrante > 0 ? `<div style="font-size:10px;color:#f87171;font-weight:600">+${sobrante} de más</div>` : ''}
+              <div style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--text-muted)">${escHTML(item.barcode || '')}</div>
+            </div>
+          </div>`;
+        }).join('')}
+        ${extras.length > 0 ? `
+          <div style="margin-top:8px;padding:8px 10px;background:rgba(248,113,113,.08);border:1px solid rgba(248,113,113,.3);border-radius:var(--radius-sm)">
+            <div style="font-size:10px;font-weight:700;color:#f87171;margin-bottom:4px">⚠ PIEZAS NO ESPERADAS (${extras.length})</div>
+            ${extras.map(p => `
+              <div style="font-size:11px;color:#f87171;font-family:'IBM Plex Mono',monospace">${escHTML(p.sku || p.barcode || '—')}</div>
+            `).join('')}
+          </div>
+        ` : ''}
+      </div>
+    </div>
+  `;
+}
+
 function renderG0Inspeccion() {
   document.getElementById('loading-state').classList.add('hidden');
   document.getElementById('fase-inicio').classList.add('hidden');
@@ -941,6 +1032,8 @@ function renderG0Inspeccion() {
           </div>
         ` : ''}
 
+        ${state.g0ordenitems.length > 0 ? renderG0Manifiesto() : ''}
+
         <div class="card">
           <div class="card-header">
             <span class="card-title">${t('op.g0_pieces_title')}</span>
@@ -969,6 +1062,82 @@ function renderG0Inspeccion() {
           <span class="info-key">${t('op.g0_processed')}</span>
           <span class="info-val" style="color:var(--accent-cyan)">${state.g0piezas.length}</span>
         </div>
+        ${(() => {
+          const totalEsperado = state.g0ordenitems.reduce((s, i) => s + (i.quantity || 1), 0);
+          if (totalEsperado === 0) return '';
+
+          // Per-item scan count (by barcode match, then sku fallback)
+          const scanCountByBarcode = {};
+          const scanCountBySku = {};
+          for (const p of state.g0piezas) {
+            if (p.barcode) scanCountByBarcode[p.barcode] = (scanCountByBarcode[p.barcode] || 0) + 1;
+            if (p.sku)     scanCountBySku[p.sku]         = (scanCountBySku[p.sku]         || 0) + 1;
+          }
+          const scannedOrdenBarcodes = new Set(state.g0ordenitems.map(i => i.barcode).filter(Boolean));
+          const scannedOrdenSkus     = new Set(state.g0ordenitems.map(i => i.sku).filter(Boolean));
+
+          let totalEscaneoEnOrden = 0;
+          for (const item of state.g0ordenitems) {
+            const cnt = item.barcode ? (scanCountByBarcode[item.barcode] || 0)
+                                     : (scanCountBySku[item.sku] || 0);
+            totalEscaneoEnOrden += cnt;
+          }
+
+          // Extra = piezas escaneadas que NO pertenecen a la orden de este tracking
+          const extrasNoEnOrden = state.g0piezas.filter(p =>
+            !(p.barcode && scannedOrdenBarcodes.has(p.barcode)) &&
+            !(p.sku     && scannedOrdenSkus.has(p.sku))
+          ).length;
+
+          // Per-item: faltantes (expected > scanned) y sobrantes (scanned > expected)
+          let piezasFaltantes = 0;
+          let piezasSobrantes = 0;
+          for (const item of state.g0ordenitems) {
+            const esperado = item.quantity || 1;
+            const cnt = item.barcode ? (scanCountByBarcode[item.barcode] || 0)
+                                     : (scanCountBySku[item.sku] || 0);
+            if (cnt < esperado) piezasFaltantes += esperado - cnt;
+            if (cnt > esperado) piezasSobrantes += cnt - esperado;
+          }
+          piezasSobrantes += extrasNoEnOrden;
+
+          const totalScaneado = state.g0piezas.length;
+          const pct = Math.min(100, Math.round(totalEscaneoEnOrden / totalEsperado * 100));
+          const exacto = piezasFaltantes === 0 && piezasSobrantes === 0;
+          const barColor = exacto ? 'var(--accent-green)' : pct > 0 ? 'var(--accent-cyan)' : 'var(--border)';
+
+          return `
+            <div style="padding:10px 16px;border-top:1px solid var(--border-subtle)">
+              <div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;margin-bottom:8px">BALANCE DE ORDEN</div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span style="color:var(--text-muted)">Esperado</span>
+                <span style="font-family:'IBM Plex Mono',monospace;color:var(--text-primary)">${totalEsperado}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span style="color:var(--text-muted)">Escaneado</span>
+                <span style="font-family:'IBM Plex Mono',monospace;color:var(--accent-cyan)">${totalScaneado}</span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:5px">
+                <span style="color:var(--text-muted)">Faltante</span>
+                <span style="font-family:'IBM Plex Mono',monospace;color:${piezasFaltantes > 0 ? 'var(--accent-amber)' : 'var(--accent-green)'}">
+                  ${piezasFaltantes > 0 ? '-' : ''}${piezasFaltantes}
+                </span>
+              </div>
+              <div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:8px">
+                <span style="color:var(--text-muted)">De más</span>
+                <span style="font-family:'IBM Plex Mono',monospace;color:${piezasSobrantes > 0 ? '#f87171' : 'var(--accent-green)'}">
+                  ${piezasSobrantes > 0 ? '+' : ''}${piezasSobrantes}
+                </span>
+              </div>
+              <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden">
+                <div style="height:100%;width:${pct}%;background:${barColor};border-radius:3px;transition:width .3s"></div>
+              </div>
+              <div style="text-align:right;font-size:10px;color:var(--text-muted);margin-top:3px">${pct}%</div>
+              ${piezasSobrantes > 0 ? `<div style="margin-top:6px;font-size:10px;color:#f87171;font-weight:600">⚠ ${piezasSobrantes} pieza(s) fuera de orden</div>` : ''}
+              ${exacto ? `<div style="margin-top:6px;font-size:10px;color:var(--accent-green);font-weight:600">✓ Orden completa</div>` : ''}
+            </div>
+          `;
+        })()}
         <div class="info-row">
           <span class="info-key">${t('op.lbl_state')}</span>
           <span>
@@ -1005,6 +1174,149 @@ function renderG0Inspeccion() {
 
 let _g0CurrentItem = null;
 let _g0Condicion = 'Buena';
+let _g0PaisCoincide = true;
+let _g0PaisReal = '';
+let _g0InsumosCoincide = true;
+let _g0InsumosReal = '';
+
+function renderG0SingleItem(item) {
+  const needsCondicion = parseInt(state.tracking.validacion_condicion) === 1;
+  return `
+    <div style="background:var(--bg-elevated);border:1px solid rgba(0,188,212,.3);border-radius:var(--radius-sm);padding:14px">
+      <div style="margin-bottom:10px">
+        <div style="font-size:10px;color:var(--accent-cyan);font-family:'IBM Plex Mono',monospace;font-weight:700;margin-bottom:4px">${t('op.g0_found')}</div>
+        <div style="font-size:15px;font-weight:700;color:var(--accent-cyan);font-family:'IBM Plex Mono',monospace">${escHTML(item.sku)}</div>
+        <div style="font-size:13px;color:var(--text-primary);margin-top:2px">${escHTML(item.product_title || '')}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:12px">
+        <div style="color:var(--text-muted)">${t('op.g0_order')}: <span class="font-mono" style="color:var(--text-primary)">${escHTML(item.order_number || '—')}</span></div>
+        <div style="color:var(--text-muted)">Barcode: <span class="font-mono" style="color:var(--text-primary);font-size:11px">${escHTML(item.barcode || '—')}</span></div>
+        <div style="color:var(--text-muted)">Cant. esperada: <span class="font-mono" style="color:var(--text-primary)">${item.quantity}</span></div>
+        <div style="color:var(--text-muted)">País catálogo: <span style="color:var(--text-primary)">${escHTML(item.country_of_origin || '—')}</span></div>
+      </div>
+
+      ${needsCondicion ? `
+        <!-- CONDICIÓN -->
+        <div style="margin-bottom:12px">
+          <div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;margin-bottom:6px">${t('op.g0_condicion')}</div>
+          <div style="display:flex;gap:6px">
+            <button id="g0-cond-buena" class="btn btn-secondary btn-sm" onclick="setG0Condicion('Buena')" style="flex:1">${t('op.g0_cond_good')}</button>
+            <button id="g0-cond-danada" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Dañada')" style="flex:1">${t('op.g0_cond_damaged')}</button>
+            <button id="g0-cond-sin-caja" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Sin caja')" style="flex:1">${t('op.g0_cond_no_box')}</button>
+          </div>
+        </div>
+
+        <!-- VALIDACIÓN PAÍS -->
+        <div style="margin-bottom:12px">
+          <div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;margin-bottom:6px">PAÍS DE ORIGEN</div>
+          <div class="verify-field">
+            <div>
+              <div class="verify-label">Catálogo</div>
+              <div class="verify-value" style="font-size:13px">${escHTML(item.country_of_origin || '—')}</div>
+            </div>
+            <div class="verify-actions">
+              <button class="verify-btn verify-ok selected" id="g0-btn-pais-ok" onclick="setG0PaisCoincide(true)">✓ Coincide</button>
+              <button class="verify-btn verify-no" id="g0-btn-pais-no" onclick="setG0PaisCoincide(false)">✕ No coincide</button>
+            </div>
+          </div>
+          <div id="g0-pais-real-group" style="display:none;margin-top:8px">
+            <select class="form-control" id="g0-pais-real-select" onchange="onG0PaisRealSelect(this.value)">
+              ${COUNTRY_OPTIONS}
+            </select>
+            <input type="text" class="form-control mt-8" id="g0-pais-real-manual" placeholder="Enter country name..." style="display:none">
+          </div>
+        </div>
+
+        <!-- VALIDACIÓN INSUMOS -->
+        <div style="margin-bottom:12px">
+          <div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;margin-bottom:6px">INSUMOS / COMPOSICIÓN</div>
+          <div class="verify-field">
+            <div style="flex:1">
+              <div class="verify-label">Catálogo</div>
+              <div class="verify-value" style="font-size:12px">${escHTML(item.content || '—')}</div>
+            </div>
+            <div class="verify-actions">
+              <button class="verify-btn verify-ok selected" id="g0-btn-insumos-ok" onclick="setG0InsumosCoincide(true)">✓ Coincide</button>
+              <button class="verify-btn verify-no" id="g0-btn-insumos-no" onclick="setG0InsumosCoincide(false)">✕ No coincide</button>
+            </div>
+          </div>
+          <div id="g0-insumos-real-group" style="display:none;margin-top:8px">
+            <input type="text" class="form-control" id="g0-insumos-real" placeholder="Composición real en la prenda...">
+          </div>
+        </div>
+      ` : ''}
+
+      <button class="btn btn-primary w-full" onclick="registrarG0Pieza()" style="justify-content:center">
+        ${t('op.g0_register')}
+      </button>
+    </div>
+  `;
+}
+
+function setG0PaisCoincide(val) {
+  _g0PaisCoincide = val;
+  document.getElementById('g0-btn-pais-ok')?.classList.toggle('selected', val);
+  document.getElementById('g0-btn-pais-no')?.classList.toggle('selected', !val);
+  const grp = document.getElementById('g0-pais-real-group');
+  if (grp) grp.style.display = val ? 'none' : '';
+  if (val) _g0PaisReal = '';
+}
+
+function onG0PaisRealSelect(v) {
+  const manual = document.getElementById('g0-pais-real-manual');
+  if (manual) manual.style.display = v === '__other__' ? '' : 'none';
+  _g0PaisReal = v === '__other__' ? '' : v;
+}
+
+function setG0InsumosCoincide(val) {
+  _g0InsumosCoincide = val;
+  document.getElementById('g0-btn-insumos-ok')?.classList.toggle('selected', val);
+  document.getElementById('g0-btn-insumos-no')?.classList.toggle('selected', !val);
+  const grp = document.getElementById('g0-insumos-real-group');
+  if (grp) grp.style.display = val ? 'none' : '';
+  if (val) _g0InsumosReal = '';
+}
+
+function renderG0TrackingItems(items) {
+  return `
+    <div style="background:var(--bg-elevated);border:1px solid rgba(0,188,212,.3);border-radius:var(--radius-sm);padding:14px">
+      <div style="font-size:10px;color:var(--accent-cyan);font-family:'IBM Plex Mono',monospace;font-weight:700;margin-bottom:10px">
+        ${items.length} PARTE(S) ENCONTRADA(S) EN ESTE TRACKING
+      </div>
+      <div style="display:flex;flex-direction:column;gap:8px">
+        ${items.map((item, idx) => `
+          <div style="background:var(--bg-surface);border:1px solid var(--border-subtle);border-radius:var(--radius-sm);padding:10px;display:flex;justify-content:space-between;align-items:center;gap:10px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:13px;font-weight:700;color:var(--accent-cyan);font-family:'IBM Plex Mono',monospace">${escHTML(item.sku)}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${escHTML(item.product_title || '')}</div>
+              <div style="font-size:11px;color:var(--text-muted);margin-top:2px">
+                Orden: <span style="color:var(--text-primary)">${escHTML(item.order_number || '—')}</span>
+                &nbsp;|&nbsp; Barcode: <span style="color:var(--text-primary);font-family:'IBM Plex Mono',monospace">${escHTML(item.barcode || '—')}</span>
+                &nbsp;|&nbsp; Qty: <span style="color:var(--text-primary)">${item.quantity}</span>
+              </div>
+            </div>
+            <button class="btn btn-primary btn-sm" onclick="seleccionarG0Item(${idx})" style="white-space:nowrap;flex-shrink:0">
+              Registrar
+            </button>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+let _g0TrackingItems = [];
+
+function seleccionarG0Item(idx) {
+  const item = _g0TrackingItems[idx];
+  if (!item) return;
+  _g0CurrentItem = item;
+  _g0Condicion = 'Buena';
+  _g0PaisCoincide = true; _g0PaisReal = '';
+  _g0InsumosCoincide = true; _g0InsumosReal = '';
+  const resultEl = document.getElementById('g0-item-result');
+  resultEl.innerHTML = renderG0SingleItem(item);
+}
 
 async function buscarG0Item() {
   const input = document.getElementById('g0-scan-input');
@@ -1015,54 +1327,34 @@ async function buscarG0Item() {
   resultEl.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted)"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div> Buscando...</div>';
 
   try {
-    const item = await API.get(`/ordenes/buscar-tracking?codigo=${encodeURIComponent(codigo)}&cliente_id=${state.tracking.cliente_id}`);
+    const result = await API.get(`/ordenes/buscar-tracking?codigo=${encodeURIComponent(codigo)}&cliente_id=${state.tracking.cliente_id}`);
 
-    if (!item) {
+    if (!result) {
       resultEl.innerHTML = `<div class="alert alert-error" style="margin:0">⚠ ${t('op.g0_not_found')}</div>`;
       _g0CurrentItem = null;
+      _g0TrackingItems = [];
       return;
     }
 
-    _g0CurrentItem = item;
-    _g0Condicion = 'Buena';
-    const needsCondicion = parseInt(state.tracking.validacion_condicion) === 1;
-
-    resultEl.innerHTML = `
-      <div style="background:var(--bg-elevated);border:1px solid rgba(0,188,212,.3);border-radius:var(--radius-sm);padding:14px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:10px">
-          <div>
-            <div style="font-size:10px;color:var(--accent-cyan);font-family:'IBM Plex Mono',monospace;font-weight:700;margin-bottom:4px">${t('op.g0_found')}</div>
-            <div style="font-size:15px;font-weight:700;color:var(--accent-cyan);font-family:'IBM Plex Mono',monospace">${escHTML(item.sku)}</div>
-            <div style="font-size:13px;color:var(--text-primary);margin-top:2px">${escHTML(item.product_title || '')}</div>
-          </div>
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:10px">
-          <div style="color:var(--text-muted)">${t('op.g0_order')}: <span class="font-mono" style="color:var(--text-primary)">${escHTML(item.order_number || '—')}</span></div>
-          <div style="color:var(--text-muted)">Barcode: <span class="font-mono" style="color:var(--text-primary);font-size:11px">${escHTML(item.barcode || '—')}</span></div>
-          <div style="color:var(--text-muted)">Cant. esperada: <span class="font-mono" style="color:var(--text-primary)">${item.quantity}</span></div>
-          <div style="color:var(--text-muted)">País: <span style="color:var(--text-primary)">${escHTML(item.country_of_origin || '—')}</span></div>
-        </div>
-        ${needsCondicion ? `
-          <div style="margin-bottom:10px">
-            <div style="font-size:10px;font-weight:700;color:var(--text-muted);letter-spacing:.06em;margin-bottom:6px">${t('op.g0_condicion')}</div>
-            <div style="display:flex;gap:6px">
-              <button id="g0-cond-buena" class="btn btn-secondary btn-sm" onclick="setG0Condicion('Buena')" style="flex:1">${t('op.g0_cond_good')}</button>
-              <button id="g0-cond-danada" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Dañada')" style="flex:1">${t('op.g0_cond_damaged')}</button>
-              <button id="g0-cond-sin-caja" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Sin caja')" style="flex:1">${t('op.g0_cond_no_box')}</button>
-            </div>
-          </div>
-        ` : ''}
-        <button class="btn btn-primary w-full" onclick="registrarG0Pieza()" style="justify-content:center">
-          ${t('op.g0_register')}
-        </button>
-      </div>
-    `;
+    if (result.type === 'single') {
+      _g0CurrentItem = result.item;
+      _g0TrackingItems = [];
+      _g0Condicion = 'Buena';
+      _g0PaisCoincide = true; _g0PaisReal = '';
+      _g0InsumosCoincide = true; _g0InsumosReal = '';
+      resultEl.innerHTML = renderG0SingleItem(result.item);
+    } else {
+      _g0TrackingItems = result.items;
+      _g0CurrentItem = null;
+      resultEl.innerHTML = renderG0TrackingItems(result.items);
+    }
 
     input.value = '';
     input.focus();
   } catch(e) {
     resultEl.innerHTML = `<div class="alert alert-error" style="margin:0">Error: ${e.error || 'No se pudo buscar'}</div>`;
     _g0CurrentItem = null;
+    _g0TrackingItems = [];
   }
 }
 
@@ -1077,6 +1369,16 @@ function setG0Condicion(val) {
 
 async function registrarG0Pieza() {
   if (!_g0CurrentItem) return;
+  const needsCondicion = parseInt(state.tracking.validacion_condicion) === 1;
+  // Collect pais real from manual input if applicable
+  const paisReal = needsCondicion && !_g0PaisCoincide
+    ? (document.getElementById('g0-pais-real-manual')?.style.display !== 'none'
+        ? document.getElementById('g0-pais-real-manual')?.value.trim()
+        : document.getElementById('g0-pais-real-select')?.value || '')
+    : '';
+  const insumosReal = needsCondicion && !_g0InsumosCoincide
+    ? (document.getElementById('g0-insumos-real')?.value.trim() || '')
+    : '';
   try {
     await API.post(`/trackings/${state.tracking.id}/g0-piezas`, {
       orden_item_id: _g0CurrentItem.id,
@@ -1085,6 +1387,10 @@ async function registrarG0Pieza() {
       order_number: _g0CurrentItem.order_number,
       barcode: _g0CurrentItem.barcode,
       condicion: _g0Condicion,
+      pais_coincide: !needsCondicion || _g0PaisCoincide,
+      pais_real: paisReal || null,
+      insumos_coincide: !needsCondicion || _g0InsumosCoincide,
+      insumos_real: insumosReal || null,
     });
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);
     state.g0piezas = await API.get(`/trackings/${state.tracking.id}/g0-piezas`);

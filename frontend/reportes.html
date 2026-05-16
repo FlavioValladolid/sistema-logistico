@@ -8,11 +8,26 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     @media print {
+      @page { size: A4; margin: 1.2cm; }
       .sidebar, .topbar, .no-print { display:none !important; }
-      .main-content { margin-left:0 !important; }
+      .main-content { margin-left:0 !important; padding:0 !important; }
       body { background:white !important; color:black !important; }
-      .card { border:1px solid #ccc !important; background:white !important; }
+      .card { border:1px solid #ccc !important; background:white !important; box-shadow:none !important; max-width:none !important; margin:0 !important; padding:16px !important; }
       * { color:black !important; }
+      table { width:100% !important; table-layout:fixed !important; border-collapse:collapse !important; font-size:8.5px !important; }
+      table th { padding:4px 5px !important; white-space:nowrap !important; overflow:hidden !important; border:1px solid #ccc !important; font-size:8px !important; }
+      table td { padding:4px 5px !important; word-break:normal !important; overflow-wrap:break-word !important; white-space:normal !important; overflow:visible !important; text-overflow:unset !important; max-width:none !important; border:1px solid #ccc !important; }
+      table td:nth-child(1), table td:nth-child(2), table td:nth-child(4) { white-space:nowrap !important; overflow-wrap:normal !important; }
+      /* Manifiesto SKU table column widths */
+      table th:nth-child(1), table td:nth-child(1) { width:3% !important; }
+      table th:nth-child(2), table td:nth-child(2) { width:19% !important; }
+      table th:nth-child(3), table td:nth-child(3) { width:20% !important; }
+      table th:nth-child(4), table td:nth-child(4) { width:6% !important; }
+      table th:nth-child(5), table td:nth-child(5) { width:11% !important; }
+      table th:nth-child(6), table td:nth-child(6) { width:28% !important; }
+      table th:nth-child(7), table td:nth-child(7) { width:13% !important; }
+      .mani-data-grid { grid-template-columns:1fr 1fr 1fr !important; }
+      .table-wrapper { overflow:visible !important; }
     }
     .manifiesto-header { display:grid; grid-template-columns:1fr 1fr; gap:20px; margin-bottom:24px; padding-bottom:20px; border-bottom:2px solid var(--border); }
     .mani-logo { font-family:'IBM Plex Mono',monospace; font-size:22px; font-weight:700; color:var(--accent-green); letter-spacing:-.02em; }
@@ -279,17 +294,21 @@ async function descargarCSV() {
 }
 
 function generarDescargaCSV(rows, filename) {
-  const header = ['Tracking', 'Box/Pallet', 'Order Number', 'Return Type', 'Return Reason', 'SKU', 'QTY', 'Country of Origin', 'Materials'];
+  const esc = v => `"${(v || '').toString().replace(/"/g, '""')}"`;
+  const header = ['Tracking', 'Box/Pallet', 'Order Number', 'Return Type', 'Return Reason', 'SKU', 'QTY', 'Country of Origin', 'Barcode', 'Materials', 'Condition'];
   const lines  = [header.join(',')];
   rows.forEach(r => lines.push([
-    `"${r.tracking_number}"`, `"${r.caja_id}"`,
-    `"${(r.numero_orden || '').replace(/"/g,'""')}"`,
-    `"${r.tipo_retorno || ''}"`,
-    `"${(r.razon_retorno || '').replace(/"/g,'""')}"`,
-    `"${r.sku_code}"`,
-    r.cantidad,
-    `"${(r.pais_origen_real || '').replace(/"/g,'""')}"`,
-    `"${(r.insumos_real || '').replace(/"/g,'""')}"`,
+    esc(r.tracking_number),
+    esc(r.caja_id),
+    esc(r.order_number || r.numero_orden),
+    esc(r.tipo_retorno),
+    esc(r.razon_retorno),
+    esc(r.sku || r.sku_code),
+    r.qty ?? r.cantidad ?? 1,
+    esc(r.country_of_origin || r.pais_origen_real),
+    esc(r.barcode),
+    esc(r.materials || r.insumos_real || r.barcode),
+    esc(r.condicion),
   ].join(',')));
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const url  = URL.createObjectURL(blob);
@@ -392,24 +411,29 @@ async function loadCajaDetalle(cajaId, clienteId) {
               <thead>
                 <tr>
                   <th>#</th><th>Tracking</th><th>SKU</th><th>Descripción</th>
-                  <th>Cant.</th><th>País Origen</th><th>Insumos</th><th>Calidad</th><th>Evidencia</th>
+                  <th>Cant.</th><th>Orden</th><th>País Origen</th><th>Barcode / Insumos</th><th>Condición</th><th>Evidencia</th>
                 </tr>
               </thead>
               <tbody>
                 ${detalles.map((d, i) => {
-                  const errD = errores.filter(e => e.detalle_sku_id === d.id);
+                  const isG0  = d.tipo_pieza === 'g0';
+                  const errD  = errores.filter(e => e.detalle_sku_id === d.id);
+                  const condColor = isG0
+                    ? (d.calidad === 'Buena' ? 'badge-green' : d.calidad === 'Dañada' ? 'badge-red' : 'badge-amber')
+                    : (d.calidad === 'Mala' ? 'badge-red' : 'badge-green');
                   return `
-                    <tr style="${errD.length > 0 ? 'background:rgba(255,61,61,.04)' : ''}">
-                      <td class="td-mono text-muted">${String(i+1).padStart(2,'0')}</td>
+                    <tr style="${errD.length > 0 ? 'background:rgba(255,61,61,.04)' : ''}${isG0 ? ';background:rgba(0,188,212,.03)' : ''}">
+                      <td class="td-mono text-muted">${String(i+1).padStart(2,'0')}${isG0 ? '<span style="font-size:9px;color:var(--accent-cyan);margin-left:2px">G0</span>' : ''}</td>
                       <td class="td-mono" style="font-size:11px;color:var(--text-secondary)">${d.tracking_number}</td>
                       <td class="td-mono" style="color:var(--accent-cyan)">${d.sku_code}</td>
                       <td>${d.descripcion || '—'}</td>
                       <td class="td-mono">${d.cantidad}</td>
-                      <td>${d.pais_origen_real || '—'}${!d.pais_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}</td>
-                      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-                        ${d.insumos_real || '—'}${!d.insumos_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}
+                      <td class="td-mono" style="font-size:11px">${d.orden_number || '—'}</td>
+                      <td style="font-size:12px">${d.pais_origen_real || '—'}${d.pais_origen_real && !d.pais_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}</td>
+                      <td style="max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-family:'IBM Plex Mono',monospace;font-size:11px">
+                        ${d.insumos_real || '—'}
                       </td>
-                      <td>${d.calidad ? `<span class="badge ${d.calidad==='Mala'?'badge-red':'badge-green'}">${d.calidad}</span>` : '—'}</td>
+                      <td>${d.calidad ? `<span class="badge ${condColor}">${d.calidad}</span>` : '—'}</td>
                       <td>
                         ${d.foto_etiqueta ? `
                           <div style="display:flex;gap:3px">
@@ -486,6 +510,25 @@ async function loadManifiesto(trackingId) {
     const erroresPorTipo = { Calidad: 0, Origen: 0, Insumo: 0, Otro: 0 };
     errores.forEach(e => { erroresPorTipo[e.tipo_error] = (erroresPorTipo[e.tipo_error] || 0) + 1; });
     const totalPiezas = detalles.reduce((s, d) => s + (d.cantidad || 1), 0);
+
+    // Agrupar filas con mismo SKU + país + insumos + calidad
+    const detallesAgrupados = (() => {
+      const map = new Map();
+      for (const d of detalles) {
+        const sku = d.sku_code || d.sku || '';
+        const key = `${sku}|${d.pais_origen_real || ''}|${d.insumos_real || ''}|${d.calidad || d.condicion || ''}`;
+        if (map.has(key)) {
+          const g = map.get(key);
+          g.cantidad += (d.cantidad || 1);
+          if (d.pais_coincide === 0 || d.pais_coincide === false) g.pais_coincide = 0;
+          if (d.insumos_coincide === 0 || d.insumos_coincide === false) g.insumos_coincide = 0;
+          g._ids.push(d.id);
+        } else {
+          map.set(key, { ...d, cantidad: d.cantidad || 1, _ids: [d.id] });
+        }
+      }
+      return [...map.values()];
+    })();
     const tipoAlm = t.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja';
     const rtPorEstado = {};
     retrabajos.forEach(r => { rtPorEstado[r.estatus] = (rtPorEstado[r.estatus] || 0) + 1; });
@@ -594,22 +637,24 @@ async function loadManifiesto(trackingId) {
           </div>
         ` : ''}
 
-        <div class="section-title">SKUs Inspeccionados (${detalles.length})</div>
-        ${detalles.length === 0 ? `<div class="alert alert-info">Sin SKUs en este tracking</div>` : `
+        <div class="section-title">SKUs Inspeccionados (${detallesAgrupados.length})</div>
+        ${detallesAgrupados.length === 0 ? `<div class="alert alert-info">Sin SKUs en este tracking</div>` : `
           <div class="table-wrapper" style="margin-bottom:20px">
             <table>
               <thead><tr><th>#</th><th>SKU</th><th>Descripción</th><th>Cant.</th><th>País Origen</th><th>Insumos</th><th>Calidad</th></tr></thead>
               <tbody>
-                ${detalles.map((d, i) => {
-                  const errD = errores.filter(e => e.detalle_sku_id === d.id);
+                ${detallesAgrupados.map((d, i) => {
+                  const errD = errores.filter(e => d._ids.includes(e.detalle_sku_id));
+                  const sku = d.sku_code || d.sku || '—';
+                  const calidad = d.calidad || d.condicion;
                   return `<tr style="${errD.length > 0 ? 'background:rgba(255,61,61,.04)' : ''}">
                     <td class="td-mono text-muted">${String(i+1).padStart(2,'0')}</td>
-                    <td class="td-mono" style="color:var(--accent-cyan)">${d.sku_code}</td>
-                    <td>${d.descripcion || '—'}</td>
+                    <td class="td-mono" style="color:var(--accent-cyan)">${escHTML(sku)}</td>
+                    <td>${escHTML(d.descripcion || d.product_title || '—')}</td>
                     <td class="td-mono">${d.cantidad}</td>
-                    <td>${d.pais_origen_real || '—'}${!d.pais_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}</td>
-                    <td style="max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${d.insumos_real || '—'}${!d.insumos_coincide ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}</td>
-                    <td>${d.calidad ? `<span class="badge ${d.calidad==='Mala'?'badge-red':'badge-green'}">${d.calidad}</span>` : '—'}</td>
+                    <td>${escHTML(d.pais_origen_real || '—')}${(d.pais_coincide === 0 || d.pais_coincide === false) ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}</td>
+                    <td>${escHTML(d.insumos_real || '—')}${(d.insumos_coincide === 0 || d.insumos_coincide === false) ? '<span class="badge badge-amber" style="margin-left:4px">≠</span>' : ''}</td>
+                    <td>${calidad ? `<span class="badge ${calidad==='Mala'||calidad==='Dañada'?'badge-red':'badge-green'}">${calidad}</span>` : '—'}</td>
                   </tr>`;
                 }).join('')}
               </tbody>

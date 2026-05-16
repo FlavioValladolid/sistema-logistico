@@ -401,11 +401,19 @@ async function initDB() {
       order_number TEXT,
       barcode TEXT,
       condicion TEXT DEFAULT 'Buena',
+      pais_coincide INTEGER DEFAULT 1,
+      pais_real TEXT,
+      insumos_coincide INTEGER DEFAULT 1,
+      insumos_real TEXT,
       operador TEXT,
       created_at TEXT DEFAULT (datetime('now','localtime')),
       FOREIGN KEY (tracking_id) REFERENCES trackings(id)
     )
   `);
+  try { db.exec('ALTER TABLE g0_piezas ADD COLUMN pais_coincide INTEGER DEFAULT 1'); } catch(e) {}
+  try { db.exec('ALTER TABLE g0_piezas ADD COLUMN pais_real TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE g0_piezas ADD COLUMN insumos_coincide INTEGER DEFAULT 1'); } catch(e) {}
+  try { db.exec('ALTER TABLE g0_piezas ADD COLUMN insumos_real TEXT'); } catch(e) {}
 
   // Datos demo
   const check = db.prepare("SELECT COUNT(*) as cnt FROM clientes").get();
@@ -1168,10 +1176,11 @@ app.post('/api/trackings/:id/cerrar', (req, res) => {
   if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
   if (tracking.estatus !== 'abierto') return res.status(400).json({ error: `El tracking ya está en estatus "${tracking.estatus}"` });
 
-  // Validar que no esté vacío (SKUs o mercancía ajena)
-  const totalSkus = dbGet('SELECT COUNT(*) as cnt FROM detalle_skus WHERE tracking_id=?', [req.params.id]);
+  // Validar que no esté vacío (SKUs, G0 piezas o mercancía ajena)
+  const totalSkus    = dbGet('SELECT COUNT(*) as cnt FROM detalle_skus WHERE tracking_id=?', [req.params.id]);
+  const totalG0      = dbGet('SELECT COUNT(*) as cnt FROM g0_piezas WHERE tracking_id=?', [req.params.id]);
   const tieneMercanciaAjena = dbGet(`SELECT id FROM errores WHERE tracking_id=? AND tipo_error='Mercancía ajena' LIMIT 1`, [req.params.id]);
-  if ((totalSkus?.cnt || 0) === 0 && !tieneMercanciaAjena) {
+  if ((totalSkus?.cnt || 0) === 0 && (totalG0?.cnt || 0) === 0 && !tieneMercanciaAjena) {
     return res.status(400).json({ error: 'No se puede cerrar un tracking vacío. Registra al menos un SKU o marca el producto como no correspondiente al cliente.' });
   }
 
@@ -1307,6 +1316,9 @@ app.put('/api/trackings/:tid/detalles/:did', (req, res) => {
 });
 
 app.delete('/api/trackings/:tid/detalles/:did', (req, res) => {
+  // Borrar errores y retrabajos asociados antes de eliminar el detalle
+  dbRun('DELETE FROM errores WHERE detalle_sku_id=? AND tracking_id=?', [req.params.did, req.params.tid]);
+  dbRun('DELETE FROM retrabajos WHERE detalle_sku_id=? AND tracking_id=?', [req.params.did, req.params.tid]);
   dbRun('DELETE FROM detalle_skus WHERE id=? AND tracking_id=?', [req.params.did, req.params.tid]);
   // Recalcular
   const total = dbGet('SELECT SUM(cantidad) as total FROM detalle_skus WHERE tracking_id=?', [req.params.tid]);
@@ -1581,6 +1593,41 @@ app.get('/api/reportes/caja-detalle', (req, res) => {
     ORDER BY e.created_at
   `, tids);
 
+  // Append G0 piezas (normalized to detalle shape) for G0 trackings
+  const g0Ids = trackings.filter(t => parseInt(t.grado_confianza) === 0).map(t => t.id);
+  if (g0Ids.length > 0) {
+    const g0ph = g0Ids.map(() => '?').join(',');
+    const g0rows = dbAll(`
+      SELECT p.*, t.tracking_number, oi.country_of_origin, oi.content as item_content,
+             COALESCE(t.numero_orden,
+               (SELECT oi2.order_number FROM orden_items oi2
+                WHERE oi2.tracking_number = t.tracking_number LIMIT 1)) as canonical_order
+      FROM g0_piezas p
+      JOIN trackings t ON p.tracking_id = t.id
+      LEFT JOIN orden_items oi ON p.orden_item_id = oi.id
+      WHERE p.tracking_id IN (${g0ph})
+      ORDER BY t.tracking_number, p.created_at
+    `, g0Ids);
+    for (const p of g0rows) {
+      detalles.push({
+        ...p,
+        sku_code: p.sku,
+        descripcion: p.product_title,
+        cantidad: 1,
+        calidad: p.condicion,
+        pais_origen_real: p.pais_real || p.country_of_origin || null,
+        pais_coincide: p.pais_coincide !== 0 ? 1 : 0,
+        orden_number: p.canonical_order || null,
+        insumos_real: p.insumos_real || p.item_content || null,
+        insumos_coincide: p.insumos_coincide !== 0 ? 1 : 0,
+        pais_coincide: 1,
+        insumos_coincide: 1,
+        foto_etiqueta: null,
+        tipo_pieza: 'g0',
+      });
+    }
+  }
+
   res.json({ trackings, detalles, errores });
 });
 
@@ -1591,15 +1638,38 @@ app.post('/api/reportes/csv-detalles', (req, res) => {
     return res.status(400).json({ error: 'tracking_ids requerido' });
 
   const ph = tracking_ids.map(() => '?').join(',');
+
+  // Standard trackings (detalle_skus)
   const rows = dbAll(`
-    SELECT t.tracking_number, t.caja_id, t.numero_orden, t.tipo_retorno, t.razon_retorno,
-           d.sku_code, d.cantidad, d.pais_origen_real, d.insumos_real
+    SELECT t.tracking_number, t.caja_id, t.numero_orden as order_number, t.tipo_retorno, t.razon_retorno,
+           d.sku_code as sku, d.cantidad as qty, d.pais_origen_real as country_of_origin, d.insumos_real as materials,
+           NULL as barcode, NULL as condicion, 'standard' as tipo_pieza
     FROM detalle_skus d
     JOIN trackings t ON d.tracking_id = t.id
     WHERE t.id IN (${ph})
     ORDER BY t.caja_id, t.tracking_number, d.created_at
   `, tracking_ids);
-  res.json(rows);
+
+  // G0 trackings (g0_piezas) — JOIN orden_items for country_of_origin and content
+  // Use canonical order_number from the tracking (not per-piece, which can differ for mis-scanned items)
+  const g0rows = dbAll(`
+    SELECT t.tracking_number, t.caja_id,
+           COALESCE(t.numero_orden,
+             (SELECT oi2.order_number FROM orden_items oi2
+              WHERE oi2.tracking_number = t.tracking_number LIMIT 1)) as order_number,
+           NULL as tipo_retorno, NULL as razon_retorno,
+           p.sku, 1 as qty,
+           COALESCE(p.pais_real, oi.country_of_origin) as country_of_origin,
+           COALESCE(p.insumos_real, oi.content) as materials,
+           p.barcode, p.condicion, 'g0' as tipo_pieza
+    FROM g0_piezas p
+    JOIN trackings t ON p.tracking_id = t.id
+    LEFT JOIN orden_items oi ON p.orden_item_id = oi.id
+    WHERE t.id IN (${ph})
+    ORDER BY t.caja_id, t.tracking_number, p.created_at
+  `, tracking_ids);
+
+  res.json([...rows, ...g0rows]);
 });
 
 // Marcar como impresas (por tracking IDs)
@@ -1632,6 +1702,38 @@ app.get('/api/reportes/manifiesto/:id', (req, res) => {
     GROUP BY r.id
     ORDER BY r.created_at
   `, [req.params.id]);
+
+  // For G0 trackings append g0_piezas normalized as detalles
+  if (parseInt(tracking.grado_confianza) === 0) {
+    const g0rows = dbAll(`
+      SELECT p.*, oi.country_of_origin, oi.content as item_content,
+             COALESCE(t.numero_orden,
+               (SELECT oi2.order_number FROM orden_items oi2
+                WHERE oi2.tracking_number = t.tracking_number LIMIT 1)) as canonical_order
+      FROM g0_piezas p
+      JOIN trackings t ON p.tracking_id = t.id
+      LEFT JOIN orden_items oi ON p.orden_item_id = oi.id
+      WHERE p.tracking_id=? ORDER BY p.created_at
+    `, [req.params.id]);
+    for (const p of g0rows) {
+      detalles.push({
+        ...p,
+        sku_code: p.sku,
+        descripcion: p.product_title,
+        cantidad: 1,
+        calidad: p.condicion,
+        pais_origen_real: p.pais_real || p.country_of_origin || null,
+        pais_coincide: p.pais_coincide !== 0 ? 1 : 0,
+        orden_number: p.canonical_order || null,
+        insumos_real: p.insumos_real || p.item_content || null,
+        insumos_coincide: p.insumos_coincide !== 0 ? 1 : 0,
+        pais_coincide: 1,
+        insumos_coincide: 1,
+        foto_etiqueta: null,
+        tipo_pieza: 'g0',
+      });
+    }
+  }
 
   res.json({ tracking, detalles, errores, discrepancias, retrabajos });
 });
@@ -2330,16 +2432,42 @@ app.delete('/api/ordenes/:id', requireRol('ADMIN', 'SUPERVISOR'), (req, res) => 
 app.get('/api/ordenes/buscar-tracking', (req, res) => {
   const { codigo, cliente_id } = req.query;
   if (!codigo || !cliente_id) return res.status(400).json({ error: 'codigo y cliente_id requeridos' });
-  // Subcadena match: tracking_number from CSV is contained WITHIN the scanned code
-  const item = dbGet(`
+
+  // 1. Exact barcode match
+  const byBarcode = dbGet(
+    'SELECT * FROM orden_items WHERE cliente_id = ? AND barcode = ? LIMIT 1',
+    [cliente_id, codigo]
+  );
+  if (byBarcode) return res.json({ type: 'single', item: byBarcode });
+
+  // 2. Exact SKU match
+  const bySku = dbGet(
+    'SELECT * FROM orden_items WHERE cliente_id = ? AND UPPER(sku) = UPPER(?) LIMIT 1',
+    [cliente_id, codigo]
+  );
+  if (bySku) return res.json({ type: 'single', item: bySku });
+
+  // 3. Tracking number match — return ALL items for that tracking
+  const byTracking = dbAll(`
     SELECT * FROM orden_items
     WHERE cliente_id = ?
       AND length(tracking_number) > 0
-      AND instr(?, tracking_number) > 0
-    ORDER BY length(tracking_number) DESC
-    LIMIT 1
-  `, [cliente_id, codigo]);
-  res.json(item || null);
+      AND (tracking_number = ? OR instr(?, tracking_number) > 0)
+    ORDER BY order_number, sku
+  `, [cliente_id, codigo, codigo]);
+  if (byTracking.length > 0) return res.json({ type: 'tracking', items: byTracking });
+
+  res.json(null);
+});
+
+app.get('/api/ordenes/items-por-tracking', (req, res) => {
+  const { tracking_number, cliente_id } = req.query;
+  if (!tracking_number || !cliente_id) return res.status(400).json({ error: 'tracking_number y cliente_id requeridos' });
+  const items = dbAll(
+    'SELECT * FROM orden_items WHERE cliente_id = ? AND tracking_number = ? ORDER BY order_number, sku',
+    [cliente_id, tracking_number]
+  );
+  res.json(items);
 });
 
 // ── G0 PIEZAS ────────────────────────────────────────────────────────────────
@@ -2354,10 +2482,16 @@ app.post('/api/trackings/:id/g0-piezas', (req, res) => {
   if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
   if (tracking.estatus === 'cerrado') return res.status(400).json({ error: 'El tracking ya está cerrado' });
 
-  const { orden_item_id, sku, product_title, order_number, barcode, condicion } = req.body;
+  const { orden_item_id, sku, product_title, order_number, barcode, condicion,
+          pais_coincide, pais_real, insumos_coincide, insumos_real } = req.body;
   const id = uuidv4();
-  dbRun(`INSERT INTO g0_piezas (id,tracking_id,orden_item_id,sku,product_title,order_number,barcode,condicion,operador,created_at) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-    [id, req.params.id, orden_item_id || null, sku || null, product_title || null, order_number || null, barcode || null, condicion || 'Buena', req.usuario.nombre, localNow()]);
+  dbRun(`INSERT INTO g0_piezas (id,tracking_id,orden_item_id,sku,product_title,order_number,barcode,condicion,pais_coincide,pais_real,insumos_coincide,insumos_real,operador,created_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, req.params.id, orden_item_id || null, sku || null, product_title || null, order_number || null,
+     barcode || null, condicion || 'Buena',
+     pais_coincide !== false ? 1 : 0, pais_real || null,
+     insumos_coincide !== false ? 1 : 0, insumos_real || null,
+     req.usuario.nombre, localNow()]);
 
   const cnt = dbGet('SELECT COUNT(*) as n FROM g0_piezas WHERE tracking_id = ?', [req.params.id]);
   dbRun('UPDATE trackings SET cantidad_final = ? WHERE id = ?', [cnt.n, req.params.id]);

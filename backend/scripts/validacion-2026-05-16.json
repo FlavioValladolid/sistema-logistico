@@ -1,0 +1,251 @@
+{
+  "generado_en": "2026-05-16T04:36:29.711Z",
+  "resumen": {
+    "total": 42,
+    "aprobados": 33,
+    "advertencias": 4,
+    "fallos": 5
+  },
+  "secciones": {
+    "trackings": {
+      "checks": [
+        {
+          "descripcion": "Trackings cerrados encontrados: 1126",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "cantidad_final coincide con detalle_skus (G1-G3)",
+          "estado": "fallo",
+          "detalle": "3 trackings con discrepancia"
+        },
+        {
+          "descripcion": "Discrepancias de cantidad registradas en alertas_discrepancia",
+          "estado": "advertencia",
+          "detalle": "55 sin alerta (flujo manual)"
+        },
+        {
+          "descripcion": "Cajas referenciadas existen en cajas_pallets",
+          "estado": "fallo",
+          "detalle": "Trackings: TRACKING1, TRACKING2, TRACKING3"
+        },
+        {
+          "descripcion": "Caja pertenece al mismo cliente que el tracking",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "No hay trackings cerrados en cajas abiertas",
+          "estado": "advertencia",
+          "detalle": "Cajas: TST-23BBA8-GDC-001, TST-A38A27-GDC-002, TST-A38A27-DMG-003, TST-AE8A80-GDC-002, TST-041300-GDC-001, CLI-GDC-006, JOL-NBM-001, TST-23BBA8-GDC-002, TST-AE8A80-GDC-001, TST-041300-NBM-004, TST-041300-GDC-002, PHO-GDC-002, JOL-GDC-002, TST-A38A27-NBM-004, TST-041300-DMG-003, PHO-NBM-001, SUM-GDC-004, ERI-GDC-002, ERI-DMG-001, TST-A38A27-GDC-001, ERI-NBM-001, CLI-GDC-005, SUM-GDC-003, CLI-GDC-004"
+        }
+      ],
+      "fallos": 2,
+      "advertencias": 2,
+      "aprobados": 2
+    },
+    "skus": {
+      "checks": [
+        {
+          "descripcion": "Total registros en detalle_skus: 1239",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "Cantidad positiva en detalle_skus",
+          "estado": "OK",
+          "detalle": "1239 OK"
+        },
+        {
+          "descripcion": "Lógica pais_coincide vs pais_origen_real coherente",
+          "estado": "fallo",
+          "detalle": "3 inconsistencias"
+        },
+        {
+          "descripcion": "Lógica insumos_coincide vs insumos_real coherente",
+          "estado": "fallo",
+          "detalle": "2 inconsistencias"
+        },
+        {
+          "descripcion": "SKUs nuevos tienen tracking_id válido",
+          "estado": "OK"
+        }
+      ],
+      "fallos": 2,
+      "advertencias": 0,
+      "aprobados": 3
+    },
+    "errores": {
+      "checks": [
+        {
+          "descripcion": "Total errores: 189",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "detalle_sku_id referenciado en errores existe en detalle_skus",
+          "estado": "fallo",
+          "detalle": "1 errores con FK rota"
+        },
+        {
+          "descripcion": "tracking_id en errores existe en trackings",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "tipo_error válido en todos los errores",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "Errores con fotografía de evidencia",
+          "estado": "advertencia",
+          "detalle": "160 sin foto"
+        }
+      ],
+      "fallos": 1,
+      "advertencias": 1,
+      "aprobados": 3
+    },
+    "retrabajos": {
+      "checks": [
+        {
+          "descripcion": "Total retrabajos: 38",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "tracking_id válido en retrabajos",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "detalle_sku_id en retrabajos existe (cuando no es null)",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "retrabajos_seleccionados es JSON válido",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "estatus de retrabajo válido",
+          "estado": "OK"
+        }
+      ],
+      "fallos": 0,
+      "advertencias": 0,
+      "aprobados": 5
+    },
+    "cajas": {
+      "checks": [
+        {
+          "descripcion": "Total cajas: 38",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "tipo de caja válido",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "cliente_id en cajas existe en clientes",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "Cajas cerradas no tienen trackings abiertos",
+          "estado": "OK"
+        }
+      ],
+      "fallos": 0,
+      "advertencias": 0,
+      "aprobados": 4
+    },
+    "reportes_vs_db": {
+      "checks": [
+        {
+          "descripcion": "Muestra para validación: 20 trackings cerrados",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "SKU count coherente en muestra",
+          "estado": "OK",
+          "detalle": "20 OK"
+        },
+        {
+          "descripcion": "FKs de errores apuntan a detalles del mismo tracking",
+          "estado": "OK",
+          "detalle": "20 OK"
+        },
+        {
+          "descripcion": "País real registrado cuando pais_coincide=0",
+          "estado": "OK",
+          "detalle": "20 OK"
+        },
+        {
+          "descripcion": "Insumos reales registrados cuando insumos_coincide=0",
+          "estado": "OK",
+          "detalle": "20 OK"
+        },
+        {
+          "descripcion": "Cliente presente en muestra de trackings",
+          "estado": "OK",
+          "detalle": "20 OK"
+        }
+      ],
+      "fallos": 0,
+      "advertencias": 0,
+      "aprobados": 6
+    },
+    "g0": {
+      "checks": [
+        {
+          "descripcion": "Trackings G0 encontrados: 18",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "tracking_id en g0_piezas existe en trackings",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "orden_item_id en g0_piezas existe en orden_items",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "pais_real registrado cuando pais_coincide=0 en G0",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "insumos_real registrado cuando insumos_coincide=0 en G0",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "Órdenes tienen items",
+          "estado": "OK"
+        }
+      ],
+      "fallos": 0,
+      "advertencias": 0,
+      "aprobados": 6
+    },
+    "integridad_general": {
+      "checks": [
+        {
+          "descripcion": "Todos los trackings tienen cliente válido",
+          "estado": "advertencia",
+          "detalle": "22 trackings sin cliente (clientes eliminados)"
+        },
+        {
+          "descripcion": "No hay tracking_numbers duplicados",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "Todos los clientes tienen grado_confianza",
+          "estado": "OK"
+        },
+        {
+          "descripcion": "Tamaño DB: 8.49 MB (< 100 MB recomendado)",
+          "estado": "OK",
+          "detalle": "8.49 MB"
+        },
+        {
+          "descripcion": "SQLite integrity_check",
+          "estado": "OK"
+        }
+      ],
+      "fallos": 0,
+      "advertencias": 1,
+      "aprobados": 4
+    }
+  }
+}
