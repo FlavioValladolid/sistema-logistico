@@ -1425,7 +1425,8 @@ async function buscarG0Item() {
   resultEl.innerHTML = '<div style="display:flex;align-items:center;gap:8px;font-size:12px;color:var(--text-muted)"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div> Buscando...</div>';
 
   try {
-    const result = await API.get(`/ordenes/buscar-tracking?codigo=${encodeURIComponent(codigo)}`);
+    const clienteId = state.tracking?.cliente_id || '';
+    const result = await API.get(`/ordenes/buscar-tracking?codigo=${encodeURIComponent(codigo)}&cliente_id=${encodeURIComponent(clienteId)}`);
 
     if (!result) {
       _g0CurrentItem = null;
@@ -1435,7 +1436,7 @@ async function buscarG0Item() {
         <div style="background:var(--bg-elevated);border:1px solid rgba(239,68,68,.35);border-radius:var(--radius-sm);padding:14px">
           <div style="font-size:12px;color:var(--accent-red);margin-bottom:10px">⚠ ${t('op.g0_not_found')} — <span class="font-mono">${escHTML(codigoEscaneado)}</span></div>
           <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px">No se encontró este código en ninguna orden registrada.</div>
-          <button class="btn btn-amber btn-sm w-full" onclick="abrirRegistroManualG0(${JSON.stringify(codigoEscaneado)})" style="justify-content:center">
+          <button class="btn btn-amber btn-sm w-full" data-codigo="${escHTML(codigoEscaneado)}" onclick="abrirRegistroManualG0(this.dataset.codigo)" style="justify-content:center">
             Registrar de todas formas (inspección manual)
           </button>
         </div>`;

@@ -2488,7 +2488,7 @@ function enrichOrdenItem(item) {
 }
 
 app.get('/api/ordenes/buscar-tracking', (req, res) => {
-  const { codigo } = req.query;
+  const { codigo, cliente_id } = req.query;
   if (!codigo) return res.status(400).json({ error: 'codigo requerido' });
 
   // 1. Exact barcode match
@@ -2507,6 +2507,28 @@ app.get('/api/ordenes/buscar-tracking', (req, res) => {
     ORDER BY order_number, sku
   `, [codigo, codigo]);
   if (byTracking.length > 0) return res.json({ type: 'tracking', items: byTracking.map(enrichOrdenItem) });
+
+  // 4. Fallback: search skus catalog by upc_code (product is known but not in this order's CSV)
+  if (cliente_id) {
+    const fromCatalog = dbGet('SELECT * FROM skus WHERE cliente_id = ? AND upc_code = ?', [cliente_id, codigo])
+      || dbGet('SELECT * FROM skus WHERE cliente_id = ? AND UPPER(sku_code) = UPPER(?)', [cliente_id, codigo]);
+    if (fromCatalog) {
+      return res.json({
+        type: 'single',
+        item: {
+          id: null, orden_id: null, cliente_id,
+          order_number: null, product_title: fromCatalog.descripcion,
+          sku: fromCatalog.sku_code, barcode: codigo,
+          quantity: 1, country_of_origin: fromCatalog.pais_origen,
+          tracking_number: null, content: null,
+          sku_resuelto: fromCatalog.sku_code,
+          datos_catalogo: { pais_origen: fromCatalog.pais_origen, insumos: fromCatalog.insumos, descripcion: fromCatalog.descripcion },
+          requiere_alta: false,
+          _from_catalog: true,
+        },
+      });
+    }
+  }
 
   res.json(null);
 });
