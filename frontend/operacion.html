@@ -1522,30 +1522,42 @@ function abrirRegistroManualG0(codigoEscaneado) {
       <div style="margin-bottom:12px">
         <div class="section-title" style="margin-bottom:8px">Fotografías de evidencia (opcionales)</div>
         <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          ${[['g0m-etiqueta','① Etiqueta del producto','g0m-foto-etiqueta','g0m-prev-etiqueta'],
+             ['g0m-insumos', '② Insumos / País de origen','g0m-foto-insumos','g0m-prev-insumos'],
+             ['g0m-pieza',   '③ Pieza completa','g0m-foto-pieza','g0m-prev-pieza']
+            ].map(([slot, label, inputId, prevId]) => `
           <div class="foto-req-card">
-            <div class="foto-req-label">① Etiqueta del producto</div>
-            <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
-              📷 Seleccionar
-              <input type="file" id="g0m-foto-etiqueta" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'g0m-prev-etiqueta')">
-            </label>
-            <img id="g0m-prev-etiqueta" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
-          </div>
-          <div class="foto-req-card">
-            <div class="foto-req-label">② Insumos / País de origen</div>
-            <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
-              📷 Seleccionar
-              <input type="file" id="g0m-foto-insumos" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'g0m-prev-insumos')">
-            </label>
-            <img id="g0m-prev-insumos" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
-          </div>
-          <div class="foto-req-card">
-            <div class="foto-req-label">③ Pieza completa</div>
-            <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
-              📷 Seleccionar
-              <input type="file" id="g0m-foto-pieza" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'g0m-prev-pieza')">
-            </label>
-            <img id="g0m-prev-pieza" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
-          </div>
+            <div class="foto-req-label">${label}</div>
+            <div style="display:flex;gap:0;margin-bottom:6px;border:1px solid var(--border);border-radius:4px;overflow:hidden">
+              <button id="fev-btn-local-${slot}" class="foto-modo-btn active" onclick="setFotoEvidenciaMode('${slot}','local')" style="font-size:10px;padding:4px 0">📁 Local</button>
+              <button id="fev-btn-qr-${slot}" class="foto-modo-btn" onclick="setFotoEvidenciaMode('${slot}','qr')" style="font-size:10px;padding:4px 0">📱 QR</button>
+            </div>
+            <div id="fev-local-${slot}">
+              <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+                📷 Seleccionar
+                <input type="file" id="${inputId}" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'${prevId}')">
+              </label>
+              <img id="${prevId}" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+            </div>
+            <div id="fev-qr-${slot}" class="hidden">
+              <div id="fev-qr-idle-${slot}">
+                <button class="btn btn-secondary btn-sm w-full" onclick="iniciarQRFotoEvidencia('${slot}')" style="justify-content:center">📱 Generar QR</button>
+              </div>
+              <div id="fev-qr-activo-${slot}" class="hidden" style="text-align:center">
+                <div id="fev-qr-div-${slot}" style="display:block;background:#fff;padding:5px;border-radius:5px;margin:4px 0;line-height:0"></div>
+                <div style="font-size:10px;color:var(--text-muted);margin-bottom:2px">
+                  <span id="fev-qr-cd-${slot}" style="font-family:'IBM Plex Mono',monospace;font-weight:700">10:00</span>
+                </div>
+                <div class="spinner" id="fev-qr-spinner-${slot}" style="width:12px;height:12px;border-width:2px;margin:3px auto 2px"></div>
+                <button class="btn btn-secondary btn-sm w-full hidden" id="fev-btn-nuevo-qr-${slot}" onclick="iniciarQRFotoEvidencia('${slot}')" style="font-size:10px;padding:4px">↻ Nuevo QR</button>
+              </div>
+              <div id="fev-qr-recibida-${slot}" class="hidden" style="text-align:center">
+                <div style="color:var(--accent-green);font-size:10px;font-weight:700;margin-bottom:4px">✅ Recibida</div>
+                <img id="fev-qr-preview-${slot}" style="width:100%;border-radius:4px;max-height:80px;object-fit:cover;border:1px solid var(--border)">
+                <button class="btn btn-secondary btn-sm w-full" style="font-size:10px;padding:4px;margin-top:4px" onclick="resetQRFotoEvidencia('${slot}')">↩ Cambiar</button>
+              </div>
+            </div>
+          </div>`).join('')}
         </div>
       </div>
 
@@ -1598,18 +1610,26 @@ async function registrarG0PiezaManual() {
       insumos,
     });
 
-    // Upload evidence photos if provided
+    // Upload evidence photos (local multipart + QR URL, same pattern as regular inspection)
     if (res.skus_nuevo_id) {
+      const slotMap = { 'g0m-etiqueta': 'g0m-foto-etiqueta', 'g0m-insumos': 'g0m-foto-insumos', 'g0m-pieza': 'g0m-foto-pieza' };
       const fd = new FormData();
-      const fEtiqueta = document.getElementById('g0m-foto-etiqueta')?.files[0];
-      const fInsumos  = document.getElementById('g0m-foto-insumos')?.files[0];
-      const fPieza    = document.getElementById('g0m-foto-pieza')?.files[0];
-      if (fEtiqueta) fd.append('etiqueta', fEtiqueta);
-      if (fInsumos)  fd.append('insumos',  fInsumos);
-      if (fPieza)    fd.append('pieza',     fPieza);
-      if (fd.has('etiqueta') || fd.has('insumos') || fd.has('pieza')) {
-        await API.postForm(`/skus-nuevos/${res.skus_nuevo_id}/fotos-evidencia`, fd);
+      const urlEv = {};
+      let hasLocal = false, hasQR = false;
+      for (const [slot, inputId] of Object.entries(slotMap)) {
+        const slotKey = slot.replace('g0m-', ''); // 'etiqueta' | 'insumos' | 'pieza'
+        const mode = fotosEvidenciaQR[slot]?.mode || 'local';
+        if (mode === 'qr' && fotosEvidenciaQR[slot]?.url_foto) {
+          urlEv[`url_${slotKey}`] = fotosEvidenciaQR[slot].url_foto;
+          hasQR = true;
+        } else {
+          const file = document.getElementById(inputId)?.files[0];
+          if (file) { fd.append(slotKey, file); hasLocal = true; }
+        }
       }
+      if (hasLocal) await API.postForm(`/skus-nuevos/${res.skus_nuevo_id}/fotos-evidencia`, fd);
+      if (hasQR)   await API.post(`/skus-nuevos/${res.skus_nuevo_id}/fotos-evidencia-url`, urlEv);
+      ['g0m-etiqueta','g0m-insumos','g0m-pieza'].forEach(s => limpiarQRFotoEvidencia(s));
     }
 
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);

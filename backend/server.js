@@ -2267,6 +2267,21 @@ app.post('/api/skus-nuevos/:id/fotos-evidencia', upload.fields([
   res.json({ mensaje: 'Fotos guardadas' });
 });
 
+app.post('/api/skus-nuevos/:id/fotos-evidencia-url', (req, res) => {
+  const sn = dbGet('SELECT id FROM skus_nuevos WHERE id=?', [req.params.id]);
+  if (!sn) return res.status(404).json({ error: 'SKU nuevo no encontrado' });
+
+  const updates = [], vals = [];
+  if (req.body.url_etiqueta) { updates.push('url_foto_etiqueta=?');         vals.push(req.body.url_etiqueta); }
+  if (req.body.url_insumos)  { updates.push('url_foto_insumos_origen=?');   vals.push(req.body.url_insumos); }
+  if (req.body.url_pieza)    { updates.push('url_foto_producto_completo=?');vals.push(req.body.url_pieza); }
+
+  if (updates.length === 0) return res.status(400).json({ error: 'No se recibieron URLs' });
+  vals.push(req.params.id);
+  dbRun(`UPDATE skus_nuevos SET ${updates.join(',')} WHERE id=?`, vals);
+  res.json({ mensaje: 'Fotos guardadas' });
+});
+
 // ===================== CORREO / SMTP =====================
 
 app.get('/api/config/smtp', requireRol('ADMIN'), (req, res) => {
