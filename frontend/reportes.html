@@ -66,6 +66,9 @@ document.getElementById('page-content').innerHTML = `<div id="view-root"></div>`
 // VISTA 1: LISTA DE CAJAS / PALLETS
 // ========================================
 let cajasData = [];
+let filteredCajasR = [];
+let currentPageR = 1;
+let pageSizeR = 50;
 // Clave de selección: "caja_id|||cliente_id" para separar mismo caja en distintos clientes
 let seleccion = new Set();
 // Map de clave → tracking_ids[] para poder pasar IDs al CSV/marcar-impresa
@@ -108,6 +111,12 @@ async function loadCajas() {
           <input type="date" class="form-control" id="filtro-desde" style="width:140px" onchange="applyFilters()">
           <input type="date" class="form-control" id="filtro-hasta" style="width:140px" onchange="applyFilters()">
           <input type="text" class="form-control" id="filtro-buscar" placeholder="Buscar..." style="width:160px" oninput="applyFilters()">
+          <select class="form-control" id="page-size-selector-r" style="width:100px" onchange="changePageSizeR(this.value)">
+            <option value="50">50 / pág</option>
+            <option value="100">100 / pág</option>
+            <option value="200">200 / pág</option>
+            <option value="500">500 / pág</option>
+          </select>
         </div>
       </div>
       <div id="tabla-cajas">
@@ -127,7 +136,9 @@ async function loadCajas() {
     sel.appendChild(o);
   });
 
-  renderListaCajas(cajasData);
+  filteredCajasR = cajasData;
+  currentPageR = 1;
+  renderListaCajas(filteredCajasR);
 }
 
 function applyFilters() {
@@ -137,14 +148,16 @@ function applyFilters() {
   const hasta     = document.getElementById('filtro-hasta')?.value || '';
   const q         = (document.getElementById('filtro-buscar')?.value || '').toLowerCase();
 
-  renderListaCajas(cajasData.filter(c => {
+  filteredCajasR = cajasData.filter(c => {
     if (cliente   && c.cliente_nombre !== cliente) return false;
     if (tipoCaja  && c.tipo_caja !== tipoCaja) return false;
     if (desde && (c.closed_at || '') < desde) return false;
     if (hasta && (c.closed_at || '') > hasta + 'T99') return false;
     if (q && !c.caja_id.toLowerCase().includes(q) && !(c.tracking_numbers || '').toLowerCase().includes(q)) return false;
     return true;
-  }));
+  });
+  currentPageR = 1;
+  renderListaCajas(filteredCajasR);
 }
 
 function renderListaCajas(data) {
@@ -162,9 +175,28 @@ function renderListaCajas(data) {
     return;
   }
 
-  const allKeys = data.map(c => cajaKey(c));
+  const totalPages = Math.ceil(data.length / pageSizeR);
+  if (currentPageR > totalPages) currentPageR = Math.max(1, totalPages);
+  const start = (currentPageR - 1) * pageSizeR;
+  const end = Math.min(start + pageSizeR, data.length);
+  const pageData = data.slice(start, end);
+
+  const allKeys = pageData.map(c => cajaKey(c));
   const allSel  = allKeys.length > 0 && allKeys.every(k => seleccion.has(k));
   const allKeysJson = JSON.stringify(allKeys).replace(/"/g, '&quot;');
+
+  function paginationHtml() {
+    if (totalPages <= 1) return '';
+    const pages = new Set([1, totalPages, currentPageR, currentPageR-1, currentPageR+1, currentPageR-2, currentPageR+2]);
+    const sorted = [...pages].filter(p => p >= 1 && p <= totalPages).sort((a,b) => a-b);
+    let html = ''; let prev = 0;
+    for (const p of sorted) {
+      if (prev && p - prev > 1) html += `<span style="padding:0 4px;color:var(--text-muted)">…</span>`;
+      html += `<button onclick="goToPageR(${p})" style="min-width:30px;height:28px;padding:0 6px;border-radius:4px;border:1px solid ${p===currentPageR?'var(--accent-cyan)':'var(--border)'};background:${p===currentPageR?'rgba(0,188,212,.15)':'transparent'};color:${p===currentPageR?'var(--accent-cyan)':'var(--text-secondary)'};font-size:12px;cursor:${p===currentPageR?'default':'pointer'};font-family:'IBM Plex Mono',monospace">${p}</button>`;
+      prev = p;
+    }
+    return html;
+  }
 
   el.innerHTML = `
     <div class="table-wrapper" style="border:none">
@@ -187,7 +219,7 @@ function renderListaCajas(data) {
           </tr>
         </thead>
         <tbody>
-          ${data.map(c => {
+          ${pageData.map(c => {
             const key = cajaKey(c);
             const detailUrl = `?caja=${encodeURIComponent(c.caja_id)}&cid=${encodeURIComponent(c.cliente_id)}`;
             return `
@@ -226,8 +258,31 @@ function renderListaCajas(data) {
         </tbody>
       </table>
     </div>
+    ${totalPages > 1 ? `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);flex-wrap:wrap;gap:8px">
+      <span style="font-size:12px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace">Mostrando ${start+1}–${end} de ${data.length} cajas</span>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button onclick="goToPageR(${currentPageR-1})" ${currentPageR===1?'disabled':''} class="btn btn-ghost btn-sm" style="padding:0 10px;height:28px;font-size:12px">← Anterior</button>
+        ${paginationHtml()}
+        <button onclick="goToPageR(${currentPageR+1})" ${currentPageR===totalPages?'disabled':''} class="btn btn-ghost btn-sm" style="padding:0 10px;height:28px;font-size:12px">Siguiente →</button>
+      </div>
+    </div>
+    ` : `<div style="padding:8px 16px;border-top:1px solid var(--border)"><span style="font-size:12px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace">${data.length} cajas</span></div>`}
   `;
   actualizarBotonCSV();
+}
+
+function goToPageR(p) {
+  const totalPages = Math.ceil(filteredCajasR.length / pageSizeR);
+  if (p < 1 || p > totalPages) return;
+  currentPageR = p;
+  renderListaCajas(filteredCajasR);
+  document.getElementById('tabla-cajas')?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+function changePageSizeR(val) {
+  pageSizeR = parseInt(val);
+  currentPageR = 1;
+  renderListaCajas(filteredCajasR);
 }
 
 function cajaKey(c) { return `${c.caja_id}|||${c.cliente_id}`; }

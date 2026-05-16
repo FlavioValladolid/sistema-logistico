@@ -105,6 +105,8 @@ document.body.insertAdjacentHTML('beforeend', `
 let clientes = [];
 let datos = [];
 let editFotos = { etiqueta: null, insumos: null, producto: null };
+let currentPage = 1;
+let pageSize = 50;
 
 // ─── INIT ─────────────────────────────────────────────────────────────────────
 async function init() {
@@ -137,6 +139,7 @@ async function buscar() {
   if (tbody) tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;padding:24px;color:var(--text-muted)">Cargando...</td></tr>`;
 
   datos = await API.get(`/skus-nuevos?${params}`);
+  currentPage = 1;
   renderTabla();
 }
 
@@ -157,9 +160,18 @@ function renderTabla() {
   if (!tbody) return;
   if (!datos.length) {
     tbody.innerHTML = `<tr><td colspan="14" style="text-align:center;padding:32px;color:var(--text-muted)">Sin resultados</td></tr>`;
+    const paginationEl = document.getElementById('skusnuevos-pagination');
+    if (paginationEl) paginationEl.innerHTML = '';
     return;
   }
-  tbody.innerHTML = datos.map(r => {
+
+  const totalPages = Math.ceil(datos.length / pageSize);
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * pageSize;
+  const end = Math.min(start + pageSize, datos.length);
+  const pageData = datos.slice(start, end);
+
+  tbody.innerHTML = pageData.map(r => {
     const incompleto = !r.url_foto_etiqueta || !r.url_foto_insumos_origen || !r.url_foto_producto_completo;
     const rowClass = r.dado_de_alta ? 'dado-de-alta-row' : (incompleto ? 'fila-incompleta' : '');
     const fecha = r.created_at?.substring(0, 10) || '—';
@@ -193,6 +205,46 @@ function renderTabla() {
       </tr>
     `;
   }).join('');
+
+  const paginationEl = document.getElementById('skusnuevos-pagination');
+  if (paginationEl) {
+    function paginationHtml() {
+      if (totalPages <= 1) return '';
+      const pages = new Set([1, totalPages, currentPage, currentPage-1, currentPage+1, currentPage-2, currentPage+2]);
+      const sorted = [...pages].filter(p => p >= 1 && p <= totalPages).sort((a,b) => a-b);
+      let html = ''; let prev = 0;
+      for (const p of sorted) {
+        if (prev && p - prev > 1) html += `<span style="padding:0 4px;color:var(--text-muted)">…</span>`;
+        html += `<button onclick="goToPage(${p})" style="min-width:30px;height:28px;padding:0 6px;border-radius:4px;border:1px solid ${p===currentPage?'var(--accent-cyan)':'var(--border)'};background:${p===currentPage?'rgba(0,188,212,.15)':'transparent'};color:${p===currentPage?'var(--accent-cyan)':'var(--text-secondary)'};font-size:12px;cursor:${p===currentPage?'default':'pointer'};font-family:'IBM Plex Mono',monospace">${p}</button>`;
+        prev = p;
+      }
+      return html;
+    }
+    paginationEl.innerHTML = totalPages > 1 ? `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);flex-wrap:wrap;gap:8px">
+        <span style="font-size:12px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace">Mostrando ${start+1}–${end} de ${datos.length}</span>
+        <div style="display:flex;align-items:center;gap:4px">
+          <button onclick="goToPage(${currentPage-1})" ${currentPage===1?'disabled':''} class="btn btn-ghost btn-sm" style="padding:0 10px;height:28px;font-size:12px">← Anterior</button>
+          ${paginationHtml()}
+          <button onclick="goToPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''} class="btn btn-ghost btn-sm" style="padding:0 10px;height:28px;font-size:12px">Siguiente →</button>
+        </div>
+      </div>
+    ` : `<div style="padding:8px 16px;border-top:1px solid var(--border)"><span style="font-size:12px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace">${datos.length} SKUs nuevos</span></div>`;
+  }
+}
+
+function goToPage(p) {
+  const totalPages = Math.ceil(datos.length / pageSize);
+  if (p < 1 || p > totalPages) return;
+  currentPage = p;
+  renderTabla();
+  document.querySelector('.sku-tbl')?.scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function changePageSize(val) {
+  pageSize = parseInt(val);
+  currentPage = 1;
+  renderTabla();
 }
 
 // ─── SLOTS DE FOTO ────────────────────────────────────────────────────────────
@@ -367,6 +419,12 @@ content.innerHTML = `
         <input type="checkbox" id="f-incompletos" style="width:15px;height:15px;accent-color:var(--accent-amber)">
         Solo sin completar
       </label>
+      <select class="form-control" id="page-size-selector" style="width:100px" onchange="changePageSize(this.value)">
+        <option value="50">50 / pág</option>
+        <option value="100">100 / pág</option>
+        <option value="200">200 / pág</option>
+        <option value="500">500 / pág</option>
+      </select>
       <button class="btn btn-primary btn-sm" onclick="buscar()">Buscar</button>
     </div>
   </div>
@@ -397,6 +455,7 @@ content.innerHTML = `
         </tbody>
       </table>
     </div>
+    <div id="skusnuevos-pagination"></div>
   </div>
 `;
 

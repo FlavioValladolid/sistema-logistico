@@ -46,6 +46,12 @@ document.getElementById('page-content').innerHTML = `
           <option value="Abierta">Abierta</option>
           <option value="Cerrada">Cerrada</option>
         </select>
+        <select class="form-control" id="page-size-selector" style="width:100px" onchange="changePageSize(this.value)">
+          <option value="50">50 / pág</option>
+          <option value="100">100 / pág</option>
+          <option value="200">200 / pág</option>
+          <option value="500">500 / pág</option>
+        </select>
       </div>
     </div>
     <div id="tabla-cajas">
@@ -110,6 +116,9 @@ document.body.insertAdjacentHTML('beforeend', `
 
 let cajasData = [];
 let clientesData = [];
+let filteredCajas = [];
+let currentPage = 1;
+let pageSize = 50;
 let currentQR = null;
 
 async function loadAll() {
@@ -146,18 +155,20 @@ function applyFilters() {
   const clienteId = document.getElementById('filtro-cliente').value;
   const tipo      = document.getElementById('filtro-tipo').value;
   const estatus   = document.getElementById('filtro-estatus').value;
-  renderTabla(cajasData.filter(c => {
+  filteredCajas = cajasData.filter(c => {
     if (clienteId && c.cliente_id !== clienteId) return false;
     if (tipo      && c.tipo !== tipo)             return false;
     if (estatus   && c.estatus !== estatus)       return false;
     return true;
-  }));
+  });
+  currentPage = 1;
+  renderTabla();
 }
 
-function renderTabla(data) {
+function renderTabla() {
   const el = document.getElementById('tabla-cajas');
   if (!el) return;
-  if (data.length === 0) {
+  if (filteredCajas.length === 0) {
     el.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">📦</div>
@@ -166,6 +177,25 @@ function renderTabla(data) {
       </div>`;
     return;
   }
+  const totalPages = Math.ceil(filteredCajas.length / pageSize);
+  if (currentPage > totalPages) currentPage = totalPages;
+  const start = (currentPage - 1) * pageSize;
+  const end   = Math.min(start + pageSize, filteredCajas.length);
+  const pageData = filteredCajas.slice(start, end);
+
+  function paginationHtml() {
+    if (totalPages <= 1) return '';
+    const pages = new Set([1, totalPages, currentPage, currentPage-1, currentPage+1, currentPage-2, currentPage+2]);
+    const sorted = [...pages].filter(p => p >= 1 && p <= totalPages).sort((a,b) => a-b);
+    let html = ''; let prev = 0;
+    for (const p of sorted) {
+      if (prev && p - prev > 1) html += `<span style="padding:0 4px;color:var(--text-muted)">…</span>`;
+      html += `<button onclick="goToPage(${p})" style="min-width:30px;height:28px;padding:0 6px;border-radius:4px;border:1px solid ${p===currentPage?'var(--accent-cyan)':'var(--border)'};background:${p===currentPage?'rgba(0,188,212,.15)':'transparent'};color:${p===currentPage?'var(--accent-cyan)':'var(--text-secondary)'};font-size:12px;cursor:${p===currentPage?'default':'pointer'};font-family:'IBM Plex Mono',monospace">${p}</button>`;
+      prev = p;
+    }
+    return html;
+  }
+
   el.innerHTML = `
     <div class="table-wrapper" style="border:none">
       <table>
@@ -182,7 +212,7 @@ function renderTabla(data) {
           </tr>
         </thead>
         <tbody>
-          ${data.map(c => `
+          ${pageData.map(c => `
             <tr>
               <td class="td-mono" style="font-weight:700;color:var(--accent-cyan)">${c.nombre}</td>
               <td>${c.cliente_nombre || '—'}</td>
@@ -208,7 +238,37 @@ function renderTabla(data) {
           `).join('')}
         </tbody>
       </table>
-    </div>`;
+    </div>
+    ${totalPages > 1 ? `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 16px;border-top:1px solid var(--border);flex-wrap:wrap;gap:8px">
+      <span style="font-size:12px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace">
+        Mostrando ${start+1}–${end} de ${filteredCajas.length} cajas
+      </span>
+      <div style="display:flex;align-items:center;gap:4px">
+        <button onclick="goToPage(${currentPage-1})" ${currentPage===1?'disabled':''} class="btn btn-ghost btn-sm" style="padding:0 10px;height:28px;font-size:12px">← Anterior</button>
+        ${paginationHtml()}
+        <button onclick="goToPage(${currentPage+1})" ${currentPage===totalPages?'disabled':''} class="btn btn-ghost btn-sm" style="padding:0 10px;height:28px;font-size:12px">Siguiente →</button>
+      </div>
+    </div>
+    ` : `
+    <div style="padding:8px 16px;border-top:1px solid var(--border)">
+      <span style="font-size:12px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace">${filteredCajas.length} cajas</span>
+    </div>
+    `}`;
+}
+
+function goToPage(p) {
+  const totalPages = Math.ceil(filteredCajas.length / pageSize);
+  if (p < 1 || p > totalPages) return;
+  currentPage = p;
+  renderTabla();
+  document.getElementById('tabla-cajas').scrollIntoView({ behavior:'smooth', block:'start' });
+}
+
+function changePageSize(val) {
+  pageSize = parseInt(val);
+  currentPage = 1;
+  renderTabla();
 }
 
 async function previewNombre() {
