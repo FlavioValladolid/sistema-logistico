@@ -58,6 +58,7 @@ let db;
 async function initDB() {
   db = new Database(DB_PATH);
   db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
   db.pragma('foreign_keys = ON');
 
   db.exec(`
@@ -2509,10 +2510,53 @@ app.delete('/api/trackings/:id/g0-piezas/:pid', (req, res) => {
   res.json({ mensaje: 'Pieza eliminada' });
 });
 
-// Iniciar servidor
+// ── BACKUP AUTOMÁTICO ────────────────────────────────────────────────────────
+
+const BACKUP_DIR = process.env.BACKUP_DIR || '/root/backups';
+const BACKUP_KEEP = 7; // número de backups a conservar
+
+async function hacerBackup() {
+  try {
+    if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const dest = path.join(BACKUP_DIR, `database-${ts}.bin`);
+    await db.backup(dest);
+    console.log(`💾 Backup DB → ${dest}`);
+    // Rotar: eliminar los más antiguos si se superan BACKUP_KEEP
+    const archivos = fs.readdirSync(BACKUP_DIR)
+      .filter(f => f.startsWith('database-') && f.endsWith('.bin'))
+      .map(f => ({ f, t: fs.statSync(path.join(BACKUP_DIR, f)).mtimeMs }))
+      .sort((a, b) => a.t - b.t);
+    while (archivos.length > BACKUP_KEEP) {
+      const viejo = archivos.shift();
+      fs.unlinkSync(path.join(BACKUP_DIR, viejo.f));
+      console.log(`🗑  Backup antiguo eliminado: ${viejo.f}`);
+    }
+  } catch (err) {
+    console.error('⚠️  Error en backup DB:', err.message);
+  }
+}
+
+// ── CIERRE GRACEFUL ───────────────────────────────────────────────────────────
+
+function shutdown(signal) {
+  console.log(`\n🛑 ${signal} recibido — cerrando DB...`);
+  try { db.close(); } catch(e) { /* ya cerrada */ }
+  process.exit(0);
+}
+
+process.on('SIGINT',  () => shutdown('SIGINT'));
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('exit',    () => { try { db.close(); } catch(e) { /* ya cerrada */ } });
+
+// ── INICIAR SERVIDOR ──────────────────────────────────────────────────────────
+
 initDB().then(() => {
   app.listen(PORT, () => {
     console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
     console.log(`📦 Sistema Logístico de Inspección v1.0`);
   });
+  // Backup inicial y luego cada 6 horas
+  hacerBackup();
+  setInterval(hacerBackup, 6 * 60 * 60 * 1000);
 });
