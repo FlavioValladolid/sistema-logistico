@@ -18,7 +18,7 @@ const _esCliente  = _pageUser?.rol === 'CLIENTE';
 buildShell('Dashboard', 'DASHBOARD', _esOperador ? '' : `
   <button class="btn btn-primary btn-sm" onclick="window.location='operacion.html'">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
-    Nueva Operación
+    ${t('dash.btn_new_op')}
   </button>
 `, _pageUser);
 
@@ -44,22 +44,22 @@ async function loadDashboard() {
       <div class="flex justify-between items-center mb-24">
         <div>
           <h1 class="page-title">Dashboard</h1>
-          <p class="page-subtitle">Resumen del sistema de inspección logística</p>
+          <p class="page-subtitle">${t('dash.subtitle')}</p>
         </div>
         <div style="font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--text-muted);text-align:right">
-          ${new Date().toLocaleDateString('es-MX',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}
+          ${new Date().toLocaleDateString(t('dash.locale'),{weekday:'long',year:'numeric',month:'long',day:'numeric'})}
         </div>
       </div>
 
       <div class="card" style="margin-bottom:16px;padding:10px 16px">
         <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
           <div style="display:flex;gap:4px">
-            <button id="rs-btn-todo"   class="btn btn-primary btn-sm"   onclick="setResumenMode('todo')">Todo</button>
-            <button id="rs-btn-hoy"    class="btn btn-secondary btn-sm" onclick="setResumenMode('hoy')">Hoy</button>
-            <button id="rs-btn-ayer"   class="btn btn-secondary btn-sm" onclick="setResumenMode('ayer')">Ayer</button>
-            <button id="rs-btn-semana" class="btn btn-secondary btn-sm" onclick="setResumenMode('semana')">Semana</button>
-            <button id="rs-btn-mes"    class="btn btn-secondary btn-sm" onclick="setResumenMode('mes')">Mes</button>
-            <button id="rs-btn-rango"  class="btn btn-secondary btn-sm" onclick="setResumenMode('rango')">Rango</button>
+            <button id="rs-btn-todo"   class="btn btn-primary btn-sm"   onclick="setResumenMode('todo')">${t('dash.filter_all')}</button>
+            <button id="rs-btn-hoy"    class="btn btn-secondary btn-sm" onclick="setResumenMode('hoy')">${t('dash.filter_today')}</button>
+            <button id="rs-btn-ayer"   class="btn btn-secondary btn-sm" onclick="setResumenMode('ayer')">${t('dash.filter_yesterday')}</button>
+            <button id="rs-btn-semana" class="btn btn-secondary btn-sm" onclick="setResumenMode('semana')">${t('dash.filter_week')}</button>
+            <button id="rs-btn-mes"    class="btn btn-secondary btn-sm" onclick="setResumenMode('mes')">${t('dash.filter_month')}</button>
+            <button id="rs-btn-rango"  class="btn btn-secondary btn-sm" onclick="setResumenMode('rango')">${t('dash.filter_range')}</button>
           </div>
           <div id="rs-rango-inputs" style="display:none;gap:6px;align-items:center">
             <input type="date" id="rs-desde" class="form-control" style="width:140px" onchange="loadResumen()">
@@ -79,14 +79,14 @@ async function loadDashboard() {
 
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Trackings Recientes</span>
-            ${(_esOperador || _esCliente) ? '' : `<a href="trackings.html" class="btn btn-ghost btn-sm">Ver todos →</a>`}
+            <span class="card-title">${t('dash.recent_trackings')}</span>
+            ${(_esOperador || _esCliente) ? '' : `<a href="trackings.html" class="btn btn-ghost btn-sm">${t('dash.view_all')}</a>`}
           </div>
           ${trackings.length === 0 ? `
             <div class="empty-state">
               <div class="empty-state-icon">📦</div>
-              <div class="empty-state-title">Sin trackings aún</div>
-              <div class="empty-state-text">Inicia una operación para registrar el primero</div>
+              <div class="empty-state-title">${t('dash.empty_title')}</div>
+              <div class="empty-state-text">${t('dash.empty_text')}</div>
             </div>
           ` : `
             <div class="table-wrapper" style="border:none">
@@ -94,22 +94,22 @@ async function loadDashboard() {
                 <thead>
                   <tr>
                     <th>Tracking #</th>
-                    <th>Cliente</th>
-                    <th>Grado</th>
-                    <th>Piezas</th>
-                    <th>Estado</th>
+                    <th>${t('label.client')}</th>
+                    <th>${t('label.grade')}</th>
+                    <th>${t('dash.col_pieces')}</th>
+                    <th>${t('label.status')}</th>
                   </tr>
                 </thead>
                 <tbody>
-                  ${trackings.slice(0,8).map(t => `
-                    <tr style="cursor:pointer" onclick="window.location='operacion.html?id=${t.id}'">
-                      <td class="td-mono">${t.tracking_number}</td>
-                      <td>${t.cliente_nombre || '—'}</td>
-                      <td>${gradoBadge(t.grado_confianza)}</td>
-                      <td class="td-mono">${formatNum(t.cantidad_final)} / ${formatNum(t.cantidad_declarada)}</td>
+                  ${trackings.slice(0,8).map(tk => `
+                    <tr style="cursor:pointer" onclick="window.location='operacion.html?id=${tk.id}'">
+                      <td class="td-mono">${tk.tracking_number}</td>
+                      <td>${tk.cliente_nombre || '—'}</td>
+                      <td>${gradoBadge(tk.grado_confianza)}</td>
+                      <td class="td-mono">${formatNum(tk.cantidad_final)} / ${formatNum(tk.cantidad_declarada)}</td>
                       <td>
-                        <span class="badge ${t.estatus === 'cerrado' ? 'badge-green' : 'badge-amber'}">
-                          ${t.estatus}
+                        <span class="badge ${tk.estatus === 'cerrado' ? 'badge-green' : 'badge-amber'}">
+                          ${tk.estatus === 'cerrado' ? t('status.closed') : t('status.open')}
                         </span>
                       </td>
                     </tr>
@@ -123,39 +123,23 @@ async function loadDashboard() {
         ${_esCliente ? '' : `
         <div class="card">
           <div class="card-header">
-            <span class="card-title">Grados de Confianza</span>
+            <span class="card-title">${t('dash.units_by_client')}</span>
           </div>
-          <div style="display:flex;flex-direction:column;gap:16px;padding:4px 0">
-            ${[1,2,3].map(g => {
-              const gradeClasses = { 1: 'grado-1', 2: 'grado-2', 3: 'grado-3' };
-              const count = trackings.filter(t => t.grado_confianza === g).length;
-              const pct = resumen.totalTrackings > 0 ? Math.round(count / resumen.totalTrackings * 100) : 0;
-              return `
-                <div>
-                  <div class="flex justify-between items-center mb-8">
-                    <span class="grado-badge ${gradeClasses[g]}">${t('grade.' + g)}</span>
-                    <span class="font-mono" style="font-size:12px;color:var(--text-muted)">${count} trackings</span>
-                  </div>
-                  <div class="progress-bar">
-                    <div class="progress-fill" style="width:${pct}%;background:${g===1?'var(--g1-color)':g===2?'var(--g2-color)':'var(--g3-color)'}"></div>
-                  </div>
-                  <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${t('grade.' + g + '_desc')}</div>
-                </div>
-              `;
-            }).join('')}
+          <div id="client-units-bars" style="display:flex;flex-direction:column;gap:14px;padding:4px 0">
+            <div class="text-center" style="padding:16px"><div class="spinner"></div></div>
           </div>
           ${_esOperador ? '' : `
           <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
-            <div class="card-title" style="margin-bottom:12px">Acciones Rápidas</div>
+            <div class="card-title" style="margin-bottom:12px">${t('dash.quick_actions')}</div>
             <div style="display:flex;flex-direction:column;gap:8px">
               <a href="operacion.html" class="btn btn-primary w-full" style="justify-content:center">
-                ▶  Iniciar Nueva Operación
+                ${t('dash.btn_start_op')}
               </a>
               <a href="clientes.html" class="btn btn-secondary w-full" style="justify-content:center">
-                ⚙  Administrar Clientes
+                ${t('dash.btn_manage_clients')}
               </a>
               <a href="reportes.html" class="btn btn-secondary w-full" style="justify-content:center">
-                📄  Ver Reportes
+                ${t('dash.btn_view_reports')}
               </a>
             </div>
           </div>
@@ -174,7 +158,7 @@ async function loadDashboard() {
       initRanking();
     }
   } catch (e) {
-    content.innerHTML = `<div class="alert alert-error">Error cargando dashboard: ${e.message || 'Error desconocido'}</div>`;
+    content.innerHTML = `<div class="alert alert-error">${t('dash.error_load')}: ${e.message || t('label.loading')}</div>`;
   }
 }
 
@@ -217,43 +201,81 @@ async function loadResumen() {
   if (resumenClienteId) params.append('cliente_id', resumenClienteId);
 
   try {
-    const [r, sn] = await Promise.all([
+    const today = isoDate(new Date());
+    const uphParams = new URLSearchParams();
+    if (desde) uphParams.append('fecha_desde', desde);
+    if (hasta) uphParams.append('fecha_hasta', hasta);
+    if (resumenClienteId) uphParams.append('cliente_id', resumenClienteId);
+
+    const [r, ranking, uphData] = await Promise.all([
       API.get(`/reportes/resumen?${params}`),
-      API.get('/skus-nuevos/pendientes'),
+      API.get(`/dashboard/ranking?fecha_desde=${today}&fecha_hasta=${today}`),
+      API.get(`/dashboard/hora-por-hora?${uphParams}`),
     ]);
+    const operadoresActivos = Array.isArray(ranking) ? ranking.length : 0;
+
+    let totalUnidades = 0, totalMeta = 0;
+    if (Array.isArray(uphData)) {
+      uphData.forEach(row => {
+        totalUnidades += (row.unidades || 0);
+        totalMeta += (row.uph || 0) * (row.num_operadores || 1);
+      });
+    }
+    const eficiencia = totalMeta > 0 ? Math.round(totalUnidades / totalMeta * 100) : null;
+    const efColor = eficiencia === null ? 'var(--text-muted)' : eficiencia >= 95 ? 'var(--accent-green)' : eficiencia >= 80 ? 'var(--accent-amber)' : 'var(--accent-red)';
     grid.innerHTML = `
       <div class="stat-card" style="--accent-color:var(--accent-cyan)">
-        <div class="stat-label">Total Trackings</div>
+        <div class="stat-label">${t('dash.stat_total')}</div>
         <div class="stat-value">${formatNum(r.totalTrackings)}</div>
-        <div class="stat-sub">${r.totalTrackings - r.trackingsCerrados} abiertos · ${r.trackingsCerrados} cerrados</div>
+        <div class="stat-sub">${r.totalTrackings - r.trackingsCerrados} ${t('dash.stat_open')} · ${r.trackingsCerrados} ${t('dash.stat_closed_lc')}</div>
       </div>
       <div class="stat-card" style="--accent-color:var(--accent-green)">
-        <div class="stat-label">Piezas Inspeccionadas</div>
+        <div class="stat-label">${t('dash.stat_pieces')}</div>
         <div class="stat-value">${formatNum(r.totalPiezas)}</div>
-        <div class="stat-sub">Unidades totales procesadas</div>
+        <div class="stat-sub">${t('dash.stat_pieces_sub')}</div>
       </div>
       <div class="stat-card" style="--accent-color:var(--accent-red)">
-        <div class="stat-label">Errores Registrados</div>
+        <div class="stat-label">${t('dash.stat_errors')}</div>
         <div class="stat-value">${formatNum(r.totalErrores)}</div>
-        <div class="stat-sub">Calidad / Origen / Insumos</div>
+        <div class="stat-sub">${t('dash.stat_errors_sub')}</div>
       </div>
       <div class="stat-card" style="--accent-color:var(--accent-amber)">
-        <div class="stat-label">Discrepancias</div>
+        <div class="stat-label">${t('dash.stat_disc')}</div>
         <div class="stat-value">${formatNum(r.totalDiscrepancias)}</div>
-        <div class="stat-sub">Alertas de inventario</div>
+        <div class="stat-sub">${t('dash.stat_disc_sub')}</div>
       </div>
-      <div class="stat-card" style="--accent-color:var(--accent-amber);${_esOperador ? '' : 'cursor:pointer'}" ${_esOperador ? '' : "onclick=\"window.location='skus-nuevos.html?solo_sin_completar=1'\""}>
-        <div class="stat-label">SKUs Nuevos Pendientes</div>
-        <div class="stat-value">${formatNum(sn.count)}</div>
-        <div class="stat-sub" style="color:var(--accent-amber)">${_esOperador ? 'Sin fotos completas' : 'Sin fotos completas · clic para ver'}</div>
+      <div class="stat-card" style="--accent-color:${efColor}">
+        <div class="stat-label">${t('dash.stat_efficiency')}</div>
+        <div class="stat-value" style="color:${efColor}">${eficiencia !== null ? eficiencia + '%' : '—'}</div>
+        <div class="stat-sub" style="color:${efColor}">${eficiencia !== null ? t('dash.stat_efficiency_sub') : t('dash.stat_efficiency_na')}</div>
       </div>
-      ${(r.g0TrackingsAbiertos > 0 && !_esOperador) ? `
-      <div class="stat-card" style="--accent-color:var(--accent-amber);cursor:pointer" onclick="window.location='trackings.html?grado=0&estatus=abierto'">
-        <div class="stat-label">Órdenes G0 en Proceso</div>
-        <div class="stat-value" style="color:var(--accent-amber)">${formatNum(r.g0TrackingsAbiertos)}</div>
-        <div class="stat-sub" style="color:var(--accent-amber)">Trackings G0 abiertos · clic para ver</div>
-      </div>` : ''}
+      <div class="stat-card" style="--accent-color:var(--accent-cyan)">
+        <div class="stat-label">${t('dash.stat_operators')}</div>
+        <div class="stat-value">${operadoresActivos || '—'}</div>
+        <div class="stat-sub">${operadoresActivos > 0 ? t('dash.stat_operators_sub') : t('dash.stat_operators_none')}</div>
+      </div>
     `;
+    // Render units-by-client bars
+    const barsEl = document.getElementById('client-units-bars');
+    if (barsEl) {
+      const list = Array.isArray(r.unidadesPorCliente) ? r.unidadesPorCliente : [];
+      const maxU = list[0]?.total_unidades || 1;
+      barsEl.innerHTML = list.length === 0
+        ? `<div class="empty-state"><div class="empty-state-icon">📦</div><div class="empty-state-title">${t('dash.empty_title')}</div></div>`
+        : list.map(c => {
+            const pct = Math.round((c.total_unidades || 0) / maxU * 100);
+            return `
+              <div>
+                <div class="flex justify-between items-center mb-8">
+                  <span style="font-size:13px;font-weight:600;color:var(--text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60%">${escHTML(c.cliente_nombre)}</span>
+                  <span class="font-mono" style="font-size:12px;color:var(--text-muted);white-space:nowrap">${formatNum(c.total_unidades)} ${t('dash.units_label')}</span>
+                </div>
+                <div class="progress-bar">
+                  <div class="progress-fill" style="width:${pct}%;background:var(--accent-cyan)"></div>
+                </div>
+              </div>`;
+          }).join('');
+    }
   } catch(e) {}
 }
 
@@ -294,18 +316,18 @@ function buildUphSection() {
   section.innerHTML = `
     <div class="card">
       <div class="card-header" style="flex-wrap:wrap;gap:10px">
-        <span class="card-title">Productividad Hora por Hora</span>
+        <span class="card-title">${t('dash.uph_title')}</span>
         <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center">
           <div style="display:flex;gap:4px">
-            <button id="uph-btn-dia" class="btn btn-primary btn-sm" onclick="setUphMode('dia')">Hoy</button>
-            <button id="uph-btn-semana" class="btn btn-secondary btn-sm" onclick="setUphMode('semana')">Semana</button>
-            <button id="uph-btn-mes" class="btn btn-secondary btn-sm" onclick="setUphMode('mes')">Mes</button>
+            <button id="uph-btn-dia" class="btn btn-primary btn-sm" onclick="setUphMode('dia')">${t('dash.uph_btn_today')}</button>
+            <button id="uph-btn-semana" class="btn btn-secondary btn-sm" onclick="setUphMode('semana')">${t('dash.uph_btn_week')}</button>
+            <button id="uph-btn-mes" class="btn btn-secondary btn-sm" onclick="setUphMode('mes')">${t('dash.uph_btn_month')}</button>
           </div>
           <select id="uph-cliente" class="form-control" style="width:170px" onchange="loadUph()">
-            <option value="">Todos los clientes</option>
+            <option value="">${t('label.all_clients')}</option>
           </select>
           <select id="uph-operador" class="form-control" style="width:170px" onchange="loadUph()">
-            <option value="">Todos los operadores</option>
+            <option value="">${t('dash.uph_all_operators')}</option>
           </select>
         </div>
       </div>
@@ -314,8 +336,8 @@ function buildUphSection() {
       </div>
       <div id="uph-empty" class="empty-state" style="display:none">
         <div class="empty-state-icon">📊</div>
-        <div class="empty-state-title">Sin datos en el rango seleccionado</div>
-        <div class="empty-state-text">Registra operaciones para ver la productividad</div>
+        <div class="empty-state-title">${t('dash.uph_empty_title')}</div>
+        <div class="empty-state-text">${t('dash.uph_empty_text')}</div>
       </div>
     </div>
   `;
@@ -436,7 +458,7 @@ function renderUphChart(data, mode, operadorFiltro) {
 
   // Actualizar título de la card según modo
   const titleEl = document.querySelector('#uph-section .card-title');
-  if (titleEl) titleEl.textContent = porDia ? 'Productividad por Día' : 'Productividad Hora por Hora';
+  if (titleEl) titleEl.textContent = porDia ? t('dash.uph_title_daily') : t('dash.uph_title');
 
   if (uphChart) uphChart.destroy();
 
@@ -446,7 +468,7 @@ function renderUphChart(data, mode, operadorFiltro) {
       datasets: [
         {
           type: 'bar',
-          label: 'Unidades procesadas',
+          label: t('dash.uph_legend_units'),
           data: barData,
           backgroundColor: sortedKeys.map((l, i) => barData[i] >= lineData[i] && lineData[i] > 0
             ? 'rgba(0,230,118,0.7)'
@@ -456,7 +478,7 @@ function renderUphChart(data, mode, operadorFiltro) {
         },
         {
           type: 'line',
-          label: 'Meta (UPH × operadores)',
+          label: t('dash.uph_legend_goal'),
           data: lineData,
           borderColor: 'rgba(255,171,0,0.9)',
           backgroundColor: 'transparent',
@@ -483,7 +505,7 @@ function renderUphChart(data, mode, operadorFiltro) {
               const meta = lineData[idx];
               if (meta === 0) return '';
               const pct = Math.round(real / meta * 100);
-              return `Eficiencia: ${pct}%`;
+              return t('dash.uph_efficiency', { pct });
             }
           }
         }
@@ -514,13 +536,13 @@ function buildRankingSection() {
   section.innerHTML = `
     <div class="card">
       <div class="card-header" style="flex-wrap:wrap;gap:10px">
-        <span class="card-title">🏆 Ranking de Operadores</span>
+        <span class="card-title">${t('dash.ranking_title')}</span>
         <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap;align-items:center">
           <div style="display:flex;gap:4px">
-            <button id="rk-btn-dia"   class="btn btn-primary btn-sm"   onclick="setRankingMode('dia')">Hoy</button>
-            <button id="rk-btn-ayer"  class="btn btn-secondary btn-sm" onclick="setRankingMode('ayer')">Ayer</button>
-            <button id="rk-btn-rango" class="btn btn-secondary btn-sm" onclick="setRankingMode('rango')">Rango</button>
-            <button class="btn btn-ghost btn-sm" onclick="resetRanking()" title="Ver ranking de todo el tiempo">↻</button>
+            <button id="rk-btn-dia"   class="btn btn-primary btn-sm"   onclick="setRankingMode('dia')">${t('dash.ranking_btn_today')}</button>
+            <button id="rk-btn-ayer"  class="btn btn-secondary btn-sm" onclick="setRankingMode('ayer')">${t('dash.ranking_btn_ayer')}</button>
+            <button id="rk-btn-rango" class="btn btn-secondary btn-sm" onclick="setRankingMode('rango')">${t('dash.ranking_btn_range')}</button>
+            <button class="btn btn-ghost btn-sm" onclick="resetRanking()" title="↻">↻</button>
           </div>
           <div id="rk-rango-inputs" style="display:none;gap:6px;align-items:center">
             <input type="date" id="rk-desde" class="form-control" style="width:140px" onchange="loadRanking()">
@@ -528,7 +550,7 @@ function buildRankingSection() {
             <input type="date" id="rk-hasta" class="form-control" style="width:140px" onchange="loadRanking()">
           </div>
           <select id="rk-cliente" class="form-control" style="width:170px" onchange="loadRanking()">
-            <option value="">Todos los clientes</option>
+            <option value="">${t('label.all_clients')}</option>
           </select>
         </div>
       </div>
@@ -597,8 +619,8 @@ async function loadRanking() {
       body.innerHTML = `
         <div class="empty-state">
           <div class="empty-state-icon">🏆</div>
-          <div class="empty-state-title">Sin datos en el período seleccionado</div>
-          <div class="empty-state-text">Registra operaciones para ver el ranking</div>
+          <div class="empty-state-title">${t('dash.ranking_empty_title')}</div>
+          <div class="empty-state-text">${t('dash.ranking_empty_text')}</div>
         </div>`;
       return;
     }
@@ -626,13 +648,13 @@ async function loadRanking() {
                 <div style="font-size:11px;color:var(--text-muted);margin-top:3px">${row.total_trackings} tracking${row.total_trackings !== 1 ? 's' : ''}</div>
               </div>
               <div style="text-align:right;font-family:'IBM Plex Mono',monospace;font-size:16px;font-weight:700;color:${barColor};white-space:nowrap">
-                ${formatNum(row.total_piezas)}<span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:3px">pzas</span>
+                ${formatNum(row.total_piezas)}<span style="font-size:10px;font-weight:400;color:var(--text-muted);margin-left:3px">${t('dash.ranking_pieces')}</span>
               </div>
             </div>`;
         }).join('')}
       </div>`;
   } catch(e) {
-    body.innerHTML = `<div class="alert alert-error" style="margin:8px">Error cargando ranking</div>`;
+    body.innerHTML = `<div class="alert alert-error" style="margin:8px">${t('dash.ranking_error')}</div>`;
   }
 }
 
@@ -645,9 +667,9 @@ if (_pageUser?.rol === 'ADMIN') {
     <div class="card-header">
       <span class="card-title" style="display:flex;align-items:center;gap:8px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-        Configuración de Correo SMTP
+        ${t('dash.smtp_title')}
       </span>
-      <span id="smtp-estado-badge" style="font-size:11px;font-family:'IBM Plex Mono',monospace;padding:3px 8px;border-radius:4px;background:rgba(148,163,184,.15);color:var(--text-muted)">Cargando…</span>
+      <span id="smtp-estado-badge" style="font-size:11px;font-family:'IBM Plex Mono',monospace;padding:3px 8px;border-radius:4px;background:rgba(148,163,184,.15);color:var(--text-muted)">${t('dash.smtp_loading')}</span>
     </div>
     <div style="padding:20px 24px;display:grid;grid-template-columns:1fr 1fr;gap:14px">
       <div class="form-group" style="margin-bottom:0">
@@ -655,29 +677,29 @@ if (_pageUser?.rol === 'ADMIN') {
         <input id="smtp-host" type="text" class="form-control" placeholder="smtp.gmail.com">
       </div>
       <div class="form-group" style="margin-bottom:0">
-        <label class="form-label">Puerto</label>
+        <label class="form-label">${t('dash.smtp_port')}</label>
         <input id="smtp-port" type="number" class="form-control" placeholder="587" value="587">
       </div>
       <div class="form-group" style="margin-bottom:0">
-        <label class="form-label">Email remitente</label>
+        <label class="form-label">${t('dash.smtp_user')}</label>
         <input id="smtp-user" type="email" class="form-control" placeholder="tu@gmail.com">
       </div>
       <div class="form-group" style="margin-bottom:0">
-        <label class="form-label">Contraseña / App Password</label>
+        <label class="form-label">${t('dash.smtp_pass')}</label>
         <div style="position:relative">
-          <input id="smtp-pass" type="password" class="form-control" placeholder="Dejar vacío para no cambiar" style="padding-right:40px">
-          <button onclick="toggleSmtpPass()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px" title="Mostrar/ocultar">👁</button>
+          <input id="smtp-pass" type="password" class="form-control" placeholder="${t('dash.smtp_pass_ph')}" style="padding-right:40px">
+          <button onclick="toggleSmtpPass()" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:14px" title="${t('dash.smtp_show_hide')}">👁</button>
         </div>
       </div>
       <div class="form-group" style="margin-bottom:0;grid-column:1/-1">
-        <label class="form-label">Nombre del remitente</label>
-        <input id="smtp-from-name" type="text" class="form-control" placeholder="Sistema Logístico">
+        <label class="form-label">${t('dash.smtp_from_name')}</label>
+        <input id="smtp-from-name" type="text" class="form-control" placeholder="${t('dash.smtp_from_ph')}">
       </div>
     </div>
     <div id="smtp-msg" style="display:none;margin:0 24px 12px;padding:10px 14px;border-radius:6px;font-size:13px"></div>
     <div style="padding:0 24px 20px;display:flex;gap:8px;flex-wrap:wrap">
-      <button class="btn btn-primary btn-sm" onclick="guardarSmtp()">Guardar configuración</button>
-      <button class="btn btn-secondary btn-sm" onclick="probarSmtp()">Enviar correo de prueba</button>
+      <button class="btn btn-primary btn-sm" onclick="guardarSmtp()">${t('dash.smtp_btn_save')}</button>
+      <button class="btn btn-secondary btn-sm" onclick="probarSmtp()">${t('dash.smtp_btn_test')}</button>
     </div>`;
 
   document.getElementById('page-content').appendChild(smtpCard);
@@ -693,7 +715,7 @@ async function loadSmtpConfig() {
     if (document.getElementById('smtp-from-name')) document.getElementById('smtp-from-name').value = cfg.from_name || '';
     const badge = document.getElementById('smtp-estado-badge');
     if (badge) {
-      badge.textContent = cfg.configured ? '● Configurado' : '○ No configurado';
+      badge.textContent = cfg.configured ? t('dash.smtp_configured') : t('dash.smtp_not_configured');
       badge.style.background = cfg.configured ? 'rgba(39,174,96,.15)' : 'rgba(220,38,38,.1)';
       badge.style.color = cfg.configured ? 'var(--accent-green)' : 'var(--accent-red)';
     }
@@ -724,20 +746,20 @@ async function guardarSmtp() {
       pass:      document.getElementById('smtp-pass').value,
       from_name: document.getElementById('smtp-from-name').value.trim(),
     });
-    showSmtpMsg('Configuración guardada correctamente', 'ok');
+    showSmtpMsg(t('dash.smtp_saved'), 'ok');
     loadSmtpConfig();
   } catch(e) {
-    showSmtpMsg(e.error || 'Error al guardar', 'error');
+    showSmtpMsg(e.error || t('dash.smtp_err_save'), 'error');
   }
 }
 
 async function probarSmtp() {
-  showSmtpMsg('Enviando correo de prueba…', 'ok');
+  showSmtpMsg(t('dash.smtp_sending'), 'ok');
   try {
     const r = await API.post('/config/smtp/test', {});
     showSmtpMsg(r.mensaje || 'Correo enviado', 'ok');
   } catch(e) {
-    showSmtpMsg(e.error || 'Error al enviar', 'error');
+    showSmtpMsg(e.error || t('dash.smtp_err_send'), 'error');
   }
 }
 </script>

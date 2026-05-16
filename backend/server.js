@@ -1554,7 +1554,14 @@ app.get('/api/reportes/resumen', (req, res) => {
     cpG0
   )?.cnt || 0;
 
-  res.json({ totalTrackings, trackingsCerrados, totalErrores, totalDiscrepancias, totalPiezas, g0TrackingsAbiertos });
+  const unidadesPorCliente = dbAll(
+    `SELECT c.nombre as cliente_nombre, SUM(t.cantidad_final) as total_unidades
+     FROM trackings t JOIN clientes c ON t.cliente_id = c.id${where}
+     GROUP BY t.cliente_id ORDER BY total_unidades DESC LIMIT 10`,
+    params
+  );
+
+  res.json({ totalTrackings, trackingsCerrados, totalErrores, totalDiscrepancias, totalPiezas, g0TrackingsAbiertos, unidadesPorCliente });
 });
 
 // Lista de cajas/pallets agrupadas por caja_id
@@ -1815,27 +1822,46 @@ app.get('/api/reportes/retrabajos', (req, res) => {
 
 // Dashboard: hora por hora
 app.get('/api/dashboard/hora-por-hora', (req, res) => {
-  const { fecha_desde, fecha_hasta, cliente_id } = req.query;
+  const { fecha_desde, fecha_hasta, cliente_id, operador } = req.query;
   const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
-  let sql = `
-    SELECT strftime('%Y-%m-%d', d.created_at) as fecha,
-           CAST(strftime('%H', d.created_at) AS INTEGER) as hora,
-           t.cliente_id,
-           c.nombre as cliente_nombre,
-           COALESCE(c.uph, 0) as uph,
-           SUM(d.cantidad) as unidades,
-           COUNT(DISTINCT t.operador) as num_operadores
-    FROM detalle_skus d
-    JOIN trackings t ON d.tracking_id = t.id
-    JOIN clientes c ON t.cliente_id = c.id
-    WHERE 1=1${cf}
+
+  // Build shared WHERE conditions (applied to both detalle_skus and g0_piezas subqueries)
+  let conds = `1=1${cf}`;
+  const baseParams = [...cp];
+  if (fecha_desde) { conds += ' AND date(src.created_at) >= ?'; baseParams.push(fecha_desde); }
+  if (fecha_hasta) { conds += ' AND date(src.created_at) <= ?'; baseParams.push(fecha_hasta); }
+  if (cliente_id)  { conds += ' AND t.cliente_id = ?';          baseParams.push(cliente_id); }
+  if (operador)    { conds += ' AND t.operador = ?';             baseParams.push(operador); }
+
+  const sql = `
+    SELECT fecha, hora, cliente_id, cliente_nombre, uph,
+           SUM(unidades) as unidades,
+           COUNT(DISTINCT operador) as num_operadores
+    FROM (
+      SELECT strftime('%Y-%m-%d', src.created_at) as fecha,
+             CAST(strftime('%H', src.created_at) AS INTEGER) as hora,
+             t.cliente_id, t.operador,
+             c.nombre as cliente_nombre, COALESCE(c.uph, 0) as uph,
+             src.cantidad as unidades
+      FROM detalle_skus src
+      JOIN trackings t ON src.tracking_id = t.id
+      JOIN clientes c ON t.cliente_id = c.id
+      WHERE ${conds}
+      UNION ALL
+      SELECT strftime('%Y-%m-%d', src.created_at) as fecha,
+             CAST(strftime('%H', src.created_at) AS INTEGER) as hora,
+             t.cliente_id, t.operador,
+             c.nombre as cliente_nombre, COALESCE(c.uph, 0) as uph,
+             1 as unidades
+      FROM g0_piezas src
+      JOIN trackings t ON src.tracking_id = t.id
+      JOIN clientes c ON t.cliente_id = c.id
+      WHERE ${conds}
+    ) combined
+    GROUP BY fecha, hora, cliente_id
+    ORDER BY fecha, hora
   `;
-  const params = [...cp];
-  if (fecha_desde) { sql += ' AND date(d.created_at) >= ?'; params.push(fecha_desde); }
-  if (fecha_hasta) { sql += ' AND date(d.created_at) <= ?'; params.push(fecha_hasta); }
-  if (cliente_id)  { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
-  sql += ' GROUP BY fecha, hora, t.cliente_id ORDER BY fecha, hora';
-  res.json(dbAll(sql, params));
+  res.json(dbAll(sql, [...baseParams, ...baseParams]));
 });
 
 app.get('/api/dashboard/operadores', (req, res) => {
@@ -1847,20 +1873,31 @@ app.get('/api/dashboard/operadores', (req, res) => {
 app.get('/api/dashboard/ranking', (req, res) => {
   const { fecha_desde, fecha_hasta, cliente_id } = req.query;
   const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
-  let sql = `
-    SELECT t.operador,
-           SUM(d.cantidad) as total_piezas,
-           COUNT(DISTINCT t.id) as total_trackings
-    FROM detalle_skus d
-    JOIN trackings t ON d.tracking_id = t.id
-    WHERE 1=1${cf}
+
+  let conds = `1=1${cf}`;
+  const baseParams = [...cp];
+  if (fecha_desde) { conds += ' AND date(src.created_at) >= ?'; baseParams.push(fecha_desde); }
+  if (fecha_hasta) { conds += ' AND date(src.created_at) <= ?'; baseParams.push(fecha_hasta); }
+  if (cliente_id)  { conds += ' AND t.cliente_id = ?';          baseParams.push(cliente_id); }
+
+  const sql = `
+    SELECT operador,
+           SUM(piezas) as total_piezas,
+           COUNT(DISTINCT tracking_id) as total_trackings
+    FROM (
+      SELECT t.operador, src.cantidad as piezas, src.tracking_id
+      FROM detalle_skus src
+      JOIN trackings t ON src.tracking_id = t.id
+      WHERE ${conds}
+      UNION ALL
+      SELECT t.operador, 1 as piezas, src.tracking_id
+      FROM g0_piezas src
+      JOIN trackings t ON src.tracking_id = t.id
+      WHERE ${conds}
+    ) combined
+    GROUP BY operador ORDER BY total_piezas DESC LIMIT 10
   `;
-  const params = [...cp];
-  if (fecha_desde) { sql += ' AND date(d.created_at) >= ?'; params.push(fecha_desde); }
-  if (fecha_hasta) { sql += ' AND date(d.created_at) <= ?'; params.push(fecha_hasta); }
-  if (cliente_id)  { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
-  sql += ' GROUP BY t.operador ORDER BY total_piezas DESC LIMIT 10';
-  res.json(dbAll(sql, params));
+  res.json(dbAll(sql, [...baseParams, ...baseParams]));
 });
 
 // --- FOTO SESIONES (Hybrid Web-Mobile) ---
