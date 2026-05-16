@@ -1477,65 +1477,145 @@ function setG0Condicion(val) {
 function abrirRegistroManualG0(codigoEscaneado) {
   const resultEl = document.getElementById('g0-item-result');
   _g0CurrentItem = {
-    id: null,
-    sku: codigoEscaneado || '',
-    product_title: '',
-    order_number: null,
-    barcode: codigoEscaneado || '',
-    quantity: 1,
-    country_of_origin: null,
-    content: null,
-    _manual: true,
+    id: null, sku: codigoEscaneado || '', product_title: '',
+    order_number: null, barcode: codigoEscaneado || '',
+    quantity: 1, country_of_origin: null, content: null, _manual: true,
   };
   _g0Condicion = 'Buena';
-  _g0PaisCoincide = true; _g0PaisReal = '';
-  _g0InsumosCoincide = true; _g0InsumosReal = '';
   resultEl.innerHTML = `
-    <div style="background:var(--bg-elevated);border:1px solid rgba(245,158,11,.35);border-radius:var(--radius-sm);padding:14px">
-      <div style="font-size:10px;color:var(--accent-amber);font-weight:700;letter-spacing:.06em;margin-bottom:10px">REGISTRO MANUAL — NO EN ORDEN</div>
-      <div style="display:grid;gap:8px;margin-bottom:12px">
-        <div>
-          <label style="font-size:10px;color:var(--text-muted);font-weight:700">SKU / CÓDIGO</label>
-          <input type="text" class="form-control form-control-mono mt-4" id="g0-manual-sku" value="${escHTML(codigoEscaneado || '')}" placeholder="SKU o código de barras">
+    <div style="background:var(--bg-elevated);border:1px solid rgba(245,158,11,.35);border-radius:var(--radius-sm);padding:16px">
+      <div class="alert alert-error" style="margin-bottom:14px">
+        ⚠ <strong>SKU no encontrado en catálogo.</strong> Completa los datos — se registrará automáticamente.
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">UPC / Código escaneado</label>
+          <input type="text" class="form-control form-control-mono" id="g0m-upc" value="${escHTML(codigoEscaneado || '')}" readonly>
         </div>
-        <div>
-          <label style="font-size:10px;color:var(--text-muted);font-weight:700">DESCRIPCIÓN (opcional)</label>
-          <input type="text" class="form-control mt-4" id="g0-manual-desc" placeholder="Descripción del producto">
+        <div class="form-group">
+          <label class="form-label">SKU / Número de parte *</label>
+          <input type="text" class="form-control form-control-mono" id="g0m-sku" placeholder="SKU-XXX-000" style="text-transform:uppercase" autofocus>
+          <div class="form-hint">Ingresar manualmente el número de parte</div>
         </div>
-        <div>
-          <label style="font-size:10px;color:var(--text-muted);font-weight:700">CONDICIÓN</label>
-          <div style="display:flex;gap:6px;margin-top:4px">
-            <button id="g0-cond-buena" class="btn btn-secondary btn-sm" onclick="setG0Condicion('Buena')" style="flex:1">Buena</button>
-            <button id="g0-cond-danada" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Dañada')" style="flex:1">Dañada</button>
-            <button id="g0-cond-sin-caja" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Sin caja')" style="flex:1">Sin caja</button>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Descripción del producto</label>
+        <input type="text" class="form-control" id="g0m-desc" placeholder="Nombre / descripción del producto">
+      </div>
+
+      <div class="form-row">
+        <div class="form-group">
+          <label class="form-label">País de Origen *</label>
+          <select class="form-control" id="g0m-pais-select" onchange="onG0mPaisSelect(this.value)">
+            ${COUNTRY_OPTIONS}
+          </select>
+          <input type="text" class="form-control mt-8" id="g0m-pais-manual" placeholder="Escribe el país..." style="display:none">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Insumos / Composición *</label>
+          <input type="text" class="form-control" id="g0m-insumos" placeholder="Ej: 100% Cotton, 60% Polyester...">
+        </div>
+      </div>
+
+      <div style="margin-bottom:12px">
+        <div class="section-title" style="margin-bottom:8px">Fotografías de evidencia (opcionales)</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
+          <div class="foto-req-card">
+            <div class="foto-req-label">① Etiqueta del producto</div>
+            <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+              📷 Seleccionar
+              <input type="file" id="g0m-foto-etiqueta" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'g0m-prev-etiqueta')">
+            </label>
+            <img id="g0m-prev-etiqueta" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+          </div>
+          <div class="foto-req-card">
+            <div class="foto-req-label">② Insumos / País de origen</div>
+            <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+              📷 Seleccionar
+              <input type="file" id="g0m-foto-insumos" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'g0m-prev-insumos')">
+            </label>
+            <img id="g0m-prev-insumos" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
+          </div>
+          <div class="foto-req-card">
+            <div class="foto-req-label">③ Pieza completa</div>
+            <label class="btn btn-secondary btn-sm w-full" style="justify-content:center;cursor:pointer">
+              📷 Seleccionar
+              <input type="file" id="g0m-foto-pieza" accept="image/*" capture="environment" style="display:none" onchange="previewFotoReq(this,'g0m-prev-pieza')">
+            </label>
+            <img id="g0m-prev-pieza" class="hidden" style="width:100%;border-radius:4px;margin-top:6px;max-height:80px;object-fit:cover">
           </div>
         </div>
       </div>
-      <button class="btn btn-amber w-full" onclick="registrarG0PiezaManual()" style="justify-content:center">Registrar pieza</button>
+
+      <div class="form-group">
+        <label class="form-label">Condición</label>
+        <div style="display:flex;gap:6px;margin-top:4px">
+          <button id="g0-cond-buena" class="btn btn-secondary btn-sm" onclick="setG0Condicion('Buena')" style="flex:1">Buena</button>
+          <button id="g0-cond-danada" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Dañada')" style="flex:1">Dañada</button>
+          <button id="g0-cond-sin-caja" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Sin caja')" style="flex:1">Sin caja</button>
+        </div>
+      </div>
+
+      <button class="btn btn-amber w-full" onclick="registrarG0PiezaManual()" style="justify-content:center;margin-top:4px">Registrar pieza</button>
     </div>`;
 }
 
+function onG0mPaisSelect(val) {
+  const manual = document.getElementById('g0m-pais-manual');
+  if (manual) manual.style.display = val === '__other__' ? '' : 'none';
+}
+
 async function registrarG0PiezaManual() {
-  const sku = document.getElementById('g0-manual-sku')?.value.trim();
-  const desc = document.getElementById('g0-manual-desc')?.value.trim();
-  if (!sku) { toast('Ingresa un SKU o código', 'error'); return; }
+  const upc   = document.getElementById('g0m-upc')?.value.trim();
+  const sku   = document.getElementById('g0m-sku')?.value.trim().toUpperCase();
+  const desc  = document.getElementById('g0m-desc')?.value.trim();
+  const paisSel = document.getElementById('g0m-pais-select')?.value;
+  const pais  = paisSel === '__other__'
+    ? document.getElementById('g0m-pais-manual')?.value.trim()
+    : paisSel;
+  const insumos = document.getElementById('g0m-insumos')?.value.trim();
+
+  if (!sku)    { toast('El SKU / número de parte es requerido', 'error'); return; }
+  if (!pais)   { toast('El país de origen es requerido', 'error'); return; }
+  if (!insumos){ toast('Los insumos / composición son requeridos', 'error'); return; }
+
   try {
-    await API.post(`/trackings/${state.tracking.id}/g0-piezas`, {
+    const res = await API.post(`/trackings/${state.tracking.id}/g0-piezas`, {
       orden_item_id: null,
       sku,
       product_title: desc || null,
       order_number: null,
-      barcode: sku,
+      barcode: upc || sku,
       condicion: _g0Condicion,
       pais_coincide: true,
       pais_real: null,
       insumos_coincide: true,
       insumos_real: null,
+      es_nuevo: true,
+      pais_origen: pais,
+      insumos,
     });
+
+    // Upload evidence photos if provided
+    if (res.skus_nuevo_id) {
+      const fd = new FormData();
+      const fEtiqueta = document.getElementById('g0m-foto-etiqueta')?.files[0];
+      const fInsumos  = document.getElementById('g0m-foto-insumos')?.files[0];
+      const fPieza    = document.getElementById('g0m-foto-pieza')?.files[0];
+      if (fEtiqueta) fd.append('etiqueta', fEtiqueta);
+      if (fInsumos)  fd.append('insumos',  fInsumos);
+      if (fPieza)    fd.append('pieza',     fPieza);
+      if (fd.has('etiqueta') || fd.has('insumos') || fd.has('pieza')) {
+        await API.postForm(`/skus-nuevos/${res.skus_nuevo_id}/fotos-evidencia`, fd);
+      }
+    }
+
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);
     state.g0piezas = await API.get(`/trackings/${state.tracking.id}/g0-piezas`);
     _g0CurrentItem = null;
-    toast('Pieza registrada ✓');
+    toast(`SKU ${sku} registrado — NUEVO en catálogo ✓`);
     renderG0Inspeccion();
   } catch(e) {
     toast(e.error || 'Error al registrar', 'error');

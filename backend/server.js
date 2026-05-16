@@ -2248,6 +2248,25 @@ app.delete('/api/skus-nuevos/:id', (req, res) => {
   res.json({ mensaje: 'Eliminado' });
 });
 
+app.post('/api/skus-nuevos/:id/fotos-evidencia', upload.fields([
+  { name: 'etiqueta', maxCount: 1 },
+  { name: 'insumos',  maxCount: 1 },
+  { name: 'pieza',    maxCount: 1 },
+]), (req, res) => {
+  const sn = dbGet('SELECT id FROM skus_nuevos WHERE id=?', [req.params.id]);
+  if (!sn) return res.status(404).json({ error: 'SKU nuevo no encontrado' });
+
+  const updates = [], vals = [];
+  if (req.files?.etiqueta) { updates.push('url_foto_etiqueta=?');         vals.push('/uploads/' + req.files.etiqueta[0].filename); }
+  if (req.files?.insumos)  { updates.push('url_foto_insumos_origen=?');   vals.push('/uploads/' + req.files.insumos[0].filename); }
+  if (req.files?.pieza)    { updates.push('url_foto_producto_completo=?');vals.push('/uploads/' + req.files.pieza[0].filename); }
+
+  if (updates.length === 0) return res.status(400).json({ error: 'No se recibieron fotos' });
+  vals.push(req.params.id);
+  dbRun(`UPDATE skus_nuevos SET ${updates.join(',')} WHERE id=?`, vals);
+  res.json({ mensaje: 'Fotos guardadas' });
+});
+
 // ===================== CORREO / SMTP =====================
 
 app.get('/api/config/smtp', requireRol('ADMIN'), (req, res) => {
@@ -2646,22 +2665,24 @@ app.post('/api/trackings/:id/g0-piezas', (req, res) => {
      req.usuario.nombre, localNow()]);
 
   // Si es un SKU nuevo: registrar en catálogo y en skus_nuevos para revisión
+  let skus_nuevo_id = null;
   if (es_nuevo && sku && tracking.cliente_id) {
     const existing = dbGet('SELECT id FROM skus WHERE cliente_id=? AND UPPER(sku_code)=UPPER(?)', [tracking.cliente_id, sku]);
     if (!existing) {
       dbRun('INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code,created_at) VALUES (?,?,?,?,?,?,?,?)',
         [uuidv4(), tracking.cliente_id, sku.toUpperCase(), product_title || null, pais_origen || null, insumos || null, barcode || null, localNow()]);
     }
+    skus_nuevo_id = uuidv4();
     dbRun(`INSERT INTO skus_nuevos (id,tracking_id,detalle_sku_id,cliente_id,sku_code,upc,descripcion,pais_origen,insumos,operador,created_at)
            VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-      [uuidv4(), req.params.id, null, tracking.cliente_id, sku.toUpperCase(), barcode || null,
+      [skus_nuevo_id, req.params.id, null, tracking.cliente_id, sku.toUpperCase(), barcode || null,
        product_title || null, pais_origen || null, insumos || null, req.usuario.nombre, localNow()]);
   }
 
   const cnt = dbGet('SELECT COUNT(*) as n FROM g0_piezas WHERE tracking_id = ?', [req.params.id]);
   dbRun('UPDATE trackings SET cantidad_final = ? WHERE id = ?', [cnt.n, req.params.id]);
 
-  res.json({ id, mensaje: 'Pieza registrada' });
+  res.json({ id, skus_nuevo_id, mensaje: 'Pieza registrada' });
 });
 
 app.delete('/api/trackings/:id/g0-piezas/:pid', (req, res) => {
