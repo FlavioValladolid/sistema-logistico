@@ -1061,14 +1061,21 @@ app.get('/api/reportes/tipo-caja', (req, res) => {
 // --- TRACKINGS ---
 app.get('/api/trackings', (req, res) => {
   const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
+  const extraWhere = [];
+  const extraParams = [];
+  if (req.query.numero_orden) { extraWhere.push('t.numero_orden = ?'); extraParams.push(req.query.numero_orden); }
+  if (req.query.grado)        { extraWhere.push('c.grado_confianza = ?'); extraParams.push(req.query.grado); }
+  if (req.query.estatus)      { extraWhere.push("t.estatus = ?"); extraParams.push(req.query.estatus); }
+  const extraSql = extraWhere.length ? ' AND ' + extraWhere.join(' AND ') : '';
+
   const rows = dbAll(`
     SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.validacion_piezas, c.validacion_condicion,
       COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) as total_comentarios,
       CASE WHEN COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) > 0 AND COALESCE(t.chat_resuelto, 0) = 0 THEN 1 ELSE 0 END as tiene_comentarios
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
-    WHERE 1=1${cf}
+    WHERE 1=1${cf}${extraSql}
     ORDER BY t.created_at DESC
-  `, cp);
+  `, [...cp, ...extraParams]);
   res.json(rows);
 });
 
@@ -1128,13 +1135,26 @@ app.post('/api/trackings/:id/chat-resuelto', (req, res) => {
 });
 
 app.post('/api/trackings', (req, res) => {
-  const { tracking_number, cliente_id, cantidad_declarada, numero_orden, tipo_retorno, razon_retorno } = req.body;
+  const { tracking_number, cliente_id, cantidad_declarada, tipo_retorno, razon_retorno } = req.body;
+  let { numero_orden } = req.body;
   if (!tracking_number || !cliente_id) {
     return res.status(400).json({ error: 'tracking_number y cliente_id son requeridos' });
   }
 
   const existing = dbGet('SELECT id FROM trackings WHERE tracking_number = ?', [tracking_number]);
   if (existing) return res.status(400).json({ error: 'Tracking number ya registrado' });
+
+  // Para clientes G0: auto-set numero_orden desde orden_items si no viene en el body
+  if (!numero_orden) {
+    const clienteData = dbGet('SELECT grado_confianza FROM clientes WHERE id = ?', [cliente_id]);
+    if (parseInt(clienteData?.grado_confianza) === 0) {
+      const oi = dbGet(
+        'SELECT order_number FROM orden_items WHERE tracking_number = ? AND order_number IS NOT NULL LIMIT 1',
+        [tracking_number]
+      );
+      if (oi?.order_number) numero_orden = oi.order_number;
+    }
+  }
 
   const operador = req.usuario.email;
   const id = uuidv4();
@@ -1516,7 +1536,13 @@ app.get('/api/reportes/resumen', (req, res) => {
   const totalErrores      = dbGet(`SELECT COUNT(*) as cnt FROM errores e JOIN trackings t ON e.tracking_id=t.id${where}`, params)?.cnt || 0;
   const totalDiscrepancias= dbGet(`SELECT COUNT(*) as cnt FROM alertas_discrepancia a JOIN trackings t ON a.tracking_id=t.id${where}`, params)?.cnt || 0;
 
-  res.json({ totalTrackings, trackingsCerrados, totalErrores, totalDiscrepancias, totalPiezas });
+  const { sql: cfG0, params: cpG0 } = clienteFilter(req.usuario, 't');
+  const g0TrackingsAbiertos = dbGet(
+    `SELECT COUNT(*) as cnt FROM trackings t JOIN clientes c ON t.cliente_id=c.id WHERE t.estatus='abierto' AND c.grado_confianza=0${cfG0}`,
+    cpG0
+  )?.cnt || 0;
+
+  res.json({ totalTrackings, trackingsCerrados, totalErrores, totalDiscrepancias, totalPiezas, g0TrackingsAbiertos });
 });
 
 // Lista de cajas/pallets agrupadas por caja_id
@@ -2431,23 +2457,47 @@ app.delete('/api/ordenes/:id', requireRol('ADMIN', 'SUPERVISOR'), (req, res) => 
   res.json({ mensaje: 'Orden eliminada' });
 });
 
+function enrichOrdenItem(item) {
+  const cid = item.cliente_id;
+  let sku_resuelto = (item.sku && item.sku.trim()) ? item.sku.trim() : null;
+  let datos_catalogo = null;
+  let requiere_alta = false;
+
+  if (sku_resuelto) {
+    const cat = dbGet('SELECT * FROM skus WHERE cliente_id=? AND UPPER(sku_code)=UPPER(?)', [cid, sku_resuelto]);
+    if (cat) datos_catalogo = { pais_origen: cat.pais_origen, insumos: cat.insumos, descripcion: cat.descripcion };
+  } else {
+    // Sin SKU en CSV: buscar en catálogo por UPC o product_title
+    const byUpc = item.barcode
+      ? dbGet('SELECT * FROM skus WHERE cliente_id=? AND upc_code=?', [cid, item.barcode])
+      : null;
+    if (byUpc) {
+      sku_resuelto = byUpc.sku_code;
+      datos_catalogo = { pais_origen: byUpc.pais_origen, insumos: byUpc.insumos, descripcion: byUpc.descripcion };
+    } else if (item.product_title) {
+      const byTitle = dbGet('SELECT * FROM skus WHERE cliente_id=? AND descripcion LIKE ?',
+        [cid, `%${item.product_title.slice(0, 25)}%`]);
+      if (byTitle) {
+        sku_resuelto = byTitle.sku_code;
+        datos_catalogo = { pais_origen: byTitle.pais_origen, insumos: byTitle.insumos, descripcion: byTitle.descripcion };
+      }
+    }
+    if (!sku_resuelto) requiere_alta = true;
+  }
+  return { ...item, sku_resuelto, datos_catalogo, requiere_alta };
+}
+
 app.get('/api/ordenes/buscar-tracking', (req, res) => {
   const { codigo } = req.query;
   if (!codigo) return res.status(400).json({ error: 'codigo requerido' });
 
   // 1. Exact barcode match
-  const byBarcode = dbGet(
-    'SELECT * FROM orden_items WHERE barcode = ? LIMIT 1',
-    [codigo]
-  );
-  if (byBarcode) return res.json({ type: 'single', item: byBarcode });
+  const byBarcode = dbGet('SELECT * FROM orden_items WHERE barcode = ? LIMIT 1', [codigo]);
+  if (byBarcode) return res.json({ type: 'single', item: enrichOrdenItem(byBarcode) });
 
   // 2. Exact SKU match
-  const bySku = dbGet(
-    'SELECT * FROM orden_items WHERE UPPER(sku) = UPPER(?) LIMIT 1',
-    [codigo]
-  );
-  if (bySku) return res.json({ type: 'single', item: bySku });
+  const bySku = dbGet('SELECT * FROM orden_items WHERE UPPER(sku) = UPPER(?) LIMIT 1', [codigo]);
+  if (bySku) return res.json({ type: 'single', item: enrichOrdenItem(bySku) });
 
   // 3. Tracking number match (exact or substring) — return ALL items for that tracking
   const byTracking = dbAll(`
@@ -2456,7 +2506,7 @@ app.get('/api/ordenes/buscar-tracking', (req, res) => {
       AND (tracking_number = ? OR instr(?, tracking_number) > 0)
     ORDER BY order_number, sku
   `, [codigo, codigo]);
-  if (byTracking.length > 0) return res.json({ type: 'tracking', items: byTracking });
+  if (byTracking.length > 0) return res.json({ type: 'tracking', items: byTracking.map(enrichOrdenItem) });
 
   res.json(null);
 });
@@ -2470,6 +2520,43 @@ app.get('/api/ordenes/items-por-tracking', (req, res) => {
     [tracking_number]
   );
   res.json(items);
+});
+
+// ── RESUMEN DE ORDEN POR NÚMERO ──────────────────────────────────────────────
+
+app.get('/api/ordenes/resumen-por-numero', (req, res) => {
+  const { numero_orden } = req.query;
+  if (!numero_orden) return res.status(400).json({ error: 'numero_orden requerido' });
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
+
+  const trackings = dbAll(`
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza
+    FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
+    WHERE t.numero_orden = ?${cf}
+    ORDER BY t.created_at DESC
+  `, [numero_orden, ...cp]);
+
+  const piezasEsperadas = dbAll(
+    'SELECT SUM(quantity) as total FROM orden_items WHERE tracking_number IN (' +
+    trackings.map(() => '?').join(',') + ')',
+    trackings.map(t => t.tracking_number)
+  )[0]?.total || 0;
+
+  const abiertos = trackings.filter(t => t.estatus === 'abierto').length;
+  const cerrados = trackings.filter(t => t.estatus !== 'abierto').length;
+  const piezasConfirmadas = trackings.reduce((s, t) => s + (t.cantidad_final || 0), 0);
+
+  res.json({
+    numero_orden,
+    trackings,
+    stats: {
+      total: trackings.length,
+      abiertos,
+      cerrados,
+      piezas_esperadas: piezasEsperadas,
+      piezas_confirmadas: piezasConfirmadas,
+    },
+  });
 });
 
 // ── G0 CONFIRMAR RECEPCIÓN (validacion_piezas=false) ────────────────────────
@@ -2520,12 +2607,13 @@ app.get('/api/trackings/:id/g0-piezas', (req, res) => {
 });
 
 app.post('/api/trackings/:id/g0-piezas', (req, res) => {
-  const tracking = dbGet('SELECT id, estatus FROM trackings WHERE id = ?', [req.params.id]);
+  const tracking = dbGet('SELECT * FROM trackings WHERE id = ?', [req.params.id]);
   if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
   if (tracking.estatus === 'cerrado') return res.status(400).json({ error: 'El tracking ya está cerrado' });
 
   const { orden_item_id, sku, product_title, order_number, barcode, condicion,
-          pais_coincide, pais_real, insumos_coincide, insumos_real } = req.body;
+          pais_coincide, pais_real, insumos_coincide, insumos_real,
+          es_nuevo, pais_origen, insumos } = req.body;
   const id = uuidv4();
   dbRun(`INSERT INTO g0_piezas (id,tracking_id,orden_item_id,sku,product_title,order_number,barcode,condicion,pais_coincide,pais_real,insumos_coincide,insumos_real,operador,created_at)
          VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
@@ -2534,6 +2622,19 @@ app.post('/api/trackings/:id/g0-piezas', (req, res) => {
      pais_coincide !== false ? 1 : 0, pais_real || null,
      insumos_coincide !== false ? 1 : 0, insumos_real || null,
      req.usuario.nombre, localNow()]);
+
+  // Si es un SKU nuevo: registrar en catálogo y en skus_nuevos para revisión
+  if (es_nuevo && sku && tracking.cliente_id) {
+    const existing = dbGet('SELECT id FROM skus WHERE cliente_id=? AND UPPER(sku_code)=UPPER(?)', [tracking.cliente_id, sku]);
+    if (!existing) {
+      dbRun('INSERT INTO skus (id,cliente_id,sku_code,descripcion,pais_origen,insumos,upc_code,created_at) VALUES (?,?,?,?,?,?,?,?)',
+        [uuidv4(), tracking.cliente_id, sku.toUpperCase(), product_title || null, pais_origen || null, insumos || null, barcode || null, localNow()]);
+    }
+    dbRun(`INSERT INTO skus_nuevos (id,tracking_id,detalle_sku_id,cliente_id,sku_code,upc,descripcion,pais_origen,insumos,operador,created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+      [uuidv4(), req.params.id, null, tracking.cliente_id, sku.toUpperCase(), barcode || null,
+       product_title || null, pais_origen || null, insumos || null, req.usuario.nombre, localNow()]);
+  }
 
   const cnt = dbGet('SELECT COUNT(*) as n FROM g0_piezas WHERE tracking_id = ?', [req.params.id]);
   dbRun('UPDATE trackings SET cantidad_final = ? WHERE id = ?', [cnt.n, req.params.id]);

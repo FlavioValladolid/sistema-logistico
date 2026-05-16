@@ -50,7 +50,14 @@ document.getElementById('page-content').innerHTML = `
           <input type="checkbox" id="filtro-con-comentarios" onchange="applyFilters()" style="accent-color:var(--accent-cyan)">
           ${t('trackings.filter_comments')}
         </label>
-        <input type="text" class="form-control" id="search-tracking" placeholder="${t('trackings.search')}" style="width:200px">
+        <select class="form-control" id="filtro-grado" style="width:130px" onchange="applyFilters()">
+          <option value="">Todos los grados</option>
+          <option value="0">G0</option>
+          <option value="1">G1</option>
+          <option value="2">G2</option>
+          <option value="3">G3</option>
+        </select>
+        <input type="text" class="form-control" id="search-tracking" placeholder="Buscar por tracking, cliente u orden..." style="width:220px">
       </div>
     </div>
     <div id="tabla-trackings">
@@ -77,7 +84,12 @@ async function loadTrackings() {
     sel.appendChild(opt);
   });
 
-  renderTabla(trackingsData);
+  // Pre-set filters from URL params (e.g. ?grado=0&estatus=abierto from dashboard link)
+  const params = new URLSearchParams(window.location.search);
+  if (params.get('grado')) document.getElementById('filtro-grado').value = params.get('grado');
+  if (params.get('estatus')) document.getElementById('filtro-estatus').value = params.get('estatus');
+
+  applyFilters();
 }
 
 function renderTabla(data) {
@@ -102,6 +114,7 @@ function renderTabla(data) {
             <th>${t('trackings.col_box')}</th>
             <th>${t('trackings.col_inspector')}</th>
             <th>${t('label.grade')}</th>
+            <th>Orden #</th>
             <th>${t('trackings.col_declared')}</th>
             <th>${t('trackings.col_inspected')}</th>
             <th>${t('label.status')}</th>
@@ -126,6 +139,13 @@ function renderTabla(data) {
                 </td>
                 <td>${escHTML(tr.operador) || '—'}</td>
                 <td>${gradoBadge(tr.grado_confianza)}</td>
+                <td class="td-mono" style="font-size:12px">
+                  ${tr.numero_orden
+                    ? `<span onclick="event.stopPropagation();verOrden('${escHTML(tr.numero_orden)}')"
+                        style="color:var(--accent-cyan);cursor:pointer;text-decoration:underline"
+                        title="Ver todos los trackings de esta orden">${escHTML(tr.numero_orden)}</span>`
+                    : '<span style="color:var(--text-muted)">—</span>'}
+                </td>
                 <td class="td-mono">${formatNum(tr.cantidad_declarada)}</td>
                 <td>
                   <div class="td-mono">${formatNum(tr.cantidad_final)}</div>
@@ -183,16 +203,87 @@ function applyFilters() {
   const q = document.getElementById('search-tracking').value.toLowerCase();
   const estatus = document.getElementById('filtro-estatus').value;
   const clienteId = document.getElementById('filtro-cliente').value;
+  const grado = document.getElementById('filtro-grado').value;
   const soloComentarios = document.getElementById('filtro-con-comentarios').checked;
   const soloPendienteRefund = document.getElementById('filtro-pendiente-refund').checked;
   renderTabla(trackingsData.filter(tr => {
-    const matchQ = !q || tr.tracking_number.toLowerCase().includes(q) || (tr.cliente_nombre||'').toLowerCase().includes(q) || (tr.operador||'').toLowerCase().includes(q);
+    const matchQ = !q
+      || tr.tracking_number.toLowerCase().includes(q)
+      || (tr.cliente_nombre||'').toLowerCase().includes(q)
+      || (tr.operador||'').toLowerCase().includes(q)
+      || (tr.numero_orden||'').toLowerCase().includes(q);
     const matchE = !estatus || tr.estatus === estatus;
     const matchC = !clienteId || tr.cliente_id === clienteId;
+    const matchG = !grado || String(tr.grado_confianza) === grado;
     const matchComent = !soloComentarios || tr.tiene_comentarios;
     const matchPendienteRefund = !soloPendienteRefund || tr.estatus === 'cerrado';
-    return matchQ && matchE && matchC && matchComent && matchPendienteRefund;
+    return matchQ && matchE && matchC && matchG && matchComent && matchPendienteRefund;
   }));
+}
+
+async function verOrden(numeroOrden) {
+  if (!numeroOrden) return;
+  try {
+    const data = await API.get(`/ordenes/resumen-por-numero?numero_orden=${encodeURIComponent(numeroOrden)}`);
+    const { stats, trackings } = data;
+    const modal = document.createElement('div');
+    modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px';
+    modal.onclick = e => { if (e.target === modal) modal.remove(); };
+    modal.innerHTML = `
+      <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius);padding:24px;min-width:560px;max-width:90vw;max-height:80vh;overflow:auto">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <div style="font-size:11px;color:var(--text-muted);font-weight:700;letter-spacing:.06em">ORDEN</div>
+            <div style="font-size:18px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--accent-cyan)">${escHTML(numeroOrden)}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="this.closest('[style*=fixed]').remove()">✕</button>
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
+          <div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:12px;text-align:center">
+            <div style="font-size:20px;font-weight:700">${stats.total}</div>
+            <div style="font-size:10px;color:var(--text-muted)">Trackings</div>
+          </div>
+          <div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:12px;text-align:center">
+            <div style="font-size:20px;font-weight:700;color:var(--accent-amber)">${stats.abiertos}</div>
+            <div style="font-size:10px;color:var(--text-muted)">Abiertos</div>
+          </div>
+          <div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:12px;text-align:center">
+            <div style="font-size:20px;font-weight:700;color:var(--accent-green)">${stats.cerrados}</div>
+            <div style="font-size:10px;color:var(--text-muted)">Cerrados</div>
+          </div>
+          <div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:12px;text-align:center">
+            <div style="font-size:14px;font-weight:700;font-family:'IBM Plex Mono',monospace">${stats.piezas_confirmadas}/${stats.piezas_esperadas}</div>
+            <div style="font-size:10px;color:var(--text-muted)">Piezas confirmadas</div>
+          </div>
+        </div>
+        <table style="width:100%;border-collapse:collapse;font-size:12px">
+          <thead><tr style="border-bottom:1px solid var(--border)">
+            <th style="padding:6px 8px;text-align:left">Tracking</th>
+            <th style="padding:6px 8px;text-align:left">Cliente</th>
+            <th style="padding:6px 8px;text-align:center">Piezas</th>
+            <th style="padding:6px 8px;text-align:center">Estado</th>
+            <th style="padding:6px 8px"></th>
+          </tr></thead>
+          <tbody>
+            ${trackings.map(tr => `
+              <tr style="border-bottom:1px solid var(--border-subtle)">
+                <td style="padding:8px;font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--accent-cyan)">${escHTML(tr.tracking_number)}</td>
+                <td style="padding:8px">${escHTML(tr.cliente_nombre||'—')}</td>
+                <td style="padding:8px;text-align:center;font-family:'IBM Plex Mono',monospace">${tr.cantidad_final}/${tr.cantidad_declarada}</td>
+                <td style="padding:8px;text-align:center">
+                  <span class="badge ${tr.estatus==='cerrado'?'badge-green':tr.estatus==='refunded'?'badge-blue':'badge-amber'}">${tr.estatus}</span>
+                </td>
+                <td style="padding:8px">
+                  <button class="btn btn-ghost btn-sm" onclick="window.location='operacion.html?id=${tr.id}'">Ver</button>
+                </td>
+              </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+    document.body.appendChild(modal);
+  } catch(e) {
+    toast('Error al cargar la orden', 'error');
+  }
 }
 
 document.getElementById('search-tracking').addEventListener('input', applyFilters);

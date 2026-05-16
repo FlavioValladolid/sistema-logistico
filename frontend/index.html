@@ -247,6 +247,12 @@ async function loadResumen() {
         <div class="stat-value">${formatNum(sn.count)}</div>
         <div class="stat-sub" style="color:var(--accent-amber)">${_esOperador ? 'Sin fotos completas' : 'Sin fotos completas · clic para ver'}</div>
       </div>
+      ${(r.g0TrackingsAbiertos > 0 && !_esOperador) ? `
+      <div class="stat-card" style="--accent-color:var(--accent-amber);cursor:pointer" onclick="window.location='trackings.html?grado=0&estatus=abierto'">
+        <div class="stat-label">Órdenes G0 en Proceso</div>
+        <div class="stat-value" style="color:var(--accent-amber)">${formatNum(r.g0TrackingsAbiertos)}</div>
+        <div class="stat-sub" style="color:var(--accent-amber)">Trackings G0 abiertos · clic para ver</div>
+      </div>` : ''}
     `;
   } catch(e) {}
 }

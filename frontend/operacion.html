@@ -946,10 +946,14 @@ function renderG0Manifiesto() {
     pending: { icon: '○', bg: 'rgba(255,255,255,.06)', color: 'var(--text-muted)',  border: 'var(--border)' },
   };
 
+  const ordenNum = state.g0ordenitems[0]?.order_number;
   return `
     <div class="card" style="margin-bottom:16px">
       <div class="card-header">
-        <span class="card-title">Contenido de la Orden</span>
+        <div>
+          <span class="card-title">Contenido de la Orden</span>
+          ${ordenNum ? `<div style="font-size:11px;color:var(--accent-cyan);font-family:'IBM Plex Mono',monospace;margin-top:2px">Orden # ${escHTML(ordenNum)}</div>` : ''}
+        </div>
         <span class="badge ${!hayProblemas ? 'badge-green' : completados > 0 ? 'badge-amber' : 'badge-red'}" style="font-family:'IBM Plex Mono',monospace">${completados}/${total}</span>
       </div>
       <div style="padding:0 16px 12px">
@@ -1013,6 +1017,9 @@ function renderG0Inspeccion() {
             <h1 class="page-title">${t('op.g0_processing')}</h1>
             <p class="page-subtitle">
               <span class="font-mono" style="color:var(--accent-cyan)">${escHTML(tk.tracking_number)}</span>
+              ${tk.numero_orden
+                ? `· Orden: <span class="font-mono" style="color:var(--accent-cyan)">${escHTML(tk.numero_orden)}</span>`
+                : '· <span style="color:var(--text-muted)">Sin orden registrada</span>'}
               · ${escHTML(tk.cliente_nombre)}
             </p>
           </div>
@@ -1082,6 +1089,11 @@ function renderG0Inspeccion() {
           <span class="info-key">Tracking</span>
           <span class="info-val font-mono" style="font-size:11px">${escHTML(tk.tracking_number)}</span>
         </div>
+        ${tk.numero_orden ? `
+        <div class="info-row">
+          <span class="info-key">Orden #</span>
+          <span class="info-val font-mono" style="color:var(--accent-cyan)">${escHTML(tk.numero_orden)}</span>
+        </div>` : ''}
         <div class="info-row">
           <span class="info-key">${t('op.lbl_box')}</span>
           <span class="info-val font-mono">${escHTML(tk.caja_id)}</span>
@@ -1213,18 +1225,72 @@ let _g0InsumosReal = '';
 
 function renderG0SingleItem(item) {
   const needsCondicion = parseInt(state.tracking.validacion_condicion) === 1;
+
+  // Advertir si el item escaneado pertenece a un order_number distinto al del tracking
+  const ordenTracking = state.tracking.numero_orden;
+  const ordenItem = item.order_number;
+  const ordenMismatch = ordenTracking && ordenItem && ordenItem !== ordenTracking;
+
+  // Si requiere alta: mostrar formulario de nuevo SKU
+  if (item.requiere_alta) {
+    return `
+      <div style="background:var(--bg-elevated);border:1px solid rgba(245,158,11,.35);border-radius:var(--radius-sm);padding:14px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+          <span style="background:var(--accent-amber);color:#000;font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px">NUEVO</span>
+          <span style="font-size:11px;color:var(--accent-amber)">SKU no encontrado en catálogo — captura los datos</span>
+        </div>
+        <div style="display:grid;gap:8px;margin-bottom:12px">
+          <div>
+            <label style="font-size:10px;color:var(--text-muted);font-weight:700">SKU / NÚMERO DE PARTE</label>
+            <input type="text" class="form-control form-control-mono mt-4" id="g0-nuevo-sku"
+              value="${escHTML(item.barcode || item.sku || '')}" placeholder="SKU o número de parte">
+          </div>
+          <div>
+            <label style="font-size:10px;color:var(--text-muted);font-weight:700">DESCRIPCIÓN</label>
+            <input type="text" class="form-control mt-4" id="g0-nuevo-desc"
+              value="${escHTML(item.product_title || '')}" placeholder="Descripción del producto">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+            <div>
+              <label style="font-size:10px;color:var(--text-muted);font-weight:700">PAÍS DE ORIGEN</label>
+              <input type="text" class="form-control mt-4" id="g0-nuevo-pais"
+                value="${escHTML(item.country_of_origin || '')}" placeholder="ej. CN, MX, VN">
+            </div>
+            <div>
+              <label style="font-size:10px;color:var(--text-muted);font-weight:700">INSUMOS</label>
+              <input type="text" class="form-control mt-4" id="g0-nuevo-insumos"
+                value="${escHTML(item.content || '')}" placeholder="Composición">
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-amber w-full" onclick="registrarG0PiezaNueva()" style="justify-content:center">
+          Registrar como SKU nuevo
+        </button>
+      </div>`;
+  }
+
+  const skuMostrar = item.sku_resuelto || item.sku;
+  const skuResueltoDesde = item.sku_resuelto && item.sku_resuelto !== item.sku ? item.sku_resuelto : null;
+  const paisCatalogo = item.datos_catalogo?.pais_origen || item.country_of_origin;
+  const insumosCatalogo = item.datos_catalogo?.insumos || item.content;
+
   return `
-    <div style="background:var(--bg-elevated);border:1px solid rgba(0,188,212,.3);border-radius:var(--radius-sm);padding:14px">
+    <div style="background:var(--bg-elevated);border:1px solid ${ordenMismatch ? 'rgba(245,158,11,.5)' : 'rgba(0,188,212,.3)'};border-radius:var(--radius-sm);padding:14px">
+      ${ordenMismatch ? `
+        <div style="background:rgba(245,158,11,.1);border:1px solid rgba(245,158,11,.3);border-radius:4px;padding:8px 10px;margin-bottom:10px;font-size:11px;color:var(--accent-amber)">
+          ⚠ Este item pertenece a la orden <strong>${escHTML(ordenItem)}</strong>. El tracking está vinculado a la orden <strong>${escHTML(ordenTracking)}</strong>.
+        </div>` : ''}
       <div style="margin-bottom:10px">
         <div style="font-size:10px;color:var(--accent-cyan);font-family:'IBM Plex Mono',monospace;font-weight:700;margin-bottom:4px">${t('op.g0_found')}</div>
-        <div style="font-size:15px;font-weight:700;color:var(--accent-cyan);font-family:'IBM Plex Mono',monospace">${escHTML(item.sku)}</div>
+        <div style="font-size:15px;font-weight:700;color:var(--accent-cyan);font-family:'IBM Plex Mono',monospace">${escHTML(skuMostrar)}</div>
+        ${skuResueltoDesde ? `<div style="font-size:10px;color:var(--accent-amber);margin-top:2px">SKU resuelto desde catálogo (UPC: ${escHTML(item.barcode || '')})</div>` : ''}
         <div style="font-size:13px;color:var(--text-primary);margin-top:2px">${escHTML(item.product_title || '')}</div>
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:12px;margin-bottom:12px">
         <div style="color:var(--text-muted)">${t('op.g0_order')}: <span class="font-mono" style="color:var(--text-primary)">${escHTML(item.order_number || '—')}</span></div>
         <div style="color:var(--text-muted)">Barcode: <span class="font-mono" style="color:var(--text-primary);font-size:11px">${escHTML(item.barcode || '—')}</span></div>
         <div style="color:var(--text-muted)">Cant. esperada: <span class="font-mono" style="color:var(--text-primary)">${item.quantity}</span></div>
-        <div style="color:var(--text-muted)">País catálogo: <span style="color:var(--text-primary)">${escHTML(item.country_of_origin || '—')}</span></div>
+        <div style="color:var(--text-muted)">País catálogo: <span style="color:var(--text-primary)">${escHTML(paisCatalogo || '—')}</span></div>
       </div>
 
       ${needsCondicion ? `
@@ -1244,7 +1310,7 @@ function renderG0SingleItem(item) {
           <div class="verify-field">
             <div>
               <div class="verify-label">Catálogo</div>
-              <div class="verify-value" style="font-size:13px">${escHTML(item.country_of_origin || '—')}</div>
+              <div class="verify-value" style="font-size:13px">${escHTML(paisCatalogo || '—')}</div>
             </div>
             <div class="verify-actions">
               <button class="verify-btn verify-ok selected" id="g0-btn-pais-ok" onclick="setG0PaisCoincide(true)">✓ Coincide</button>
@@ -1265,7 +1331,7 @@ function renderG0SingleItem(item) {
           <div class="verify-field">
             <div style="flex:1">
               <div class="verify-label">Catálogo</div>
-              <div class="verify-value" style="font-size:12px">${escHTML(item.content || '—')}</div>
+              <div class="verify-value" style="font-size:12px">${escHTML(insumosCatalogo || '—')}</div>
             </div>
             <div class="verify-actions">
               <button class="verify-btn verify-ok selected" id="g0-btn-insumos-ok" onclick="setG0InsumosCoincide(true)">✓ Coincide</button>
@@ -1475,10 +1541,41 @@ async function registrarG0PiezaManual() {
   }
 }
 
+async function registrarG0PiezaNueva() {
+  const sku = document.getElementById('g0-nuevo-sku')?.value.trim();
+  const desc = document.getElementById('g0-nuevo-desc')?.value.trim();
+  const pais = document.getElementById('g0-nuevo-pais')?.value.trim();
+  const insumos = document.getElementById('g0-nuevo-insumos')?.value.trim();
+  if (!sku) { toast('El SKU es requerido', 'error'); return; }
+  try {
+    await API.post(`/trackings/${state.tracking.id}/g0-piezas`, {
+      orden_item_id: _g0CurrentItem?.id || null,
+      sku,
+      product_title: desc || _g0CurrentItem?.product_title || null,
+      order_number: _g0CurrentItem?.order_number || null,
+      barcode: _g0CurrentItem?.barcode || sku,
+      condicion: 'Buena',
+      pais_coincide: true,
+      pais_real: null,
+      insumos_coincide: true,
+      insumos_real: null,
+      es_nuevo: true,
+      pais_origen: pais || null,
+      insumos: insumos || null,
+    });
+    state.tracking = await API.get(`/trackings/${state.tracking.id}`);
+    state.g0piezas = await API.get(`/trackings/${state.tracking.id}/g0-piezas`);
+    _g0CurrentItem = null;
+    toast(`SKU ${sku} registrado — NUEVO en catálogo ✓`);
+    renderG0Inspeccion();
+  } catch(e) {
+    toast(e.error || 'Error al registrar', 'error');
+  }
+}
+
 async function registrarG0Pieza() {
   if (!_g0CurrentItem) return;
   const needsCondicion = parseInt(state.tracking.validacion_condicion) === 1;
-  // Collect pais real from manual input if applicable
   const paisReal = needsCondicion && !_g0PaisCoincide
     ? (document.getElementById('g0-pais-real-manual')?.style.display !== 'none'
         ? document.getElementById('g0-pais-real-manual')?.value.trim()
@@ -1487,10 +1584,12 @@ async function registrarG0Pieza() {
   const insumosReal = needsCondicion && !_g0InsumosCoincide
     ? (document.getElementById('g0-insumos-real')?.value.trim() || '')
     : '';
+  // Usar sku_resuelto si el item lo tiene (resolución desde catálogo)
+  const skuFinal = _g0CurrentItem.sku_resuelto || _g0CurrentItem.sku;
   try {
     await API.post(`/trackings/${state.tracking.id}/g0-piezas`, {
       orden_item_id: _g0CurrentItem.id,
-      sku: _g0CurrentItem.sku,
+      sku: skuFinal,
       product_title: _g0CurrentItem.product_title,
       order_number: _g0CurrentItem.order_number,
       barcode: _g0CurrentItem.barcode,
