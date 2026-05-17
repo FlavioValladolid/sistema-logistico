@@ -2945,6 +2945,9 @@ function crearTransporter() {
     port: parseInt(process.env.SMTP_PORT || '587'),
     secure: parseInt(process.env.SMTP_PORT || '587') === 465,
     auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+    connectionTimeout: 10000,
+    greetingTimeout: 10000,
+    socketTimeout: 15000,
   });
 }
 
@@ -3126,12 +3129,68 @@ async function enviarResumenSemanal() {
   }
 }
 
-// ── Endpoint de prueba (solo ADMIN) ────────────────────────────────────────
-app.post('/api/email/test-semanal', (req, res) => {
+// ── Config SMTP (solo ADMIN) ────────────────────────────────────────────────
+const ENV_PATH = path.join(__dirname, '.env');
+
+function leerEnv() {
+  try {
+    return fs.readFileSync(ENV_PATH, 'utf8');
+  } catch { return ''; }
+}
+
+function escribirEnv(vars) {
+  const lines = leerEnv().split('\n').filter(l => l.trim());
+  const map = new Map(lines.map(l => {
+    const i = l.indexOf('='); return i > 0 ? [l.slice(0, i), l.slice(i + 1)] : [l, ''];
+  }));
+  for (const [k, v] of Object.entries(vars)) {
+    if (v !== undefined) map.set(k, v);
+  }
+  const content = [...map.entries()].map(([k, v]) => `${k}=${v}`).join('\n') + '\n';
+  fs.writeFileSync(ENV_PATH, content, 'utf8');
+  // Recargar en process.env
+  for (const [k, v] of Object.entries(vars)) {
+    if (v !== undefined) process.env[k] = v;
+  }
+}
+
+app.get('/api/email/config', (req, res) => {
   if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Solo ADMIN' });
-  enviarResumenSemanal()
-    .then(() => res.json({ ok: true, mensaje: 'Resumen semanal enviado' }))
-    .catch(err => res.status(500).json({ error: err.message }));
+  res.json({
+    SMTP_HOST:      process.env.SMTP_HOST || '',
+    SMTP_PORT:      process.env.SMTP_PORT || '587',
+    SMTP_USER:      process.env.SMTP_USER || '',
+    SMTP_PASS_SET:  !!(process.env.SMTP_PASS),
+    SMTP_FROM_NAME: process.env.SMTP_FROM_NAME || 'RETORNOS',
+  });
+});
+
+app.put('/api/email/config', (req, res) => {
+  if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Solo ADMIN' });
+  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM_NAME } = req.body;
+  const updates = {};
+  if (SMTP_HOST      !== undefined) updates.SMTP_HOST      = SMTP_HOST;
+  if (SMTP_PORT      !== undefined) updates.SMTP_PORT      = SMTP_PORT;
+  if (SMTP_USER      !== undefined) updates.SMTP_USER      = SMTP_USER;
+  if (SMTP_FROM_NAME !== undefined) updates.SMTP_FROM_NAME = SMTP_FROM_NAME;
+  if (SMTP_PASS)                    updates.SMTP_PASS      = SMTP_PASS; // solo si viene valor
+  try {
+    escribirEnv(updates);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Endpoint de prueba (solo ADMIN) ────────────────────────────────────────
+app.post('/api/email/test-semanal', async (req, res) => {
+  if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Solo ADMIN' });
+  try {
+    await enviarResumenSemanal();
+    res.json({ ok: true, mensaje: 'Resumen semanal enviado' });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Error enviando email' });
+  }
 });
 
 // ── INICIAR SERVIDOR ──────────────────────────────────────────────────────────

@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Config. Email — Sistema Logístico</title>
+  <link rel="stylesheet" href="css/main.css">
+</head>
+<body>
+<script src="js/i18n.js"></script>
+<script src="js/app.js"></script>
+<script src="js/shell.js"></script>
+<script>
+const _pageUser = checkAuth(['ADMIN']);
+buildShell('Config. Email', 'Config. Email', '', _pageUser);
+
+async function init() {
+  document.getElementById('page-content').innerHTML = `
+    <div class="page-header">
+      <div>
+        <div class="breadcrumb">SISTEMA / CONFIG. EMAIL</div>
+        <h1 class="page-title">Configuración de Email</h1>
+        <p class="page-subtitle">Credenciales SMTP y resumen semanal automático</p>
+      </div>
+    </div>
+
+    <div style="max-width:640px">
+
+      <!-- SMTP Config Card -->
+      <div class="card mb-16">
+        <div class="card-header">
+          <span class="card-title">Servidor SMTP</span>
+          <span id="smtp-status" class="badge badge-muted" style="margin-left:auto">Cargando...</span>
+        </div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+          <div style="display:grid;grid-template-columns:1fr 120px;gap:12px">
+            <div>
+              <label class="form-label">Host SMTP</label>
+              <input id="smtp-host" type="text" class="form-control" placeholder="smtp.gmail.com">
+            </div>
+            <div>
+              <label class="form-label">Puerto</label>
+              <input id="smtp-port" type="number" class="form-control" placeholder="587" value="587">
+            </div>
+          </div>
+
+          <div>
+            <label class="form-label">Usuario / Email de envío</label>
+            <input id="smtp-user" type="email" class="form-control" placeholder="tu@gmail.com">
+          </div>
+
+          <div>
+            <label class="form-label">Contraseña / App Password</label>
+            <div style="position:relative">
+              <input id="smtp-pass" type="password" class="form-control" placeholder="Dejar vacío para mantener la actual" style="padding-right:44px">
+              <button onclick="togglePass()" type="button" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted);padding:4px">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+              </button>
+            </div>
+            <div id="pass-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px"></div>
+          </div>
+
+          <div>
+            <label class="form-label">Nombre del remitente</label>
+            <input id="smtp-from-name" type="text" class="form-control" placeholder="RETORNOS">
+          </div>
+
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn btn-secondary" onclick="probarConexion()" id="btn-probar">Probar conexión</button>
+            <button class="btn btn-primary" onclick="guardarConfig()" id="btn-guardar">Guardar cambios</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Resumen semanal Card -->
+      <div class="card mb-16">
+        <div class="card-header">
+          <span class="card-title">Resumen Semanal Automático</span>
+          <span class="badge badge-green" style="margin-left:auto">Activo</span>
+        </div>
+        <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+          <div style="background:var(--bg-elevated);border-radius:var(--radius-sm);padding:14px 16px;display:flex;flex-direction:column;gap:8px">
+            <div style="display:flex;justify-content:space-between">
+              <span style="font-size:13px;color:var(--text-muted)">Frecuencia</span>
+              <span style="font-size:13px;font-weight:600">Lunes 8:00 AM</span>
+            </div>
+            <div style="display:flex;justify-content:space-between">
+              <span style="font-size:13px;color:var(--text-muted)">Zona horaria</span>
+              <span style="font-size:13px;font-weight:600">America/Tijuana</span>
+            </div>
+            <div style="display:flex;justify-content:space-between">
+              <span style="font-size:13px;color:var(--text-muted)">Destinatarios</span>
+              <span style="font-size:13px;font-weight:600">ADMIN y SUPERVISOR activos</span>
+            </div>
+            <div style="display:flex;justify-content:space-between">
+              <span style="font-size:13px;color:var(--text-muted)">Contenido</span>
+              <span style="font-size:13px;font-weight:600">Trackings · Piezas · Errores · Top clientes</span>
+            </div>
+          </div>
+
+          <div id="destinatarios-lista">
+            <div style="font-size:12px;color:var(--text-muted)">Cargando destinatarios...</div>
+          </div>
+
+          <div style="display:flex;gap:8px;justify-content:flex-end">
+            <button class="btn btn-primary" onclick="enviarPrueba()" id="btn-enviar-prueba">
+              Enviar resumen de prueba ahora
+            </button>
+          </div>
+          <div id="prueba-resultado"></div>
+        </div>
+      </div>
+
+      <!-- Ayuda Gmail -->
+      <div class="card mb-16">
+        <div class="card-header"><span class="card-title">Configuración rápida con Gmail</span></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
+          <p style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin:0">
+            Gmail requiere una <strong>App Password</strong> (no tu contraseña normal). Para generarla:
+          </p>
+          <ol style="font-size:12px;color:var(--text-muted);line-height:2;margin:0;padding-left:20px">
+            <li>Ve a <strong>myaccount.google.com → Seguridad</strong></li>
+            <li>Activa <strong>Verificación en 2 pasos</strong> si no está activa</li>
+            <li>Busca <strong>Contraseñas de aplicaciones</strong></li>
+            <li>Crea una nueva para "Correo" y copia las 16 letras</li>
+            <li>Pégala en el campo Contraseña de arriba</li>
+          </ol>
+          <div style="background:var(--bg-elevated);border-radius:var(--radius-sm);padding:12px;font-family:'IBM Plex Mono',monospace;font-size:12px;display:flex;flex-direction:column;gap:4px">
+            <div><span style="color:var(--text-muted)">Host: </span>smtp.gmail.com</div>
+            <div><span style="color:var(--text-muted)">Puerto: </span>587</div>
+            <div><span style="color:var(--text-muted)">Usuario: </span>tu@gmail.com</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  `;
+
+  await cargarConfig();
+  await cargarDestinatarios();
+}
+
+function togglePass() {
+  const inp = document.getElementById('smtp-pass');
+  inp.type = inp.type === 'password' ? 'text' : 'password';
+}
+
+async function cargarConfig() {
+  try {
+    const data = await API.get('/email/config');
+    document.getElementById('smtp-host').value      = data.SMTP_HOST || '';
+    document.getElementById('smtp-port').value      = data.SMTP_PORT || '587';
+    document.getElementById('smtp-user').value      = data.SMTP_USER || '';
+    document.getElementById('smtp-from-name').value = data.SMTP_FROM_NAME || 'RETORNOS';
+
+    const hint  = document.getElementById('pass-hint');
+    const badge = document.getElementById('smtp-status');
+    const configurado = data.SMTP_HOST && data.SMTP_USER && data.SMTP_PASS_SET;
+
+    hint.textContent = data.SMTP_PASS_SET
+      ? 'Contraseña guardada. Dejar vacío para mantenerla.'
+      : 'Sin contraseña guardada.';
+
+    badge.textContent = configurado ? 'Configurado' : (data.SMTP_HOST || data.SMTP_USER ? 'Incompleto' : 'Sin configurar');
+    badge.className   = 'badge ' + (configurado ? 'badge-green' : 'badge-amber');
+  } catch(e) {
+    toast('Error cargando configuración', 'error');
+  }
+}
+
+async function cargarDestinatarios() {
+  try {
+    const usuarios = await API.get('/usuarios');
+    const dests = usuarios.filter(u => ['ADMIN','SUPERVISOR'].includes(u.rol) && u.activo);
+    const el = document.getElementById('destinatarios-lista');
+    if (!dests.length) {
+      el.innerHTML = `<div class="alert alert-warning" style="font-size:12px">Sin usuarios ADMIN o SUPERVISOR activos.</div>`;
+      return;
+    }
+    el.innerHTML = `
+      <div style="font-size:11px;color:var(--text-muted);margin-bottom:6px;text-transform:uppercase;letter-spacing:.05em">Destinatarios (${dests.length})</div>
+      ${dests.map(u => `
+        <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg-elevated);border-radius:var(--radius-sm);margin-bottom:4px">
+          <span style="font-size:10px;font-weight:700;color:${u.rol==='ADMIN'?'#e74c3c':'#e67e22'};min-width:70px">${u.rol}</span>
+          <span style="font-size:13px">${u.nombre}</span>
+          <span style="font-size:11px;color:var(--text-muted);margin-left:auto;font-family:'IBM Plex Mono',monospace">${u.email}</span>
+        </div>
+      `).join('')}
+    `;
+  } catch(e) {}
+}
+
+async function guardarConfig() {
+  const btn = document.getElementById('btn-guardar');
+  btn.disabled = true; btn.textContent = 'Guardando...';
+  try {
+    const body = {
+      SMTP_HOST:      document.getElementById('smtp-host').value.trim(),
+      SMTP_PORT:      document.getElementById('smtp-port').value.trim(),
+      SMTP_USER:      document.getElementById('smtp-user').value.trim(),
+      SMTP_FROM_NAME: document.getElementById('smtp-from-name').value.trim(),
+    };
+    const pass = document.getElementById('smtp-pass').value;
+    if (pass) body.SMTP_PASS = pass;
+    await API.put('/email/config', body);
+    document.getElementById('smtp-pass').value = '';
+    toast('Configuración guardada', 'success');
+    cargarConfig();
+  } catch(e) {
+    toast(e.error || 'Error al guardar', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Guardar cambios';
+  }
+}
+
+async function probarConexion() {
+  const btn = document.getElementById('btn-probar');
+  btn.disabled = true; btn.textContent = 'Guardando y probando...';
+  try {
+    await guardarConfig();
+    await API.post('/email/test-semanal', {});
+    toast('Resumen enviado — revisa tu bandeja de entrada', 'success');
+  } catch(e) {
+    toast(e.error || 'Error al enviar', 'error');
+  } finally {
+    btn.disabled = false; btn.textContent = 'Probar conexión';
+  }
+}
+
+async function enviarPrueba() {
+  const btn = document.getElementById('btn-enviar-prueba');
+  const res = document.getElementById('prueba-resultado');
+  btn.disabled = true; btn.textContent = 'Enviando...';
+  res.innerHTML = '';
+  try {
+    await API.post('/email/test-semanal', {});
+    res.innerHTML = `<div class="alert alert-success" style="font-size:12px;margin-top:8px">✓ Resumen enviado correctamente a todos los destinatarios.</div>`;
+  } catch(e) {
+    res.innerHTML = `<div class="alert alert-error" style="font-size:12px;margin-top:8px">Error: ${e.error || 'No se pudo enviar. Verifica la configuración SMTP.'}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = 'Enviar resumen de prueba ahora';
+  }
+}
+
+init();
+</script>
+</body>
+</html>
