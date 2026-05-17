@@ -162,6 +162,17 @@ const modalHtml = `
               <span class="toggle-slider"></span>
             </label>
           </div>
+
+          <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
+            <div>
+              <div style="font-weight:600;font-size:13px">${t('clients.dest_name')}</div>
+              <div class="form-hint" style="margin:0">${t('clients.dest_name_hint')}</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="cliente-requiere-nombre-destinatario">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
         </div>
 
         <div id="seccion-tipo-mercancia" class="hidden" style="margin-top:16px">
@@ -335,8 +346,9 @@ function renderTabla(clientes) {
               <td>
                 ${c.requiere_orden ? `<span class="badge badge-green" style="margin-bottom:3px;display:inline-block">${t('clients.badge_order')}</span>` : ''}
                 ${c.requiere_tipo_retorno ? `<span class="badge badge-amber" style="margin-bottom:3px;display:inline-block">${t('clients.badge_rma')}</span>` : ''}
-                ${c.requiere_nota_credito ? `<span class="badge badge-blue" style="display:inline-block">${t('clients.badge_credit')}</span>` : ''}
-                ${!c.requiere_orden && !c.requiere_tipo_retorno && !c.requiere_nota_credito ? `<span style="color:var(--text-muted);font-size:12px">${t('label.none')}</span>` : ''}
+                ${c.requiere_nota_credito ? `<span class="badge badge-blue" style="margin-bottom:3px;display:inline-block">${t('clients.badge_credit')}</span>` : ''}
+                ${c.requiere_nombre_destinatario ? `<span class="badge badge-green" style="display:inline-block">${t('clients.badge_dest')}</span>` : ''}
+                ${!c.requiere_orden && !c.requiere_tipo_retorno && !c.requiere_nota_credito && !c.requiere_nombre_destinatario ? `<span style="color:var(--text-muted);font-size:12px">${t('label.none')}</span>` : ''}
               </td>
               <td class="td-mono text-muted">${formatDate(c.created_at).split(',')[0]}</td>
               <td>
@@ -398,6 +410,7 @@ function editarCliente(id) {
   document.getElementById('cliente-requiere-orden').checked = !!c.requiere_orden;
   document.getElementById('cliente-requiere-tipo-retorno').checked = !!c.requiere_tipo_retorno;
   document.getElementById('cliente-requiere-nota-credito').checked = !!c.requiere_nota_credito;
+  document.getElementById('cliente-requiere-nombre-destinatario').checked = !!c.requiere_nombre_destinatario;
   document.getElementById('cliente-validacion-piezas').checked = !!c.validacion_piezas;
   document.getElementById('cliente-validacion-condicion').checked = !!c.validacion_condicion;
   document.getElementById('seccion-tipo-mercancia').classList.toggle('hidden', !c.modulo_retrabajo);
@@ -427,6 +440,7 @@ async function guardarCliente() {
     requiere_orden: document.getElementById('cliente-requiere-orden').checked,
     requiere_tipo_retorno: document.getElementById('cliente-requiere-tipo-retorno').checked,
     requiere_nota_credito: document.getElementById('cliente-requiere-nota-credito').checked,
+    requiere_nombre_destinatario: document.getElementById('cliente-requiere-nombre-destinatario').checked,
     validacion_piezas: document.getElementById('cliente-validacion-piezas').checked,
     validacion_condicion: document.getElementById('cliente-validacion-condicion').checked,
   };

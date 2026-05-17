@@ -82,7 +82,7 @@ async function loadCajas() {
     <div class="flex justify-between items-center mb-24">
       <div>
         <h1 class="page-title">Reportes</h1>
-        <p class="page-subtitle">Cajas y pallets cerrados — exportación y control de impresión</p>
+        <p class="page-subtitle">Todas las cajas y pallets — exportación y control de impresión</p>
       </div>
     </div>
     <div style="display:flex;gap:8px;margin-bottom:16px" class="no-print">
@@ -168,8 +168,8 @@ function renderListaCajas(data) {
     el.innerHTML = `
       <div class="empty-state">
         <div class="empty-state-icon">📦</div>
-        <div class="empty-state-title">Sin cajas cerradas</div>
-        <div class="empty-state-text">Las cajas y pallets aparecen aquí al cerrar el tracking</div>
+        <div class="empty-state-title">Sin cajas registradas</div>
+        <div class="empty-state-text">Crea cajas en Administración → Cajas / Pallets para verlas aquí</div>
       </div>`;
     actualizarBotonCSV();
     return;
@@ -236,16 +236,18 @@ function renderListaCajas(data) {
                 </td>
                 <td>${c.cliente_nombre || '—'}</td>
                 <td>${c.tipo_caja ? tipoCajaBadge(c.tipo_caja) : '—'}</td>
-                <td style="font-size:11px;color:var(--text-secondary);font-family:'IBM Plex Mono',monospace">
-                  ${c.num_trackings} tracking${c.num_trackings !== 1 ? 's' : ''}
+                <td style="font-size:11px;font-family:'IBM Plex Mono',monospace">
+                  ${c.num_trackings === 0
+                    ? '<span style="color:var(--text-muted)">Sin trackings</span>'
+                    : `<span style="color:var(--accent-green)">${c.num_cerrados} cerrado${c.num_cerrados !== 1 ? 's' : ''}</span>${c.num_abiertos > 0 ? ` <span style="color:var(--accent-amber)">· ${c.num_abiertos} abierto${c.num_abiertos !== 1 ? 's' : ''}</span>` : ''}`}
                 </td>
-                <td class="td-mono">${c.num_skus}</td>
-                <td class="td-mono">${formatNum(c.total_piezas)}</td>
+                <td class="td-mono">${c.num_skus || '—'}</td>
+                <td class="td-mono">${c.total_piezas ? formatNum(c.total_piezas) : '—'}</td>
                 <td class="td-mono text-muted">${c.closed_at ? formatDate(c.closed_at).split(',')[0] : '—'}</td>
                 <td>
-                  ${c.impresa
-                    ? '<span class="badge badge-impresa">✓ Impresa</span>'
-                    : '<span class="badge badge-muted">Pendiente</span>'}
+                  ${c.num_cerrados > 0
+                    ? (c.impresa ? '<span class="badge badge-impresa">✓ Impresa</span>' : '<span class="badge badge-muted">Pendiente</span>')
+                    : '<span class="badge badge-amber" style="font-size:10px">En proceso</span>'}
                 </td>
                 <td>
                   <button class="btn btn-secondary btn-sm" onclick="window.location='${detailUrl}'">
@@ -622,6 +624,7 @@ async function loadManifiesto(trackingId) {
           <div class="mani-data-item"><div class="mani-data-label">Cant. Final</div><div class="mani-data-val" style="color:${t.cantidad_final !== t.cantidad_declarada ? 'var(--accent-amber)' : 'var(--accent-green)'}">${formatNum(t.cantidad_final)}</div></div>
           <div class="mani-data-item"><div class="mani-data-label">Inspeccionadas</div><div class="mani-data-val">${formatNum(totalPiezas)}</div></div>
           ${t.numero_orden ? `<div class="mani-data-item" style="border-color:rgba(0,230,118,.3)"><div class="mani-data-label">Número de Orden</div><div class="mani-data-val" style="color:var(--accent-green)">${t.numero_orden}</div></div>` : ''}
+          ${t.nombre_destinatario ? `<div class="mani-data-item" style="border-color:rgba(0,188,212,.3)"><div class="mani-data-label">Destinatario</div><div class="mani-data-val" style="color:var(--accent-cyan)">${esc(t.nombre_destinatario)}</div></div>` : ''}
           ${t.tipo_retorno ? `<div class="mani-data-item" style="border-color:rgba(255,171,0,.3)"><div class="mani-data-label">Tipo de Retorno</div><div class="mani-data-val" style="color:#ffab00">${t.tipo_retorno}</div></div>` : ''}
           ${t.razon_retorno ? `<div class="mani-data-item" style="grid-column:span 3"><div class="mani-data-label">Razón de Retorno (RTS)</div><div class="mani-data-val" style="font-size:12px;white-space:normal;line-height:1.4">${t.razon_retorno}</div></div>` : ''}
         </div>

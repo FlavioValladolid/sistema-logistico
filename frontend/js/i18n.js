@@ -150,6 +150,9 @@ const TRANSLATIONS = {
     'clients.badge_order':     '# Orden',
     'clients.badge_rma':       'RMA/RTS',
     'clients.badge_credit':    'Nota Crédito',
+    'clients.badge_dest':      'Destinatario',
+    'clients.dest_name':       'Nombre de Destinatario',
+    'clients.dest_name_hint':  'Al iniciar operación solicita capturar el nombre del destinatario o cliente final',
 
     // ── Grados ──
     'grade.0': 'G0 – Procesamiento',
@@ -473,6 +476,9 @@ const TRANSLATIONS = {
     'clients.badge_order':     '# Order',
     'clients.badge_rma':       'RMA/RTS',
     'clients.badge_credit':    'Credit Note',
+    'clients.badge_dest':      'Recipient',
+    'clients.dest_name':       'Recipient Name',
+    'clients.dest_name_hint':  'When starting an operation, prompts to enter the recipient or end-customer name',
 
     // ── Grades ──
     'grade.0': 'G0 – Processing',

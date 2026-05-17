@@ -144,6 +144,7 @@ function renderTabla() {
             <th>${t('trackings.col_inspector')}</th>
             <th>${t('label.grade')}</th>
             <th>Orden #</th>
+            <th>Destinatario</th>
             <th>${t('trackings.col_declared')}</th>
             <th>${t('trackings.col_inspected')}</th>
             <th>${t('label.status')}</th>
@@ -173,6 +174,11 @@ function renderTabla() {
                     ? `<span onclick="event.stopPropagation();verOrden('${escHTML(tr.numero_orden)}')"
                         style="color:var(--accent-cyan);cursor:pointer;text-decoration:underline"
                         title="Ver todos los trackings de esta orden">${escHTML(tr.numero_orden)}</span>`
+                    : '<span style="color:var(--text-muted)">—</span>'}
+                </td>
+                <td style="font-size:12px">
+                  ${tr.nombre_destinatario
+                    ? `<span style="color:var(--text-primary)">${escHTML(tr.nombre_destinatario)}</span>`
                     : '<span style="color:var(--text-muted)">—</span>'}
                 </td>
                 <td class="td-mono">${formatNum(tr.cantidad_declarada)}</td>
@@ -256,7 +262,8 @@ function applyFilters() {
       || tr.tracking_number.toLowerCase().includes(q)
       || (tr.cliente_nombre||'').toLowerCase().includes(q)
       || (tr.operador||'').toLowerCase().includes(q)
-      || (tr.numero_orden||'').toLowerCase().includes(q);
+      || (tr.numero_orden||'').toLowerCase().includes(q)
+      || (tr.nombre_destinatario||'').toLowerCase().includes(q);
     const matchE = !estatus || tr.estatus === estatus;
     const matchC = !clienteId || tr.cliente_id === clienteId;
     const matchG = !grado || String(tr.grado_confianza) === grado;

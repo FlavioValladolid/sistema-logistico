@@ -82,6 +82,7 @@ async function initDB() {
   try { db.exec("ALTER TABLE clientes ADD COLUMN requiere_orden INTEGER DEFAULT 0"); } catch(e) {}
   try { db.exec("ALTER TABLE clientes ADD COLUMN requiere_tipo_retorno INTEGER DEFAULT 0"); } catch(e) {}
   try { db.exec("ALTER TABLE clientes ADD COLUMN requiere_nota_credito INTEGER DEFAULT 0"); } catch(e) {}
+  try { db.exec("ALTER TABLE clientes ADD COLUMN requiere_nombre_destinatario INTEGER DEFAULT 0"); } catch(e) {}
 
   // Materializar valores NULL de columnas migradas (sql.js omite undefined en JSON)
   db.exec("UPDATE clientes SET tipo_almacenamiento = 'caja'   WHERE tipo_almacenamiento IS NULL");
@@ -91,6 +92,7 @@ async function initDB() {
   db.exec("UPDATE clientes SET requiere_orden = 0            WHERE requiere_orden IS NULL");
   db.exec("UPDATE clientes SET requiere_tipo_retorno = 0     WHERE requiere_tipo_retorno IS NULL");
   db.exec("UPDATE clientes SET requiere_nota_credito = 0     WHERE requiere_nota_credito IS NULL");
+  db.exec("UPDATE clientes SET requiere_nombre_destinatario = 0 WHERE requiere_nombre_destinatario IS NULL");
 
   console.log('📋 Columnas clientes:', db.prepare("PRAGMA table_info(clientes)").all().map(r => r.name).join(', '));
 
@@ -158,6 +160,7 @@ async function initDB() {
   try { db.exec('ALTER TABLE trackings ADD COLUMN numero_orden TEXT'); } catch(e) {}
   try { db.exec('ALTER TABLE trackings ADD COLUMN tipo_retorno TEXT'); } catch(e) {}
   try { db.exec('ALTER TABLE trackings ADD COLUMN razon_retorno TEXT'); } catch(e) {}
+  try { db.exec('ALTER TABLE trackings ADD COLUMN nombre_destinatario TEXT'); } catch(e) {}
   try { db.exec('ALTER TABLE detalle_skus ADD COLUMN foto_etiqueta TEXT'); } catch(e) {}
   try { db.exec('ALTER TABLE detalle_skus ADD COLUMN foto_insumos TEXT'); } catch(e) {}
   try { db.exec('ALTER TABLE detalle_skus ADD COLUMN foto_pieza TEXT'); } catch(e) {}
@@ -829,7 +832,7 @@ app.get('/api/clientes/:id', (req, res) => {
 });
 
 app.post('/api/clientes', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito, validacion_piezas, validacion_condicion } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito, requiere_nombre_destinatario, validacion_piezas, validacion_condicion } = req.body;
   if (!nombre) return res.status(400).json({ error: 'Nombre requerido' });
   const id = uuidv4();
   const grado = grado_confianza !== undefined && grado_confianza !== null && grado_confianza !== '' ? parseInt(grado_confianza) : 2;
@@ -837,21 +840,21 @@ app.post('/api/clientes', (req, res) => {
   const vp = grado === 0 ? (validacion_piezas ? 1 : 0) : 0;
   const vc = grado === 0 ? (validacion_condicion ? 1 : 0) : 0;
   console.log(`POST /clientes → nombre="${nombre}" grado=${grado}`);
-  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno,requiere_nota_credito,validacion_piezas,validacion_condicion,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, vp, vc, localNow()]);
+  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno,requiere_nota_credito,requiere_nombre_destinatario,validacion_piezas,validacion_condicion,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, requiere_nombre_destinatario ? 1 : 0, vp, vc, localNow()]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos' });
   res.json({ id, mensaje: 'Cliente creado' });
 });
 
 app.put('/api/clientes/:id', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito, validacion_piezas, validacion_condicion } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito, requiere_nombre_destinatario, validacion_piezas, validacion_condicion } = req.body;
   const grado = grado_confianza !== undefined && grado_confianza !== null && grado_confianza !== '' ? parseInt(grado_confianza) : 2;
   const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
   const vp = grado === 0 ? (validacion_piezas ? 1 : 0) : 0;
   const vc = grado === 0 ? (validacion_condicion ? 1 : 0) : 0;
   console.log(`PUT /clientes/${req.params.id} → grado=${grado}`);
-  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=?,requiere_orden=?,requiere_tipo_retorno=?,requiere_nota_credito=?,validacion_piezas=?,validacion_condicion=? WHERE id=?`,
-    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, vp, vc, req.params.id]);
+  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=?,requiere_orden=?,requiere_tipo_retorno=?,requiere_nota_credito=?,requiere_nombre_destinatario=?,validacion_piezas=?,validacion_condicion=? WHERE id=?`,
+    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, requiere_nombre_destinatario ? 1 : 0, vp, vc, req.params.id]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos — revisa la consola del servidor' });
   res.json({ mensaje: 'Cliente actualizado' });
 });
@@ -1081,7 +1084,7 @@ app.get('/api/trackings', (req, res) => {
   const extraSql = extraWhere.length ? ' AND ' + extraWhere.join(' AND ') : '';
 
   const rows = dbAll(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.validacion_piezas, c.validacion_condicion,
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion,
       COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) as total_comentarios,
       CASE WHEN COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) > 0 AND COALESCE(t.chat_resuelto, 0) = 0 THEN 1 ELSE 0 END as tiene_comentarios
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
@@ -1093,7 +1096,7 @@ app.get('/api/trackings', (req, res) => {
 
 app.get('/api/trackings/:id', (req, res) => {
   const row = dbGet(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.validacion_piezas, c.validacion_condicion
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     WHERE t.id = ?
   `, [req.params.id]);
@@ -1147,7 +1150,7 @@ app.post('/api/trackings/:id/chat-resuelto', (req, res) => {
 });
 
 app.post('/api/trackings', (req, res) => {
-  const { tracking_number, cliente_id, cantidad_declarada, tipo_retorno, razon_retorno } = req.body;
+  const { tracking_number, cliente_id, cantidad_declarada, tipo_retorno, razon_retorno, nombre_destinatario } = req.body;
   let { numero_orden } = req.body;
   if (!tracking_number || !cliente_id) {
     return res.status(400).json({ error: 'tracking_number y cliente_id son requeridos' });
@@ -1170,8 +1173,8 @@ app.post('/api/trackings', (req, res) => {
 
   const operador = req.usuario.email;
   const id = uuidv4();
-  dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final,numero_orden,tipo_retorno,razon_retorno,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, tracking_number, cliente_id, '', null, operador, cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null, localNow()]);
+  dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final,numero_orden,tipo_retorno,razon_retorno,nombre_destinatario,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, tracking_number, cliente_id, '', null, operador, cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null, nombre_destinatario || null, localNow()]);
   res.json({ id, mensaje: 'Tracking creado' });
 });
 
@@ -1567,32 +1570,37 @@ app.get('/api/reportes/resumen', (req, res) => {
 // Lista de cajas/pallets agrupadas por caja_id
 app.get('/api/reportes/cajas', (req, res) => {
   const { cliente_id, fecha_desde, fecha_hasta } = req.query;
-  const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 'cp', 'cliente_id');
 
-  let where = `WHERE t.estatus = 'cerrado' AND t.caja_id != ''${cf}`;
-  const params = [...cp];
-  if (cliente_id) { where += ' AND t.cliente_id = ?'; params.push(cliente_id); }
-  if (fecha_desde) { where += " AND date(t.closed_at) >= ?"; params.push(fecha_desde); }
-  if (fecha_hasta) { where += " AND date(t.closed_at) <= ?"; params.push(fecha_hasta); }
+  let where = `WHERE 1=1${cf}`;
+  const whereParams = [...cp];
+  if (cliente_id) { where += ' AND cp.cliente_id = ?'; whereParams.push(cliente_id); }
+
+  const having = [];
+  const havingParams = [];
+  if (fecha_desde) { having.push("date(MAX(t.closed_at)) >= ?"); havingParams.push(fecha_desde); }
+  if (fecha_hasta) { having.push("date(MAX(t.closed_at)) <= ?"); havingParams.push(fecha_hasta); }
 
   const sql = `
     SELECT
-      t.caja_id,
-      t.cliente_id,
-      MAX(c.nombre)                AS cliente_nombre,
-      MAX(c.tipo_almacenamiento)   AS tipo_almacenamiento,
-      MAX(cp.tipo)                 AS tipo_caja,
-      MAX(cp.id)                   AS caja_pallet_id,
-      COUNT(DISTINCT t.id)         AS num_trackings,
-      GROUP_CONCAT(t.id, '|')      AS tracking_ids,
-      GROUP_CONCAT(t.tracking_number, ', ') AS tracking_numbers,
+      cp.nombre                    AS caja_id,
+      cp.cliente_id,
+      c.nombre                     AS cliente_nombre,
+      c.tipo_almacenamiento,
+      cp.tipo                      AS tipo_caja,
+      cp.id                        AS caja_pallet_id,
+      COUNT(DISTINCT t.id)                                        AS num_trackings,
+      COUNT(DISTINCT CASE WHEN t.estatus IN ('cerrado','refunded') THEN t.id END) AS num_cerrados,
+      COUNT(DISTINCT CASE WHEN t.estatus='abierto' THEN t.id END) AS num_abiertos,
+      GROUP_CONCAT(t.id, '|')                                     AS tracking_ids,
+      GROUP_CONCAT(t.tracking_number, ', ')                       AS tracking_numbers,
       COALESCE(agg.num_skus,    0) AS num_skus,
       COALESCE(agg.total_piezas,0) AS total_piezas,
       MAX(t.closed_at)             AS closed_at,
       MAX(t.impresa)               AS impresa
-    FROM trackings t
-    LEFT JOIN clientes c ON t.cliente_id = c.id
-    LEFT JOIN cajas_pallets cp ON cp.nombre = t.caja_id
+    FROM cajas_pallets cp
+    LEFT JOIN clientes c ON cp.cliente_id = c.id
+    LEFT JOIN trackings t ON t.caja_id = cp.nombre
     LEFT JOIN (
       SELECT caja_id, cliente_id,
              COUNT(DISTINCT sku_key) as num_skus,
@@ -1600,19 +1608,20 @@ app.get('/api/reportes/cajas', (req, res) => {
       FROM (
         SELECT t2.caja_id, t2.cliente_id, 'D:'||d.sku_code as sku_key, d.cantidad as piezas
         FROM detalle_skus d
-        JOIN trackings t2 ON d.tracking_id = t2.id AND t2.estatus = 'cerrado' AND t2.caja_id != ''
+        JOIN trackings t2 ON d.tracking_id = t2.id AND t2.caja_id != ''
         UNION ALL
         SELECT t2.caja_id, t2.cliente_id, 'G:'||g.sku as sku_key, 1 as piezas
         FROM g0_piezas g
-        JOIN trackings t2 ON g.tracking_id = t2.id AND t2.estatus = 'cerrado' AND t2.caja_id != ''
+        JOIN trackings t2 ON g.tracking_id = t2.id AND t2.caja_id != ''
       ) combined
       GROUP BY caja_id, cliente_id
-    ) agg ON agg.caja_id = t.caja_id AND agg.cliente_id = t.cliente_id
+    ) agg ON agg.caja_id = cp.nombre AND agg.cliente_id = cp.cliente_id
     ${where}
-    GROUP BY t.caja_id, t.cliente_id
-    ORDER BY MAX(t.closed_at) DESC
+    GROUP BY cp.nombre, cp.cliente_id
+    ${having.length ? 'HAVING ' + having.join(' AND ') : ''}
+    ORDER BY MAX(t.closed_at) DESC NULLS LAST, cp.nombre ASC
   `;
-  res.json(dbAll(sql, params));
+  res.json(dbAll(sql, [...whereParams, ...havingParams]));
 });
 
 // Detalle completo de una caja/pallet (todos sus trackings + SKUs + errores)

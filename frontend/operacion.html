@@ -679,7 +679,7 @@ async function renderInicio() {
           <label class="form-label">Cliente / Proveedor *</label>
           <select class="form-control" id="ini-cliente" onchange="onClienteChange(this)">
             <option value="">— Seleccionar cliente —</option>
-            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}" data-almacenamiento="${c.tipo_almacenamiento || 'caja'}" data-nombre="${c.nombre}" data-requiere-orden="${c.requiere_orden || 0}" data-requiere-tipo-retorno="${c.requiere_tipo_retorno || 0}">${c.nombre}</option>`).join('')}
+            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}" data-almacenamiento="${c.tipo_almacenamiento || 'caja'}" data-nombre="${c.nombre}" data-requiere-orden="${c.requiere_orden || 0}" data-requiere-tipo-retorno="${c.requiere_tipo_retorno || 0}" data-requiere-nombre-dest="${c.requiere_nombre_destinatario || 0}">${c.nombre}</option>`).join('')}
           </select>
           <div id="cliente-config-preview" class="mt-8 hidden">
             <div style="display:flex;gap:8px;flex-wrap:wrap" id="cliente-badges"></div>
@@ -702,6 +702,12 @@ async function renderInicio() {
           <label class="form-label">Número de Orden *</label>
           <input type="text" class="form-control form-control-mono" id="ini-numero-orden" placeholder="ORD-XXXXX" style="text-transform:uppercase">
           <div class="form-hint">Número de orden del cliente para este envío</div>
+        </div>
+
+        <div id="seccion-nombre-destinatario" class="form-group hidden">
+          <label class="form-label">${t('clients.dest_name')} *</label>
+          <input type="text" class="form-control" id="ini-nombre-destinatario" placeholder="Nombre del destinatario o cliente final">
+          <div class="form-hint">${t('clients.dest_name_hint')}</div>
         </div>
 
         <div id="seccion-tipo-retorno" class="hidden">
@@ -779,12 +785,14 @@ function onClienteChange(sel) {
   const secOrden = document.getElementById('seccion-numero-orden');
   const secRetorno = document.getElementById('seccion-tipo-retorno');
   const secRazon = document.getElementById('seccion-razon-retorno');
+  const secDest = document.getElementById('seccion-nombre-destinatario');
 
   if (!opt.value) {
     preview.classList.add('hidden');
     secOrden?.classList.add('hidden');
     secRetorno?.classList.add('hidden');
     secRazon?.classList.add('hidden');
+    secDest?.classList.add('hidden');
     return;
   }
 
@@ -797,6 +805,7 @@ function onClienteChange(sel) {
   const esPallet = almacenamiento === 'pallet';
   const requiereOrden = opt.dataset.requiereOrden === '1';
   const requiereTipoRetorno = opt.dataset.requiereTipoRetorno === '1';
+  const requiereNombreDest = opt.dataset.requiereNombreDest === '1';
 
   badges.innerHTML = `
     <span class="grado-badge ${gradeClasses[grado]}">${t('grade.' + grado)}</span>
@@ -806,10 +815,12 @@ function onClienteChange(sel) {
     <span class="badge badge-muted">${esPallet ? '⬛ Pallet' : '📦 Caja'}</span>
     ${requiereOrden ? '<span class="badge badge-green"># Orden</span>' : ''}
     ${requiereTipoRetorno ? '<span class="badge badge-amber">RMA/RTS</span>' : ''}
+    ${requiereNombreDest ? `<span class="badge badge-green">${t('clients.badge_dest')}</span>` : ''}
   `;
   preview.classList.remove('hidden');
 
   if (secOrden) secOrden.classList.toggle('hidden', !requiereOrden);
+  if (secDest) secDest.classList.toggle('hidden', !requiereNombreDest);
   if (secRetorno) {
     secRetorno.classList.toggle('hidden', !requiereTipoRetorno);
     if (!requiereTipoRetorno && secRazon) secRazon.classList.add('hidden');
@@ -851,13 +862,19 @@ async function iniciarTracking() {
   const opt = document.getElementById('ini-cliente').selectedOptions[0];
   const requiereOrden = opt?.dataset.requiereOrden === '1';
   const requiereTipoRetorno = opt?.dataset.requiereTipoRetorno === '1';
+  const requiereNombreDest = opt?.dataset.requiereNombreDest === '1';
 
   const numeroOrden = document.getElementById('ini-numero-orden')?.value.trim().toUpperCase() || null;
   const tipoRetorno = document.querySelector('input[name="ini-tipo-retorno"]:checked')?.value || null;
   const razonRetorno = document.getElementById('ini-razon-retorno')?.value.trim() || null;
+  const nombreDestinatario = document.getElementById('ini-nombre-destinatario')?.value.trim() || null;
 
   if (requiereOrden && !numeroOrden) {
     alertEl.innerHTML = '<div class="alert alert-error">El Número de Orden es requerido para este cliente</div>';
+    return;
+  }
+  if (requiereNombreDest && !nombreDestinatario) {
+    alertEl.innerHTML = `<div class="alert alert-error">${t('clients.dest_name')} es requerido para este cliente</div>`;
     return;
   }
   if (requiereTipoRetorno && !tipoRetorno) {
@@ -878,6 +895,7 @@ async function iniciarTracking() {
       numero_orden: requiereOrden ? numeroOrden : null,
       tipo_retorno: requiereTipoRetorno ? tipoRetorno : null,
       razon_retorno: requiereTipoRetorno && tipoRetorno === 'RTS' ? razonRetorno : null,
+      nombre_destinatario: requiereNombreDest ? nombreDestinatario : null,
     });
 
     state.tracking = await API.get(`/trackings/${res.id}`);
@@ -1093,6 +1111,11 @@ function renderG0Inspeccion() {
         <div class="info-row">
           <span class="info-key">Orden #</span>
           <span class="info-val font-mono" style="color:var(--accent-cyan)">${escHTML(tk.numero_orden)}</span>
+        </div>` : ''}
+        ${tk.nombre_destinatario ? `
+        <div class="info-row">
+          <span class="info-key">${t('clients.dest_name')}</span>
+          <span class="info-val" style="color:var(--accent-cyan)">${escHTML(tk.nombre_destinatario)}</span>
         </div>` : ''}
         <div class="info-row">
           <span class="info-key">${t('op.lbl_box')}</span>
@@ -1807,7 +1830,8 @@ function renderInspeccion() {
             <h1 class="page-title">Inspección de Tracking</h1>
             <p class="page-subtitle">
               <span class="font-mono" style="color:var(--accent-cyan)">${tk.tracking_number}</span>
-              · ${tk.cliente_nombre}
+              ${tk.numero_orden ? `· Orden: <span class="font-mono" style="color:var(--accent-cyan)">${escHTML(tk.numero_orden)}</span>` : ''}
+              · ${escHTML(tk.cliente_nombre)}
             </p>
           </div>
           ${!isClosed ? `
@@ -2215,6 +2239,16 @@ function renderInspeccion() {
           <span class="info-key">Tracking #</span>
           <span class="info-val" style="color:var(--accent-cyan)">${tk.tracking_number}</span>
         </div>
+        ${tk.numero_orden ? `
+        <div class="info-row">
+          <span class="info-key">Orden #</span>
+          <span class="info-val font-mono" style="color:var(--accent-cyan)">${escHTML(tk.numero_orden)}</span>
+        </div>` : ''}
+        ${tk.nombre_destinatario ? `
+        <div class="info-row">
+          <span class="info-key">${t('clients.dest_name')}</span>
+          <span class="info-val" style="color:var(--accent-cyan)">${escHTML(tk.nombre_destinatario)}</span>
+        </div>` : ''}
         <div class="info-row">
           <span class="info-key">${t('op.lbl_box')}</span>
           <span class="info-val">
