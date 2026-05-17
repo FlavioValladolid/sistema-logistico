@@ -4,3 +4,5 @@ backend/database.bin
 *.tar.gz
 backend/database.bin-shm
 backend/database.bin-wal
+backend/database.bin-shm
+backend/database.bin-wal
