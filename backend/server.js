@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const multer = require('multer');
@@ -8,6 +9,7 @@ const Database = require('better-sqlite3');
 const bcrypt = require('bcrypt');
 const Papa = require('papaparse');
 let nodemailer; try { nodemailer = require('nodemailer'); } catch(e) { nodemailer = null; }
+let nodeCron; try { nodeCron = require('node-cron'); } catch(e) { nodeCron = null; }
 
 const app = express();
 const PORT = 3000;
@@ -1189,6 +1191,7 @@ app.put('/api/trackings/:id/refunded', (req, res) => {
   const tracking = dbGet('SELECT * FROM trackings WHERE id=?', [req.params.id]);
   if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
   if (tracking.estatus === 'refunded') return res.json({ mensaje: 'Ya está en estatus refunded' });
+  if (tracking.estatus !== 'cerrado') return res.status(400).json({ error: 'El tracking debe estar cerrado antes de marcarlo como refunded' });
   dbRun("UPDATE trackings SET estatus='refunded' WHERE id=?", [req.params.id]);
   res.json({ mensaje: 'Estatus actualizado a refunded' });
 });
@@ -1470,11 +1473,13 @@ app.get('/api/retrabajos', (req, res) => {
   let sql = `
     SELECT r.*,
            t.tracking_number, t.caja_id, t.operador,
+           COALESCE(cp.nombre, t.caja_id) as caja_nombre,
            c.nombre as cliente_nombre, c.tipo_mercancia,
            MIN(e.path_fotografia) as foto_evidencia
     FROM retrabajos r
     JOIN trackings t ON r.tracking_id = t.id
     JOIN clientes c ON r.cliente_id = c.id
+    LEFT JOIN cajas_pallets cp ON cp.nombre = t.caja_id OR cp.id = t.caja_id
     LEFT JOIN errores e ON e.detalle_sku_id = r.detalle_sku_id AND e.tracking_id = r.tracking_id
     WHERE 1=1${cf}
   `;
@@ -1564,7 +1569,17 @@ app.get('/api/reportes/resumen', (req, res) => {
     params
   );
 
-  res.json({ totalTrackings, trackingsCerrados, totalErrores, totalDiscrepancias, totalPiezas, g0TrackingsAbiertos, unidadesPorCliente });
+  const pendienteRefund = dbGet(
+    `SELECT COUNT(*) as cnt FROM trackings t${where} AND t.estatus='cerrado'`,
+    params
+  )?.cnt || 0;
+
+  const chatActivos = dbGet(
+    `SELECT COUNT(*) as cnt FROM trackings t${where} AND COALESCE(t.chat_resuelto,0)=0 AND EXISTS (SELECT 1 FROM tracking_comentarios tc WHERE tc.tracking_id=t.id)`,
+    params
+  )?.cnt || 0;
+
+  res.json({ totalTrackings, trackingsCerrados, totalErrores, totalDiscrepancias, totalPiezas, g0TrackingsAbiertos, unidadesPorCliente, pendienteRefund, chatActivos });
 });
 
 // Lista de cajas/pallets agrupadas por caja_id
@@ -1589,7 +1604,7 @@ app.get('/api/reportes/cajas', (req, res) => {
       c.tipo_almacenamiento,
       cp.tipo                      AS tipo_caja,
       cp.id                        AS caja_pallet_id,
-      COUNT(DISTINCT t.id)                                        AS num_trackings,
+      COUNT(DISTINCT CASE WHEN t.estatus IN ('cerrado','refunded') THEN t.id END) AS num_trackings,
       COUNT(DISTINCT CASE WHEN t.estatus IN ('cerrado','refunded') THEN t.id END) AS num_cerrados,
       COUNT(DISTINCT CASE WHEN t.estatus='abierto' THEN t.id END) AS num_abiertos,
       GROUP_CONCAT(t.id, '|')                                     AS tracking_ids,
@@ -1608,11 +1623,11 @@ app.get('/api/reportes/cajas', (req, res) => {
       FROM (
         SELECT t2.caja_id, t2.cliente_id, 'D:'||d.sku_code as sku_key, d.cantidad as piezas
         FROM detalle_skus d
-        JOIN trackings t2 ON d.tracking_id = t2.id AND t2.caja_id != ''
+        JOIN trackings t2 ON d.tracking_id = t2.id AND t2.caja_id != '' AND t2.estatus IN ('cerrado','refunded')
         UNION ALL
         SELECT t2.caja_id, t2.cliente_id, 'G:'||g.sku as sku_key, 1 as piezas
         FROM g0_piezas g
-        JOIN trackings t2 ON g.tracking_id = t2.id AND t2.caja_id != ''
+        JOIN trackings t2 ON g.tracking_id = t2.id AND t2.caja_id != '' AND t2.estatus IN ('cerrado','refunded')
       ) combined
       GROUP BY caja_id, cliente_id
     ) agg ON agg.caja_id = cp.nombre AND agg.cliente_id = cp.cliente_id
@@ -1633,7 +1648,7 @@ app.get('/api/reportes/caja-detalle', (req, res) => {
     SELECT t.*, c.nombre as cliente_nombre, c.tipo_almacenamiento, c.grado_confianza
     FROM trackings t
     LEFT JOIN clientes c ON t.cliente_id = c.id
-    WHERE t.caja_id = ? AND t.estatus = 'cerrado'
+    WHERE t.caja_id = ? AND t.estatus IN ('cerrado','refunded')
   `;
   const params = [caja_id];
   if (cliente_id) { sql += ' AND t.cliente_id = ?'; params.push(cliente_id); }
@@ -1805,6 +1820,105 @@ app.get('/api/reportes/manifiesto/:id', (req, res) => {
   }
 
   res.json({ tracking, detalles, errores, discrepancias, retrabajos });
+});
+
+// Reporte de calidad por cliente
+app.get('/api/reportes/calidad', (req, res) => {
+  const { fecha_desde, fecha_hasta, cliente_id } = req.query;
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
+
+  let conds = `t.estatus IN ('cerrado','refunded')${cf}`;
+  const bp = [...cp];
+  if (fecha_desde) { conds += ' AND date(d.created_at) >= ?'; bp.push(fecha_desde); }
+  if (fecha_hasta) { conds += ' AND date(d.created_at) <= ?'; bp.push(fecha_hasta); }
+  if (cliente_id)  { conds += ' AND t.cliente_id = ?';        bp.push(cliente_id); }
+
+  let condErr = `1=1${cf}`;
+  const ep = [...cp];
+  if (fecha_desde) { condErr += ' AND date(t.closed_at) >= ?'; ep.push(fecha_desde); }
+  if (fecha_hasta) { condErr += ' AND date(t.closed_at) <= ?'; ep.push(fecha_hasta); }
+  if (cliente_id)  { condErr += ' AND t.cliente_id = ?';        ep.push(cliente_id); }
+
+  const porCliente = dbAll(`
+    SELECT c.id as cliente_id, c.nombre as cliente_nombre,
+      SUM(d.cantidad) as total_piezas,
+      SUM(CASE WHEN d.calidad='Buena' THEN d.cantidad ELSE 0 END) as piezas_buenas,
+      SUM(CASE WHEN d.calidad!='Buena' THEN d.cantidad ELSE 0 END) as piezas_malas,
+      COUNT(DISTINCT d.tracking_id) as num_trackings
+    FROM detalle_skus d
+    JOIN trackings t ON d.tracking_id = t.id
+    JOIN clientes c ON t.cliente_id = c.id
+    WHERE ${conds}
+    GROUP BY c.id ORDER BY total_piezas DESC
+  `, bp);
+
+  const tiposError = dbAll(`
+    SELECT e.tipo_error, c.nombre as cliente_nombre, c.id as cliente_id,
+      COUNT(*) as total
+    FROM errores e
+    JOIN trackings t ON e.tracking_id = t.id
+    JOIN clientes c ON t.cliente_id = c.id
+    WHERE ${condErr}
+    GROUP BY e.tipo_error, c.id ORDER BY total DESC
+  `, ep);
+
+  const tendencia = dbAll(`
+    SELECT strftime('%Y-%m', d.created_at) as mes,
+      c.nombre as cliente_nombre, c.id as cliente_id,
+      SUM(d.cantidad) as total_piezas,
+      SUM(CASE WHEN d.calidad='Buena' THEN d.cantidad ELSE 0 END) as buenas,
+      ROUND(100.0 * SUM(CASE WHEN d.calidad='Buena' THEN d.cantidad ELSE 0 END)
+            / NULLIF(SUM(d.cantidad), 0), 1) as pct_buenas
+    FROM detalle_skus d
+    JOIN trackings t ON d.tracking_id = t.id
+    JOIN clientes c ON t.cliente_id = c.id
+    WHERE ${conds}
+    GROUP BY mes, c.id ORDER BY mes DESC LIMIT 60
+  `, bp);
+
+  const paises = dbAll(`
+    SELECT d.pais_origen_real as pais,
+      c.nombre as cliente_nombre, c.id as cliente_id,
+      SUM(d.cantidad) as total,
+      SUM(CASE WHEN d.pais_coincide=0 THEN d.cantidad ELSE 0 END) as disc_pais,
+      SUM(CASE WHEN d.insumos_coincide=0 THEN d.cantidad ELSE 0 END) as disc_insumos
+    FROM detalle_skus d
+    JOIN trackings t ON d.tracking_id = t.id
+    JOIN clientes c ON t.cliente_id = c.id
+    WHERE ${conds} AND d.pais_origen_real IS NOT NULL AND d.pais_origen_real != ''
+    GROUP BY d.pais_origen_real, c.id
+    HAVING disc_pais > 0 OR disc_insumos > 0
+    ORDER BY (disc_pais + disc_insumos) DESC LIMIT 20
+  `, bp);
+
+  res.json({ porCliente, tiposError, tendencia, paises });
+});
+
+// Reporte de piezas procesadas por operador
+app.get('/api/reportes/piezas-usuario', (req, res) => {
+  const { fecha_desde, fecha_hasta, cliente_id, operador } = req.query;
+  const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
+  let sql = `
+    SELECT
+      t.operador,
+      c.nombre          AS cliente_nombre,
+      date(t.closed_at) AS fecha,
+      time(t.closed_at) AS hora_cierre,
+      t.tracking_number,
+      COALESCE(cp.nombre, t.caja_id) AS caja_nombre,
+      t.cantidad_final  AS piezas
+    FROM trackings t
+    JOIN clientes c ON t.cliente_id = c.id
+    LEFT JOIN cajas_pallets cp ON cp.nombre = t.caja_id OR cp.id = t.caja_id
+    WHERE t.estatus IN ('cerrado','refunded') AND t.closed_at IS NOT NULL${cf}
+  `;
+  const params = [...cp];
+  if (fecha_desde) { sql += ' AND date(t.closed_at) >= ?'; params.push(fecha_desde); }
+  if (fecha_hasta) { sql += ' AND date(t.closed_at) <= ?'; params.push(fecha_hasta); }
+  if (cliente_id)  { sql += ' AND t.cliente_id = ?';       params.push(cliente_id); }
+  if (operador)    { sql += ' AND t.operador = ?';          params.push(operador); }
+  sql += ' ORDER BY t.operador, t.closed_at DESC';
+  res.json(dbAll(sql, params));
 });
 
 // Reporte masivo de retrabajos
@@ -2820,6 +2934,206 @@ process.on('SIGINT',  () => shutdown('SIGINT'));
 process.on('SIGTERM', () => shutdown('SIGTERM'));
 process.on('exit',    () => { try { db.close(); } catch(e) { /* ya cerrada */ } });
 
+// ══════════════════════════════════════════════════════════════════════════════
+// EMAIL — RESUMEN SEMANAL
+// ══════════════════════════════════════════════════════════════════════════════
+
+function crearTransporter() {
+  if (!nodemailer || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
+  return nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: parseInt(process.env.SMTP_PORT || '587'),
+    secure: parseInt(process.env.SMTP_PORT || '587') === 465,
+    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+  });
+}
+
+function emailBase(titulo, contenido) {
+  const fromName = process.env.SMTP_FROM_NAME || 'RETORNOS';
+  return `<!DOCTYPE html>
+<html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${titulo}</title></head>
+<body style="margin:0;padding:0;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#f4f6f8;padding:32px 0">
+  <tr><td align="center">
+    <table width="600" cellpadding="0" cellspacing="0" style="background:#ffffff;border-radius:8px;overflow:hidden;box-shadow:0 2px 8px rgba(0,0,0,.08)">
+      <!-- HEADER -->
+      <tr><td style="background:#00a854;padding:28px 32px;text-align:center">
+        <div style="font-size:28px;font-weight:900;color:#ffffff;letter-spacing:3px">${fromName}</div>
+        <div style="font-size:13px;color:rgba(255,255,255,.8);margin-top:4px">Sistema de Retornos</div>
+      </td></tr>
+      <!-- TÍTULO -->
+      <tr><td style="padding:28px 32px 0">
+        <div style="font-size:20px;font-weight:700;color:#1a1a1a;border-bottom:2px solid #00a854;padding-bottom:12px">${titulo}</div>
+      </td></tr>
+      <!-- CONTENIDO -->
+      <tr><td style="padding:24px 32px">${contenido}</td></tr>
+      <!-- CTA -->
+      <tr><td style="padding:0 32px 24px;text-align:center">
+        <a href="https://flaviovalladolid.shop" style="display:inline-block;background:#00a854;color:#ffffff;text-decoration:none;padding:12px 32px;border-radius:6px;font-weight:700;font-size:14px">Ir al Sistema →</a>
+      </td></tr>
+      <!-- FOOTER -->
+      <tr><td style="background:#f4f6f8;padding:16px 32px;text-align:center;border-top:1px solid #e0e0e0">
+        <div style="font-size:11px;color:#888">Sistema de Retornos — <a href="https://flaviovalladolid.shop" style="color:#00a854;text-decoration:none">flaviovalladolid.shop</a></div>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body></html>`;
+}
+
+function obtenerDestinatariosAdminSupervisor() {
+  return dbAll(`SELECT email, nombre FROM usuarios WHERE rol IN ('ADMIN','SUPERVISOR') AND activo=1 AND email IS NOT NULL AND email != ''`)
+    .map(u => ({ email: u.email, name: u.nombre }));
+}
+
+async function enviarResumenSemanal() {
+  const transporter = crearTransporter();
+  if (!transporter) {
+    console.log('Email: SMTP no configurado, omitiendo resumen semanal');
+    return;
+  }
+  const destinatarios = obtenerDestinatariosAdminSupervisor();
+  if (!destinatarios.length) {
+    console.log('Email: sin destinatarios ADMIN/SUPERVISOR configurados');
+    return;
+  }
+
+  // Rango: lunes a domingo de la semana ANTERIOR
+  const ahora = new Date();
+  const diaSemana = ahora.getDay() === 0 ? 7 : ahora.getDay(); // 1=lun … 7=dom
+  const lunes = new Date(ahora); lunes.setDate(ahora.getDate() - diaSemana - 6);
+  const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 6);
+  const fmtFecha = d => d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Tijuana' });
+  const fmtISO   = d => d.toISOString().slice(0, 10);
+
+  const desde = fmtISO(lunes);
+  const hasta = fmtISO(domingo);
+  const labelDesde = fmtFecha(lunes);
+  const labelHasta = fmtFecha(domingo);
+
+  // Estadísticas de la semana
+  const creados   = dbGet(`SELECT COUNT(*) as cnt FROM trackings WHERE date(created_at) BETWEEN ? AND ?`, [desde, hasta])?.cnt || 0;
+  const cerrados  = dbGet(`SELECT COUNT(*) as cnt FROM trackings WHERE date(closed_at) BETWEEN ? AND ? AND estatus IN ('cerrado','refunded')`, [desde, hasta])?.cnt || 0;
+  const abiertos  = dbGet(`SELECT COUNT(*) as cnt FROM trackings WHERE estatus='abierto'`)?.cnt || 0;
+  const piezas    = dbGet(`SELECT COALESCE(SUM(d.cantidad),0) as total FROM detalle_skus d JOIN trackings t ON d.tracking_id=t.id WHERE date(d.created_at) BETWEEN ? AND ?`, [desde, hasta])?.total || 0;
+  const errores   = dbGet(`SELECT COUNT(*) as cnt FROM errores WHERE date(created_at) BETWEEN ? AND ?`, [desde, hasta])?.cnt || 0;
+  const tasaError = piezas > 0 ? ((errores / piezas) * 100).toFixed(1) : '0.0';
+
+  const topClientes = dbAll(`
+    SELECT c.nombre, COUNT(t.id) as total
+    FROM trackings t JOIN clientes c ON t.cliente_id=c.id
+    WHERE date(t.created_at) BETWEEN ? AND ?
+    GROUP BY c.id ORDER BY total DESC LIMIT 3
+  `, [desde, hasta]);
+
+  const trackingsSemana = dbAll(`
+    SELECT t.tracking_number, c.nombre as cliente, t.cantidad_final as piezas,
+           t.estatus, t.operador,
+           (SELECT COUNT(*) FROM errores e WHERE e.tracking_id=t.id) as num_errores
+    FROM trackings t JOIN clientes c ON t.cliente_id=c.id
+    WHERE date(t.created_at) BETWEEN ? AND ?
+    ORDER BY t.created_at DESC LIMIT 50
+  `, [desde, hasta]);
+
+  // ── Construir contenido HTML ──
+  const tdH = 'style="background:#f4f6f8;padding:8px 10px;font-size:11px;font-weight:700;color:#555;text-align:left;border-bottom:2px solid #e0e0e0"';
+  const tdC = 'style="padding:8px 10px;font-size:12px;color:#333;border-bottom:1px solid #f0f0f0"';
+  const statCard = (label, val, color='#1a1a1a') =>
+    `<td style="text-align:center;padding:0 8px">
+      <div style="background:#f9f9f9;border:1px solid #e8e8e8;border-radius:6px;padding:14px 10px">
+        <div style="font-size:26px;font-weight:900;color:${color}">${val}</div>
+        <div style="font-size:10px;color:#888;margin-top:2px;text-transform:uppercase;letter-spacing:.5px">${label}</div>
+      </div>
+    </td>`;
+
+  let contenido = '';
+
+  if (creados === 0 && piezas === 0) {
+    contenido = `<p style="color:#888;text-align:center;padding:32px 0;font-size:14px">Sin actividad registrada esta semana.</p>`;
+  } else {
+    contenido = `
+      <!-- Stats -->
+      <table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px">
+        <tr>
+          ${statCard('Trackings creados', creados, '#00a854')}
+          ${statCard('Trackings cerrados', cerrados, '#007bff')}
+          ${statCard('Pendientes', abiertos, '#ff8c00')}
+        </tr>
+        <tr><td colspan="3" style="padding-top:8px"></td></tr>
+        <tr>
+          ${statCard('Piezas inspeccionadas', piezas.toLocaleString('es-MX'), '#00a854')}
+          ${statCard('Errores registrados', errores, errores > 0 ? '#e53935' : '#00a854')}
+          ${statCard('Tasa de error', tasaError + '%', parseFloat(tasaError) > 5 ? '#e53935' : parseFloat(tasaError) > 2 ? '#ff8c00' : '#00a854')}
+        </tr>
+      </table>
+
+      ${topClientes.length ? `
+      <!-- Top clientes -->
+      <div style="margin-bottom:20px">
+        <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:8px">Top clientes con más actividad</div>
+        ${topClientes.map((c, i) => `
+          <div style="display:flex;align-items:center;margin-bottom:6px">
+            <span style="display:inline-block;width:20px;height:20px;background:#00a854;color:#fff;border-radius:50%;font-size:10px;font-weight:700;line-height:20px;text-align:center;margin-right:8px">${i+1}</span>
+            <span style="font-size:13px;color:#333">${c.nombre}</span>
+            <span style="margin-left:auto;font-size:12px;color:#888">${c.total} tracking${c.total !== 1 ? 's' : ''}</span>
+          </div>
+        `).join('')}
+      </div>` : ''}
+
+      ${trackingsSemana.length ? `
+      <!-- Tabla trackings -->
+      <div style="font-size:13px;font-weight:700;color:#333;margin-bottom:8px">Trackings de la semana</div>
+      <table width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;font-size:12px">
+        <thead>
+          <tr>
+            <th ${tdH}>Tracking</th>
+            <th ${tdH}>Cliente</th>
+            <th ${tdH} style="text-align:right">Piezas</th>
+            <th ${tdH} style="text-align:right">Errores</th>
+            <th ${tdH}>Estado</th>
+            <th ${tdH}>Operador</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${trackingsSemana.map(t => {
+            const color = t.estatus === 'cerrado' ? '#00a854' : t.estatus === 'refunded' ? '#007bff' : '#ff8c00';
+            return `<tr>
+              <td ${tdC} style="font-family:monospace;color:#333">${t.tracking_number}</td>
+              <td ${tdC}>${t.cliente}</td>
+              <td ${tdC} style="text-align:right">${t.piezas || 0}</td>
+              <td ${tdC} style="text-align:right;color:${t.num_errores > 0 ? '#e53935' : '#888'}">${t.num_errores}</td>
+              <td ${tdC}><span style="color:${color};font-weight:700;font-size:11px">${t.estatus}</span></td>
+              <td ${tdC} style="color:#888;font-size:11px">${(t.operador || '').split('@')[0]}</td>
+            </tr>`;
+          }).join('')}
+        </tbody>
+      </table>` : ''}
+    `;
+  }
+
+  const asunto = `Resumen semanal — ${labelDesde} al ${labelHasta} — Retornos`;
+  const html = emailBase(`Resumen semanal: ${labelDesde} al ${labelHasta}`, contenido);
+  const from = `"${process.env.SMTP_FROM_NAME || 'RETORNOS'}" <${process.env.SMTP_USER}>`;
+
+  for (const dest of destinatarios) {
+    try {
+      await transporter.sendMail({ from, to: dest.email, subject: asunto, html });
+      console.log(`Email enviado a ${dest.email}`);
+    } catch (err) {
+      console.error(`Error enviando email a ${dest.email}:`, err.message);
+    }
+  }
+}
+
+// ── Endpoint de prueba (solo ADMIN) ────────────────────────────────────────
+app.post('/api/email/test-semanal', (req, res) => {
+  if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Solo ADMIN' });
+  enviarResumenSemanal()
+    .then(() => res.json({ ok: true, mensaje: 'Resumen semanal enviado' }))
+    .catch(err => res.status(500).json({ error: err.message }));
+});
+
 // ── INICIAR SERVIDOR ──────────────────────────────────────────────────────────
 
 initDB().then(() => {
@@ -2830,4 +3144,13 @@ initDB().then(() => {
   // Backup inicial y luego cada 6 horas
   hacerBackup();
   setInterval(hacerBackup, 6 * 60 * 60 * 1000);
+
+  // Cron: resumen semanal lunes 8am hora Tijuana
+  if (nodeCron) {
+    nodeCron.schedule('0 8 * * 1', () => {
+      console.log('Cron: enviando resumen semanal...');
+      enviarResumenSemanal().catch(err => console.error('Cron email error:', err.message));
+    }, { timezone: 'America/Tijuana' });
+    console.log('📧 Cron resumen semanal: lunes 8:00am (America/Tijuana)');
+  }
 });

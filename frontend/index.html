@@ -223,6 +223,28 @@ async function loadResumen() {
     }
     const eficiencia = totalMeta > 0 ? Math.round(totalUnidades / totalMeta * 100) : null;
     const efColor = eficiencia === null ? 'var(--text-muted)' : eficiencia >= 95 ? 'var(--accent-green)' : eficiencia >= 80 ? 'var(--accent-amber)' : 'var(--accent-red)';
+    const card5 = _esCliente
+      ? `<div class="stat-card" style="--accent-color:${r.pendienteRefund > 0 ? 'var(--accent-amber)' : 'var(--accent-green)'}">
+          <div class="stat-label">${t('dash.stat_refund')}</div>
+          <div class="stat-value" style="color:${r.pendienteRefund > 0 ? 'var(--accent-amber)' : 'var(--accent-green)'}">${formatNum(r.pendienteRefund)}</div>
+          <div class="stat-sub">${r.pendienteRefund > 0 ? t('dash.stat_refund_sub') : t('dash.stat_refund_none')}</div>
+        </div>`
+      : `<div class="stat-card" style="--accent-color:${efColor}">
+          <div class="stat-label">${t('dash.stat_efficiency')}</div>
+          <div class="stat-value" style="color:${efColor}">${eficiencia !== null ? eficiencia + '%' : '—'}</div>
+          <div class="stat-sub" style="color:${efColor}">${eficiencia !== null ? t('dash.stat_efficiency_sub') : t('dash.stat_efficiency_na')}</div>
+        </div>`;
+    const card6 = _esCliente
+      ? `<div class="stat-card" style="--accent-color:${r.chatActivos > 0 ? 'var(--accent-cyan)' : 'var(--text-muted)'}">
+          <div class="stat-label">${t('dash.stat_chat')}</div>
+          <div class="stat-value" style="color:${r.chatActivos > 0 ? 'var(--accent-cyan)' : 'inherit'}">${formatNum(r.chatActivos)}</div>
+          <div class="stat-sub">${r.chatActivos > 0 ? t('dash.stat_chat_sub') : t('dash.stat_chat_none')}</div>
+        </div>`
+      : `<div class="stat-card" style="--accent-color:var(--accent-cyan)">
+          <div class="stat-label">${t('dash.stat_operators')}</div>
+          <div class="stat-value">${operadoresActivos || '—'}</div>
+          <div class="stat-sub">${operadoresActivos > 0 ? t('dash.stat_operators_sub') : t('dash.stat_operators_none')}</div>
+        </div>`;
     grid.innerHTML = `
       <div class="stat-card" style="--accent-color:var(--accent-cyan)">
         <div class="stat-label">${t('dash.stat_total')}</div>
@@ -244,16 +266,8 @@ async function loadResumen() {
         <div class="stat-value">${formatNum(r.totalDiscrepancias)}</div>
         <div class="stat-sub">${t('dash.stat_disc_sub')}</div>
       </div>
-      <div class="stat-card" style="--accent-color:${efColor}">
-        <div class="stat-label">${t('dash.stat_efficiency')}</div>
-        <div class="stat-value" style="color:${efColor}">${eficiencia !== null ? eficiencia + '%' : '—'}</div>
-        <div class="stat-sub" style="color:${efColor}">${eficiencia !== null ? t('dash.stat_efficiency_sub') : t('dash.stat_efficiency_na')}</div>
-      </div>
-      <div class="stat-card" style="--accent-color:var(--accent-cyan)">
-        <div class="stat-label">${t('dash.stat_operators')}</div>
-        <div class="stat-value">${operadoresActivos || '—'}</div>
-        <div class="stat-sub">${operadoresActivos > 0 ? t('dash.stat_operators_sub') : t('dash.stat_operators_none')}</div>
-      </div>
+      ${card5}
+      ${card6}
     `;
     // Render units-by-client bars
     const barsEl = document.getElementById('client-units-bars');

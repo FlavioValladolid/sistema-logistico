@@ -14,18 +14,21 @@
       body { background:white !important; color:black !important; }
       .card { border:1px solid #ccc !important; background:white !important; box-shadow:none !important; max-width:none !important; margin:0 !important; padding:16px !important; }
       * { color:black !important; }
-      table { width:100% !important; table-layout:fixed !important; border-collapse:collapse !important; font-size:8.5px !important; }
-      table th { padding:4px 5px !important; white-space:nowrap !important; overflow:hidden !important; border:1px solid #ccc !important; font-size:8px !important; }
-      table td { padding:4px 5px !important; word-break:normal !important; overflow-wrap:break-word !important; white-space:normal !important; overflow:visible !important; text-overflow:unset !important; max-width:none !important; border:1px solid #ccc !important; }
-      table td:nth-child(1), table td:nth-child(2), table td:nth-child(4) { white-space:nowrap !important; overflow-wrap:normal !important; }
-      /* Manifiesto SKU table column widths */
+      table { width:100% !important; table-layout:fixed !important; border-collapse:collapse !important; font-size:8px !important; }
+      table th { padding:3px 4px !important; white-space:nowrap !important; overflow:hidden !important; border:1px solid #ccc !important; font-size:7.5px !important; }
+      table td { padding:3px 4px !important; word-break:break-word !important; overflow-wrap:break-word !important; white-space:normal !important; overflow:hidden !important; text-overflow:ellipsis !important; border:1px solid #ccc !important; vertical-align:top !important; }
+      /* Ocultar columna Evidencia (fotos) en impresión */
+      table th:last-child, table td:last-child { display:none !important; }
+      /* SKU table: #, Tracking, SKU, Descripción, Cant., Orden, País Origen, Barcode/Insumos, Condición */
       table th:nth-child(1), table td:nth-child(1) { width:3% !important; }
-      table th:nth-child(2), table td:nth-child(2) { width:19% !important; }
-      table th:nth-child(3), table td:nth-child(3) { width:20% !important; }
-      table th:nth-child(4), table td:nth-child(4) { width:6% !important; }
-      table th:nth-child(5), table td:nth-child(5) { width:11% !important; }
-      table th:nth-child(6), table td:nth-child(6) { width:28% !important; }
-      table th:nth-child(7), table td:nth-child(7) { width:13% !important; }
+      table th:nth-child(2), table td:nth-child(2) { width:19% !important; white-space:nowrap !important; overflow:hidden !important; }
+      table th:nth-child(3), table td:nth-child(3) { width:14% !important; }
+      table th:nth-child(4), table td:nth-child(4) { width:13% !important; }
+      table th:nth-child(5), table td:nth-child(5) { width:5% !important; text-align:center !important; }
+      table th:nth-child(6), table td:nth-child(6) { width:9% !important; }
+      table th:nth-child(7), table td:nth-child(7) { width:8% !important; }
+      table th:nth-child(8), table td:nth-child(8) { width:18% !important; }
+      table th:nth-child(9), table td:nth-child(9) { width:10% !important; }
       .mani-data-grid { grid-template-columns:1fr 1fr 1fr !important; }
       .table-wrapper { overflow:visible !important; }
     }
@@ -62,6 +65,10 @@ const cajaIdParam     = urlParams.get('caja');
 
 document.getElementById('page-content').innerHTML = `<div id="view-root"></div>`;
 
+// Module-level state for manifest CSV export
+let _maniTracking = null;
+let _maniDetalles = [];
+
 // ========================================
 // VISTA 1: LISTA DE CAJAS / PALLETS
 // ========================================
@@ -92,6 +99,14 @@ async function loadCajas() {
       <button class="btn btn-secondary btn-sm" onclick="window.location='?retrabajos=1'" style="display:flex;align-items:center;gap:6px">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
         Reporte de Retrabajos
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="window.location='?operadores=1'" style="display:flex;align-items:center;gap:6px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/></svg>
+        Piezas por Operador
+      </button>
+      <button class="btn btn-secondary btn-sm" onclick="window.location='?calidad=1'" style="display:flex;align-items:center;gap:6px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        Calidad por Cliente
       </button>
     </div>
 
@@ -239,7 +254,7 @@ function renderListaCajas(data) {
                 <td style="font-size:11px;font-family:'IBM Plex Mono',monospace">
                   ${c.num_trackings === 0
                     ? '<span style="color:var(--text-muted)">Sin trackings</span>'
-                    : `<span style="color:var(--accent-green)">${c.num_cerrados} cerrado${c.num_cerrados !== 1 ? 's' : ''}</span>${c.num_abiertos > 0 ? ` <span style="color:var(--accent-amber)">· ${c.num_abiertos} abierto${c.num_abiertos !== 1 ? 's' : ''}</span>` : ''}`}
+                    : `<span style="color:var(--accent-green)">${c.num_cerrados} cerrado${c.num_cerrados !== 1 ? 's' : ''}</span>`}
                 </td>
                 <td class="td-mono">${c.num_skus || '—'}</td>
                 <td class="td-mono">${c.total_piezas ? formatNum(c.total_piezas) : '—'}</td>
@@ -386,6 +401,8 @@ async function loadCajaDetalle(cajaId, clienteId) {
     let url = `/reportes/caja-detalle?caja_id=${encodeURIComponent(cajaId)}`;
     if (clienteId) url += `&cliente_id=${encodeURIComponent(clienteId)}`;
     const { trackings, detalles, errores } = await API.get(url);
+    _maniDetalles = detalles;
+    _maniTracking = { tracking_number: cajaId };
     const t0 = trackings[0];
     const tipoAlm = t0.tipo_almacenamiento === 'pallet' ? 'Pallet' : 'Caja';
     const totalPiezas = detalles.reduce((s, d) => s + (d.cantidad || 1), 0);
@@ -399,10 +416,6 @@ async function loadCajaDetalle(cajaId, clienteId) {
         <span style="font-size:12px;color:var(--text-muted)">${t0.cliente_nombre}</span>
         ${impresa ? '<span class="badge badge-impresa" style="padding:6px 14px">✓ Impresa</span>' : '<span class="badge badge-muted" style="padding:6px 14px">Pendiente</span>'}
         <div style="margin-left:auto;display:flex;gap:8px" class="no-print">
-          <button class="btn btn-primary btn-sm" onclick="descargarCSVCaja(${JSON.stringify(tids)}, '${cajaId.replace(/'/g,"\\'")}')">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Descargar CSV
-          </button>
           <button class="btn btn-secondary btn-sm" onclick="window.print()">🖨 Imprimir</button>
         </div>
       </div>
@@ -440,6 +453,9 @@ async function loadCajaDetalle(cajaId, clienteId) {
                 <span style="color:var(--accent-cyan)">${t.tracking_number}</span>
                 <span style="color:var(--text-muted);font-size:10px">· ${formatNum(t.cantidad_final)} pzas</span>
                 <span>${gradoBadge(t.grado_confianza)}</span>
+                <span class="badge ${t.estatus === 'cerrado' ? 'badge-green' : t.estatus === 'refunded' ? 'badge-blue' : 'badge-amber'}" style="font-size:10px">
+                  ${t.estatus === 'cerrado' ? '✓ Cerrado' : t.estatus === 'refunded' ? 'Refunded' : '● Abierto'}
+                </span>
                 ${t.numero_orden ? `<span class="badge badge-green" style="font-size:10px"># ${t.numero_orden}</span>` : ''}
                 ${t.tipo_retorno ? `<span class="badge badge-amber" style="font-size:10px">${t.tipo_retorno}</span>` : ''}
                 <a href="?tracking=${t.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">Ver</a>
@@ -456,6 +472,11 @@ async function loadCajaDetalle(cajaId, clienteId) {
         <div class="card-header">
           <span class="card-title">SKUs inspeccionados</span>
           <span class="badge badge-muted">${detalles.length}</span>
+          ${detalles.length > 0 ? `
+            <button class="btn btn-secondary btn-sm no-print" onclick="descargarCSVManifiesto()" style="margin-left:auto;display:flex;align-items:center;gap:5px">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+              CSV
+            </button>` : ''}
         </div>
         ${detalles.length === 0 ? `
           <div class="empty-state" style="padding:32px">
@@ -563,6 +584,8 @@ async function loadManifiesto(trackingId) {
 
   try {
     const { tracking, detalles, errores, discrepancias, retrabajos = [] } = await API.get(`/reportes/manifiesto/${trackingId}`);
+    _maniTracking = tracking;
+    _maniDetalles = detalles;
     const t = tracking;
     const erroresPorTipo = { Calidad: 0, Origen: 0, Insumo: 0, Otro: 0 };
     errores.forEach(e => { erroresPorTipo[e.tipo_error] = (erroresPorTipo[e.tipo_error] || 0) + 1; });
@@ -624,7 +647,7 @@ async function loadManifiesto(trackingId) {
           <div class="mani-data-item"><div class="mani-data-label">Cant. Final</div><div class="mani-data-val" style="color:${t.cantidad_final !== t.cantidad_declarada ? 'var(--accent-amber)' : 'var(--accent-green)'}">${formatNum(t.cantidad_final)}</div></div>
           <div class="mani-data-item"><div class="mani-data-label">Inspeccionadas</div><div class="mani-data-val">${formatNum(totalPiezas)}</div></div>
           ${t.numero_orden ? `<div class="mani-data-item" style="border-color:rgba(0,230,118,.3)"><div class="mani-data-label">Número de Orden</div><div class="mani-data-val" style="color:var(--accent-green)">${t.numero_orden}</div></div>` : ''}
-          ${t.nombre_destinatario ? `<div class="mani-data-item" style="border-color:rgba(0,188,212,.3)"><div class="mani-data-label">Destinatario</div><div class="mani-data-val" style="color:var(--accent-cyan)">${esc(t.nombre_destinatario)}</div></div>` : ''}
+          ${t.nombre_destinatario ? `<div class="mani-data-item" style="border-color:rgba(0,188,212,.3)"><div class="mani-data-label">Destinatario</div><div class="mani-data-val" style="color:var(--accent-cyan)">${escHTML(t.nombre_destinatario)}</div></div>` : ''}
           ${t.tipo_retorno ? `<div class="mani-data-item" style="border-color:rgba(255,171,0,.3)"><div class="mani-data-label">Tipo de Retorno</div><div class="mani-data-val" style="color:#ffab00">${t.tipo_retorno}</div></div>` : ''}
           ${t.razon_retorno ? `<div class="mani-data-item" style="grid-column:span 3"><div class="mani-data-label">Razón de Retorno (RTS)</div><div class="mani-data-val" style="font-size:12px;white-space:normal;line-height:1.4">${t.razon_retorno}</div></div>` : ''}
         </div>
@@ -963,6 +986,42 @@ async function generarReporteRt() {
   }
 }
 
+function descargarCSVManifiesto() {
+  if (!_maniDetalles.length) return;
+  const tk = _maniTracking;
+  const SEP = ',';
+  const esc = v => {
+    const s = String(v ?? '');
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+  const header = ['#','Tracking','SKU','Descripción','Cantidad','Orden','País Origen','Barcode / Insumos','Condición','Tipo'];
+  const lines = [header.join(SEP)];
+  _maniDetalles.forEach((d, i) => {
+    lines.push([
+      String(i + 1).padStart(2, '0'),
+      esc(d.tracking_number),
+      esc(d.sku_code),
+      esc(d.descripcion),
+      d.cantidad,
+      esc(d.orden_number),
+      esc(d.pais_origen_real),
+      esc(d.insumos_real),
+      esc(d.calidad || d.condicion),
+      d.tipo_pieza === 'g0' ? 'G0' : 'Inspección',
+    ].join(SEP));
+  });
+  const blob = new Blob(['﻿' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const fecha = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `skus_${tk?.tracking_number || 'manifiesto'}_${fecha}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
 function exportarCSVRt() {
   if (!rrtData.length) return;
   const SEP = '|';
@@ -1174,10 +1233,436 @@ function exportarCSVTipoCaja() {
 }
 
 // ========================================
+// ========================================
+// REPORTE PIEZAS POR OPERADOR
+// ========================================
+let _puData = [];
+
+async function loadReportePiezasUsuario() {
+  document.getElementById('btn-csv').style.display = 'none';
+  const root = document.getElementById('view-root');
+
+  root.innerHTML = `
+    <div class="flex justify-between items-center mb-24 no-print">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html'">← Reportes</button>
+        </div>
+        <h1 class="page-title">Piezas por Operador</h1>
+        <p class="page-subtitle">Registro de piezas procesadas por usuario</p>
+      </div>
+    </div>
+
+    <div class="card no-print" style="padding:16px;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr auto;gap:12px;align-items:end">
+        <div>
+          <label class="form-label">Fecha inicio</label>
+          <input type="date" class="form-control" id="pu-desde">
+        </div>
+        <div>
+          <label class="form-label">Fecha fin</label>
+          <input type="date" class="form-control" id="pu-hasta">
+        </div>
+        <div>
+          <label class="form-label">Cliente</label>
+          <select class="form-control" id="pu-cliente">
+            <option value="">Todos los clientes</option>
+          </select>
+        </div>
+        <div>
+          <label class="form-label">Operador</label>
+          <select class="form-control" id="pu-operador">
+            <option value="">Todos los operadores</option>
+          </select>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-primary" onclick="generarReportePU()">Generar</button>
+          <button class="btn btn-secondary" onclick="exportarCSVPU()" id="btn-csv-pu" disabled>↓ CSV</button>
+          <button class="btn btn-ghost" onclick="window.print()">🖨</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="pu-resultado"></div>
+  `;
+
+  try {
+    const [clientes, operadores] = await Promise.all([
+      API.get('/clientes'),
+      API.get('/dashboard/operadores')
+    ]);
+    const selC = document.getElementById('pu-cliente');
+    clientes.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.nombre; selC.appendChild(o); });
+    const selO = document.getElementById('pu-operador');
+    operadores.forEach(op => { const o = document.createElement('option'); o.value = op; o.textContent = op; selO.appendChild(o); });
+  } catch(e) {}
+}
+
+async function generarReportePU() {
+  const desde    = document.getElementById('pu-desde').value;
+  const hasta    = document.getElementById('pu-hasta').value;
+  const clienteId = document.getElementById('pu-cliente').value;
+  const operador = document.getElementById('pu-operador').value;
+  const res = document.getElementById('pu-resultado');
+  res.innerHTML = `<div class="text-center" style="padding:40px"><div class="spinner" style="margin:0 auto;width:28px;height:28px;border-width:3px"></div></div>`;
+
+  try {
+    let url = '/reportes/piezas-usuario?x=1';
+    if (desde)     url += `&fecha_desde=${desde}`;
+    if (hasta)     url += `&fecha_hasta=${hasta}`;
+    if (clienteId) url += `&cliente_id=${clienteId}`;
+    if (operador)  url += `&operador=${encodeURIComponent(operador)}`;
+    _puData = await API.get(url);
+    document.getElementById('btn-csv-pu').disabled = _puData.length === 0;
+
+    if (_puData.length === 0) {
+      res.innerHTML = `<div class="empty-state" style="padding:48px 32px"><div style="font-size:32px;margin-bottom:12px">📭</div><div>Sin datos para los filtros seleccionados</div></div>`;
+      return;
+    }
+
+    // Agrupar por operador
+    const porOperador = new Map();
+    for (const r of _puData) {
+      const op = r.operador || '(sin asignar)';
+      if (!porOperador.has(op)) porOperador.set(op, []);
+      porOperador.get(op).push(r);
+    }
+
+    const totalPiezas = _puData.reduce((s, r) => s + (r.piezas || 0), 0);
+    const totalTrackings = _puData.length;
+
+    let html = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">TOTAL PIEZAS</div>
+          <div style="font-size:28px;font-weight:700;color:var(--accent-cyan)">${formatNum(totalPiezas)}</div>
+        </div>
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">TRACKINGS CERRADOS</div>
+          <div style="font-size:28px;font-weight:700;color:var(--accent-green)">${totalTrackings}</div>
+        </div>
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">OPERADORES</div>
+          <div style="font-size:28px;font-weight:700;color:var(--accent-amber)">${porOperador.size}</div>
+        </div>
+      </div>
+    `;
+
+    for (const [op, rows] of porOperador) {
+      const opTotal = rows.reduce((s, r) => s + (r.piezas || 0), 0);
+      html += `
+        <div class="card mb-16">
+          <div class="card-header" style="background:var(--bg-elevated)">
+            <span class="card-title" style="color:var(--accent-cyan)">${op}</span>
+            <span class="badge badge-muted" style="margin-left:auto">${formatNum(opTotal)} piezas</span>
+            <span class="badge badge-muted">${rows.length} tracking${rows.length !== 1 ? 's' : ''}</span>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Hora</th>
+                  <th>Cliente</th>
+                  <th>Tracking</th>
+                  <th>Caja / Pallet</th>
+                  <th class="td-mono" style="text-align:right">Piezas</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${rows.map(r => `
+                  <tr>
+                    <td class="td-mono">${r.fecha || '—'}</td>
+                    <td class="td-mono" style="color:var(--text-secondary)">${r.hora_cierre ? r.hora_cierre.slice(0,5) : '—'}</td>
+                    <td>${escHTML(r.cliente_nombre || '—')}</td>
+                    <td class="td-mono" style="color:var(--accent-cyan)">${escHTML(r.tracking_number || '—')}</td>
+                    <td class="td-mono" style="color:var(--text-secondary)">${escHTML(r.caja_nombre || '—')}</td>
+                    <td class="td-mono" style="text-align:right;font-weight:600;color:var(--accent-green)">${formatNum(r.piezas || 0)}</td>
+                  </tr>
+                `).join('')}
+              </tbody>
+              <tfoot>
+                <tr style="border-top:2px solid var(--border)">
+                  <td colspan="5" style="font-size:11px;color:var(--text-muted);padding:8px 12px">Total</td>
+                  <td class="td-mono" style="text-align:right;font-weight:700;color:var(--accent-cyan);padding:8px 12px">${formatNum(opTotal)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    res.innerHTML = html;
+  } catch(e) {
+    res.innerHTML = `<div class="alert alert-error">Error: ${e.error || e.message}</div>`;
+  }
+}
+
+function exportarCSVPU() {
+  if (!_puData.length) return;
+  const esc = v => `"${(v || '').toString().replace(/"/g, '""')}"`;
+  const header = ['Operador','Fecha','Hora','Cliente','Tracking','Caja/Pallet','Piezas'];
+  const lines = [header.join(',')];
+  _puData.forEach(r => lines.push([
+    esc(r.operador), esc(r.fecha), esc(r.hora_cierre ? r.hora_cierre.slice(0,5) : ''),
+    esc(r.cliente_nombre), esc(r.tracking_number), esc(r.caja_nombre), r.piezas || 0
+  ].join(',')));
+  const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `piezas-operador-${new Date().toISOString().slice(0,10)}.csv`;
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ========================================
+// REPORTE CALIDAD POR CLIENTE
+// ========================================
+async function loadReporteCalidad() {
+  document.getElementById('btn-csv').style.display = 'none';
+  const root = document.getElementById('view-root');
+
+  root.innerHTML = `
+    <div class="flex justify-between items-center mb-24 no-print">
+      <div>
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px">
+          <button class="btn btn-secondary btn-sm" onclick="window.location='reportes.html'">← Reportes</button>
+        </div>
+        <h1 class="page-title">Calidad por Cliente</h1>
+        <p class="page-subtitle">Análisis de calidad, errores y discrepancias de origen</p>
+      </div>
+    </div>
+
+    <div class="card no-print" style="padding:16px;margin-bottom:16px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:12px;align-items:end">
+        <div>
+          <label class="form-label">Fecha inicio</label>
+          <input type="date" class="form-control" id="cq-desde">
+        </div>
+        <div>
+          <label class="form-label">Fecha fin</label>
+          <input type="date" class="form-control" id="cq-hasta">
+        </div>
+        <div>
+          <label class="form-label">Cliente</label>
+          <select class="form-control" id="cq-cliente">
+            <option value="">Todos los clientes</option>
+          </select>
+        </div>
+        <div>
+          <button class="btn btn-primary" onclick="generarReporteCQ()">Generar</button>
+        </div>
+      </div>
+    </div>
+
+    <div id="cq-resultado"></div>
+  `;
+
+  try {
+    const clientes = await API.get('/clientes');
+    const sel = document.getElementById('cq-cliente');
+    clientes.forEach(c => { const o = document.createElement('option'); o.value = c.id; o.textContent = c.nombre; sel.appendChild(o); });
+  } catch(e) {}
+}
+
+async function generarReporteCQ() {
+  const desde    = document.getElementById('cq-desde').value;
+  const hasta    = document.getElementById('cq-hasta').value;
+  const clienteId = document.getElementById('cq-cliente').value;
+  const res = document.getElementById('cq-resultado');
+  res.innerHTML = `<div class="text-center" style="padding:40px"><div class="spinner" style="margin:0 auto;width:28px;height:28px;border-width:3px"></div></div>`;
+
+  try {
+    let url = '/reportes/calidad?x=1';
+    if (desde)     url += `&fecha_desde=${desde}`;
+    if (hasta)     url += `&fecha_hasta=${hasta}`;
+    if (clienteId) url += `&cliente_id=${clienteId}`;
+    const { porCliente, tiposError, tendencia, paises } = await API.get(url);
+
+    if (!porCliente.length) {
+      res.innerHTML = `<div class="empty-state" style="padding:48px 32px"><div style="font-size:32px;margin-bottom:12px">📭</div><div>Sin datos para los filtros seleccionados</div></div>`;
+      return;
+    }
+
+    const totalPiezas = porCliente.reduce((s, r) => s + (r.total_piezas || 0), 0);
+    const totalBuenas = porCliente.reduce((s, r) => s + (r.piezas_buenas || 0), 0);
+    const pctGlobal   = totalPiezas > 0 ? (100 * totalBuenas / totalPiezas).toFixed(1) : '—';
+    const totalErrors = tiposError.reduce((s, r) => s + (r.total || 0), 0);
+
+    // ── SECCIÓN 1: % Buenas vs Malas por cliente ──────────────────
+    let html = `
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-bottom:16px">
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">PIEZAS INSPECCIONADAS</div>
+          <div style="font-size:26px;font-weight:700;color:var(--accent-cyan)">${formatNum(totalPiezas)}</div>
+        </div>
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">% CALIDAD GLOBAL</div>
+          <div style="font-size:26px;font-weight:700;color:${parseFloat(pctGlobal)>=95?'var(--accent-green)':parseFloat(pctGlobal)>=80?'var(--accent-amber)':'var(--accent-red)'}">${pctGlobal}%</div>
+        </div>
+        <div class="card" style="padding:16px;text-align:center">
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:4px">TOTAL ERRORES</div>
+          <div style="font-size:26px;font-weight:700;color:${totalErrors>0?'var(--accent-red)':'var(--accent-green)'}">${formatNum(totalErrors)}</div>
+        </div>
+      </div>
+
+      <div class="card mb-16">
+        <div class="card-header"><span class="card-title">Buenas vs Malas por Cliente</span></div>
+        <div style="padding:16px;display:flex;flex-direction:column;gap:14px">
+          ${porCliente.map(r => {
+            const pct = r.total_piezas > 0 ? (100 * r.piezas_buenas / r.total_piezas) : 0;
+            const color = pct >= 95 ? 'var(--accent-green)' : pct >= 80 ? 'var(--accent-amber)' : 'var(--accent-red)';
+            return `
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                  <span style="font-size:13px">${escHTML(r.cliente_nombre)}</span>
+                  <span style="font-size:12px;font-family:'IBM Plex Mono',monospace">
+                    <span style="color:${color};font-weight:700">${pct.toFixed(1)}%</span>
+                    <span style="color:var(--text-muted);margin-left:8px">${formatNum(r.piezas_buenas)} buenas · ${formatNum(r.piezas_malas)} malas · ${formatNum(r.total_piezas)} total</span>
+                  </span>
+                </div>
+                <div style="height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden">
+                  <div style="height:100%;width:${pct.toFixed(1)}%;background:${color};border-radius:4px;transition:width .4s ease"></div>
+                </div>
+              </div>`;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    // ── SECCIÓN 2: Tipos de errores más frecuentes ─────────────────
+    if (tiposError.length) {
+      // Agrupar por tipo_error globalmente
+      const errMap = new Map();
+      for (const e of tiposError) {
+        const cur = errMap.get(e.tipo_error) || { tipo: e.tipo_error, total: 0, clientes: [] };
+        cur.total += e.total;
+        cur.clientes.push(`${e.cliente_nombre} (${e.total})`);
+        errMap.set(e.tipo_error, cur);
+      }
+      const errList = [...errMap.values()].sort((a,b) => b.total - a.total);
+      const maxErr  = errList[0].total;
+      const errColors = { Calidad:'var(--accent-red)', Origen:'var(--accent-amber)', Insumo:'#448aff', 'Mercancía ajena':'var(--accent-cyan)' };
+
+      html += `
+        <div class="card mb-16">
+          <div class="card-header"><span class="card-title">Tipos de Errores más Frecuentes</span></div>
+          <div style="padding:16px;display:flex;flex-direction:column;gap:12px">
+            ${errList.map(e => `
+              <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:4px">
+                  <span style="font-size:13px;font-weight:600;color:${errColors[e.tipo]||'inherit'}">${escHTML(e.tipo)}</span>
+                  <span style="font-size:12px;font-family:'IBM Plex Mono',monospace;color:var(--accent-red);font-weight:700">${e.total} errores</span>
+                </div>
+                <div style="height:8px;background:var(--bg-elevated);border-radius:4px;overflow:hidden;margin-bottom:4px">
+                  <div style="height:100%;width:${(100*e.total/maxErr).toFixed(1)}%;background:${errColors[e.tipo]||'var(--accent-red)'};border-radius:4px"></div>
+                </div>
+                <div style="font-size:10px;color:var(--text-muted)">${e.clientes.join(' · ')}</div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // ── SECCIÓN 3: Tendencia mes a mes ─────────────────────────────
+    if (tendencia.length) {
+      // Agrupar por mes
+      const mesMap = new Map();
+      for (const r of tendencia) {
+        if (!mesMap.has(r.mes)) mesMap.set(r.mes, []);
+        mesMap.get(r.mes).push(r);
+      }
+      const meses = [...mesMap.keys()].sort().reverse().slice(0, 12).reverse();
+
+      html += `
+        <div class="card mb-16">
+          <div class="card-header"><span class="card-title">Tendencia de Calidad Mes a Mes</span></div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Mes</th>
+                  <th>Cliente</th>
+                  <th class="td-mono" style="text-align:right">Total piezas</th>
+                  <th class="td-mono" style="text-align:right">Buenas</th>
+                  <th style="text-align:right">% Calidad</th>
+                  <th style="min-width:120px">Indicador</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${meses.flatMap(mes => mesMap.get(mes).map(r => {
+                  const pct = r.pct_buenas || 0;
+                  const color = pct >= 95 ? 'var(--accent-green)' : pct >= 80 ? 'var(--accent-amber)' : 'var(--accent-red)';
+                  return `<tr>
+                    <td class="td-mono" style="color:var(--text-secondary)">${r.mes}</td>
+                    <td>${escHTML(r.cliente_nombre)}</td>
+                    <td class="td-mono" style="text-align:right">${formatNum(r.total_piezas)}</td>
+                    <td class="td-mono" style="text-align:right;color:var(--accent-green)">${formatNum(r.buenas)}</td>
+                    <td class="td-mono" style="text-align:right;font-weight:700;color:${color}">${pct}%</td>
+                    <td>
+                      <div style="height:6px;background:var(--bg-elevated);border-radius:3px;overflow:hidden">
+                        <div style="height:100%;width:${pct}%;background:${color};border-radius:3px"></div>
+                      </div>
+                    </td>
+                  </tr>`;
+                })).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    // ── SECCIÓN 4: Países con más discrepancias ────────────────────
+    if (paises.length) {
+      html += `
+        <div class="card mb-16">
+          <div class="card-header"><span class="card-title">Países de Origen con Discrepancias</span></div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>País</th>
+                  <th>Cliente</th>
+                  <th class="td-mono" style="text-align:right">Total piezas</th>
+                  <th class="td-mono" style="text-align:right">Disc. País</th>
+                  <th class="td-mono" style="text-align:right">Disc. Insumos</th>
+                  <th class="td-mono" style="text-align:right">Total disc.</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${paises.map(r => {
+                  const totalDisc = (r.disc_pais || 0) + (r.disc_insumos || 0);
+                  return `<tr>
+                    <td style="font-weight:600">${escHTML(r.pais)}</td>
+                    <td>${escHTML(r.cliente_nombre)}</td>
+                    <td class="td-mono" style="text-align:right">${formatNum(r.total)}</td>
+                    <td class="td-mono" style="text-align:right;color:${r.disc_pais>0?'var(--accent-amber)':'var(--text-muted)'}">${formatNum(r.disc_pais)}</td>
+                    <td class="td-mono" style="text-align:right;color:${r.disc_insumos>0?'var(--accent-amber)':'var(--text-muted)'}">${formatNum(r.disc_insumos)}</td>
+                    <td class="td-mono" style="text-align:right;font-weight:700;color:var(--accent-red)">${formatNum(totalDisc)}</td>
+                  </tr>`;
+                }).join('')}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    res.innerHTML = html;
+  } catch(e) {
+    res.innerHTML = `<div class="alert alert-error">Error: ${e.error || e.message}</div>`;
+  }
+}
+
 // INIT — elegir vista según URL params
 // ========================================
 const reporteRtParam  = urlParams.get('retrabajos');
 const reporteTcParam  = urlParams.get('tipocaja');
+const reportePuParam  = urlParams.get('operadores');
+
+const reporteCqParam  = urlParams.get('calidad');
 
 if (trackingIdParam) {
   loadManifiesto(trackingIdParam);
@@ -1187,6 +1672,10 @@ if (trackingIdParam) {
   loadReporteRetrabajos();
 } else if (reporteTcParam) {
   loadReporteTipoCaja();
+} else if (reportePuParam) {
+  loadReportePiezasUsuario();
+} else if (reporteCqParam) {
+  loadReporteCalidad();
 } else {
   loadCajas();
 }

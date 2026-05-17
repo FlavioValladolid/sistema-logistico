@@ -196,7 +196,7 @@ function render() {
             <div style="display:flex;gap:12px;flex-wrap:wrap">
               <span class="badge badge-muted" title="Tracking">📦 ${r.tracking_number}</span>
               <span class="badge badge-muted">${r.cliente_nombre}</span>
-              ${r.caja_id ? `<span class="badge badge-muted">🗃 ${r.caja_id}</span>` : ''}
+              ${r.caja_nombre ? `<a href="reportes.html?caja=${encodeURIComponent(r.caja_nombre)}" class="badge badge-muted" style="text-decoration:none" title="Ver caja">🗃 ${r.caja_nombre}</a>` : ''}
               ${r.operador ? `<span class="badge badge-muted">👷 ${r.operador}</span>` : ''}
               <span class="badge badge-muted" title="Fecha">📅 ${formatDate(r.created_at)}</span>
             </div>
