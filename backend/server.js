@@ -501,7 +501,7 @@ function generarNombreCaja(clienteNombre, tipo, consecutivo) {
 
 // ===================== EMAIL =====================
 
-const RESEND_FROM = 'Retornos <onboarding@resend.dev>';
+const RESEND_FROM = () => `Retornos <${process.env.SMTP_FROM_EMAIL || 'retornos@updates.flaviovalladolid.shop'}>`;
 
 function escH(s) {
   if (s == null) return '';
@@ -2511,7 +2511,7 @@ app.post('/api/trackings/:id/enviar-correo', async (req, res) => {
 
   try {
     const { error } = await resend.emails.send({
-      from: RESEND_FROM,
+      from: RESEND_FROM(),
       to: destinatarios.map(e => String(e).trim()),
       subject: asuntoFinal,
       html,
@@ -3046,7 +3046,7 @@ async function enviarResumenSemanal() {
 
   for (const dest of destinatarios) {
     try {
-      const { error } = await resend.emails.send({ from: RESEND_FROM, to: dest.email, subject: asunto, html });
+      const { error } = await resend.emails.send({ from: RESEND_FROM(), to: dest.email, subject: asunto, html });
       if (error) console.error(`Error enviando email a ${dest.email}:`, error.message);
       else console.log(`Email enviado a ${dest.email}`);
     } catch (err) {
