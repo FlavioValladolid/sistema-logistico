@@ -2928,11 +2928,12 @@ async function enviarResumenSemanal() {
     return;
   }
 
-  // Rango: lunes a domingo de la semana ANTERIOR
+  // Rango: lunes a domingo de la semana más recientemente completada
+  // diaSemana%7 = días transcurridos desde el último domingo (dom=0,lun=1…sáb=6)
   const ahora = new Date();
-  const diaSemana = ahora.getDay() === 0 ? 7 : ahora.getDay(); // 1=lun … 7=dom
-  const lunes = new Date(ahora); lunes.setDate(ahora.getDate() - diaSemana - 6);
-  const domingo = new Date(lunes); domingo.setDate(lunes.getDate() + 6);
+  const diaSemana = ahora.getDay() === 0 ? 7 : ahora.getDay();
+  const domingo = new Date(ahora); domingo.setDate(ahora.getDate() - (diaSemana % 7));
+  const lunes = new Date(domingo); lunes.setDate(domingo.getDate() - 6);
   const fmtFecha = d => d.toLocaleDateString('es-MX', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'America/Tijuana' });
   const fmtISO   = d => d.toISOString().slice(0, 10);
 
