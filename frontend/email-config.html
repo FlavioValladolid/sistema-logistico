@@ -20,55 +20,38 @@ async function init() {
       <div>
         <div class="breadcrumb">SISTEMA / CONFIG. EMAIL</div>
         <h1 class="page-title">Configuración de Email</h1>
-        <p class="page-subtitle">Credenciales SMTP y resumen semanal automático</p>
+        <p class="page-subtitle">API Key de Resend y resumen semanal automático</p>
       </div>
     </div>
 
     <div style="max-width:640px">
 
-      <!-- SMTP Config Card -->
+      <!-- Resend API Key Card -->
       <div class="card mb-16">
         <div class="card-header">
-          <span class="card-title">Servidor SMTP</span>
-          <span id="smtp-status" class="badge badge-muted" style="margin-left:auto">Cargando...</span>
+          <span class="card-title">Resend API Key</span>
+          <span id="resend-status" class="badge badge-muted" style="margin-left:auto">Cargando...</span>
         </div>
         <div style="padding:20px;display:flex;flex-direction:column;gap:16px">
 
-          <div style="display:grid;grid-template-columns:1fr 120px;gap:12px">
-            <div>
-              <label class="form-label">Host SMTP</label>
-              <input id="smtp-host" type="text" class="form-control" placeholder="smtp.gmail.com">
-            </div>
-            <div>
-              <label class="form-label">Puerto</label>
-              <input id="smtp-port" type="number" class="form-control" placeholder="587" value="587">
-            </div>
-          </div>
-
           <div>
-            <label class="form-label">Usuario / Email de envío</label>
-            <input id="smtp-user" type="email" class="form-control" placeholder="tu@gmail.com">
-          </div>
-
-          <div>
-            <label class="form-label">Contraseña / App Password</label>
+            <label class="form-label">API Key</label>
             <div style="position:relative">
-              <input id="smtp-pass" type="password" class="form-control" placeholder="Dejar vacío para mantener la actual" style="padding-right:44px">
-              <button onclick="togglePass()" type="button" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted);padding:4px">
+              <input id="resend-api-key" type="password" class="form-control" placeholder="re_xxxxxxxxxxxxxxxxxxxxxxxxxxxx" style="padding-right:44px">
+              <button onclick="toggleApiKey()" type="button" style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:none;border:none;cursor:pointer;color:var(--text-muted);padding:4px">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
               </button>
             </div>
-            <div id="pass-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px"></div>
+            <div id="key-hint" style="font-size:11px;color:var(--text-muted);margin-top:4px"></div>
           </div>
 
-          <div>
-            <label class="form-label">Nombre del remitente</label>
-            <input id="smtp-from-name" type="text" class="form-control" placeholder="RETORNOS">
+          <div style="background:var(--bg-elevated);border-radius:var(--radius-sm);padding:12px 14px;font-size:12px;color:var(--text-muted);line-height:1.6">
+            El remitente será: <strong style="color:var(--text-secondary)">Retornos &lt;onboarding@resend.dev&gt;</strong>
+            hasta que se verifique un dominio propio en Resend.
           </div>
 
           <div style="display:flex;gap:8px;justify-content:flex-end">
-            <button class="btn btn-secondary" onclick="probarConexion()" id="btn-probar">Probar conexión</button>
-            <button class="btn btn-primary" onclick="guardarConfig()" id="btn-guardar">Guardar cambios</button>
+            <button class="btn btn-primary" onclick="guardarConfig()" id="btn-guardar">Guardar API Key</button>
           </div>
         </div>
       </div>
@@ -113,24 +96,22 @@ async function init() {
         </div>
       </div>
 
-      <!-- Ayuda Gmail -->
+      <!-- Ayuda Resend -->
       <div class="card mb-16">
-        <div class="card-header"><span class="card-title">Configuración rápida con Gmail</span></div>
+        <div class="card-header"><span class="card-title">Cómo obtener tu API Key de Resend</span></div>
         <div style="padding:16px;display:flex;flex-direction:column;gap:10px">
           <p style="font-size:13px;color:var(--text-secondary);line-height:1.6;margin:0">
-            Gmail requiere una <strong>App Password</strong> (no tu contraseña normal). Para generarla:
+            Resend es un servicio de email transaccional. La cuenta gratuita incluye 3,000 emails/mes.
           </p>
           <ol style="font-size:12px;color:var(--text-muted);line-height:2;margin:0;padding-left:20px">
-            <li>Ve a <strong>myaccount.google.com → Seguridad</strong></li>
-            <li>Activa <strong>Verificación en 2 pasos</strong> si no está activa</li>
-            <li>Busca <strong>Contraseñas de aplicaciones</strong></li>
-            <li>Crea una nueva para "Correo" y copia las 16 letras</li>
-            <li>Pégala en el campo Contraseña de arriba</li>
+            <li>Crea una cuenta en <strong>resend.com</strong></li>
+            <li>Ve a <strong>API Keys → Create API Key</strong></li>
+            <li>Copia la clave (empieza con <code>re_</code>)</li>
+            <li>Pégala en el campo de arriba y guarda</li>
           </ol>
           <div style="background:var(--bg-elevated);border-radius:var(--radius-sm);padding:12px;font-family:'IBM Plex Mono',monospace;font-size:12px;display:flex;flex-direction:column;gap:4px">
-            <div><span style="color:var(--text-muted)">Host: </span>smtp.gmail.com</div>
-            <div><span style="color:var(--text-muted)">Puerto: </span>587</div>
-            <div><span style="color:var(--text-muted)">Usuario: </span>tu@gmail.com</div>
+            <div><span style="color:var(--text-muted)">Remitente: </span>onboarding@resend.dev</div>
+            <div><span style="color:var(--text-muted)">Plan gratis: </span>3,000 emails/mes · 100/día</div>
           </div>
         </div>
       </div>
@@ -142,29 +123,23 @@ async function init() {
   await cargarDestinatarios();
 }
 
-function togglePass() {
-  const inp = document.getElementById('smtp-pass');
+function toggleApiKey() {
+  const inp = document.getElementById('resend-api-key');
   inp.type = inp.type === 'password' ? 'text' : 'password';
 }
 
 async function cargarConfig() {
   try {
     const data = await API.get('/email/config');
-    document.getElementById('smtp-host').value      = data.SMTP_HOST || '';
-    document.getElementById('smtp-port').value      = data.SMTP_PORT || '587';
-    document.getElementById('smtp-user').value      = data.SMTP_USER || '';
-    document.getElementById('smtp-from-name').value = data.SMTP_FROM_NAME || 'RETORNOS';
+    const hint  = document.getElementById('key-hint');
+    const badge = document.getElementById('resend-status');
 
-    const hint  = document.getElementById('pass-hint');
-    const badge = document.getElementById('smtp-status');
-    const configurado = data.SMTP_HOST && data.SMTP_USER && data.SMTP_PASS_SET;
+    hint.textContent = data.RESEND_API_KEY_SET
+      ? 'API Key guardada. Dejar vacío para mantenerla.'
+      : 'Sin API Key configurada.';
 
-    hint.textContent = data.SMTP_PASS_SET
-      ? 'Contraseña guardada. Dejar vacío para mantenerla.'
-      : 'Sin contraseña guardada.';
-
-    badge.textContent = configurado ? 'Configurado' : (data.SMTP_HOST || data.SMTP_USER ? 'Incompleto' : 'Sin configurar');
-    badge.className   = 'badge ' + (configurado ? 'badge-green' : 'badge-amber');
+    badge.textContent = data.RESEND_API_KEY_SET ? 'Configurado' : 'Sin configurar';
+    badge.className   = 'badge ' + (data.RESEND_API_KEY_SET ? 'badge-green' : 'badge-amber');
   } catch(e) {
     toast('Error cargando configuración', 'error');
   }
@@ -196,36 +171,16 @@ async function guardarConfig() {
   const btn = document.getElementById('btn-guardar');
   btn.disabled = true; btn.textContent = 'Guardando...';
   try {
-    const body = {
-      SMTP_HOST:      document.getElementById('smtp-host').value.trim(),
-      SMTP_PORT:      document.getElementById('smtp-port').value.trim(),
-      SMTP_USER:      document.getElementById('smtp-user').value.trim(),
-      SMTP_FROM_NAME: document.getElementById('smtp-from-name').value.trim(),
-    };
-    const pass = document.getElementById('smtp-pass').value;
-    if (pass) body.SMTP_PASS = pass;
-    await API.put('/email/config', body);
-    document.getElementById('smtp-pass').value = '';
-    toast('Configuración guardada', 'success');
+    const key = document.getElementById('resend-api-key').value.trim();
+    if (!key) { toast('Ingresa una API Key', 'error'); return; }
+    await API.put('/email/config', { RESEND_API_KEY: key });
+    document.getElementById('resend-api-key').value = '';
+    toast('API Key guardada', 'success');
     cargarConfig();
   } catch(e) {
     toast(e.error || 'Error al guardar', 'error');
   } finally {
-    btn.disabled = false; btn.textContent = 'Guardar cambios';
-  }
-}
-
-async function probarConexion() {
-  const btn = document.getElementById('btn-probar');
-  btn.disabled = true; btn.textContent = 'Guardando y probando...';
-  try {
-    await guardarConfig();
-    await API.post('/email/test-semanal', {});
-    toast('Resumen enviado — revisa tu bandeja de entrada', 'success');
-  } catch(e) {
-    toast(e.error || 'Error al enviar', 'error');
-  } finally {
-    btn.disabled = false; btn.textContent = 'Probar conexión';
+    btn.disabled = false; btn.textContent = 'Guardar API Key';
   }
 }
 
@@ -238,7 +193,7 @@ async function enviarPrueba() {
     await API.post('/email/test-semanal', {});
     res.innerHTML = `<div class="alert alert-success" style="font-size:12px;margin-top:8px">✓ Resumen enviado correctamente a todos los destinatarios.</div>`;
   } catch(e) {
-    res.innerHTML = `<div class="alert alert-error" style="font-size:12px;margin-top:8px">Error: ${e.error || 'No se pudo enviar. Verifica la configuración SMTP.'}</div>`;
+    res.innerHTML = `<div class="alert alert-error" style="font-size:12px;margin-top:8px">Error: ${e.error || 'No se pudo enviar. Verifica la API Key de Resend.'}</div>`;
   } finally {
     btn.disabled = false; btn.textContent = 'Enviar resumen de prueba ahora';
   }

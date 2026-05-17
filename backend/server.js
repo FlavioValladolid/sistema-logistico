@@ -8,7 +8,7 @@ const { v4: uuidv4 } = require('uuid');
 const Database = require('better-sqlite3');
 const bcrypt = require('bcrypt');
 const Papa = require('papaparse');
-let nodemailer; try { nodemailer = require('nodemailer'); } catch(e) { nodemailer = null; }
+let ResendSDK; try { ResendSDK = require('resend'); } catch(e) { ResendSDK = null; }
 let nodeCron; try { nodeCron = require('node-cron'); } catch(e) { nodeCron = null; }
 
 const app = express();
@@ -499,34 +499,18 @@ function generarNombreCaja(clienteNombre, tipo, consecutivo) {
   return `${iniciales}-${abr}-${String(consecutivo).padStart(3, '0')}`;
 }
 
-// ===================== EMAIL / SMTP =====================
+// ===================== EMAIL =====================
+
+const RESEND_FROM = 'Retornos <onboarding@resend.dev>';
 
 function escH(s) {
   if (s == null) return '';
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
-function getSmtpConfig() {
-  let row;
-  try { row = dbGet('SELECT * FROM config_smtp WHERE id=1'); } catch(e) {}
-  const host     = row?.host      || process.env.SMTP_HOST      || 'smtp.gmail.com';
-  const port     = row?.port      || parseInt(process.env.SMTP_PORT) || 587;
-  const user     = row?.user      || process.env.SMTP_USER      || null;
-  const pass     = row?.pass      || process.env.SMTP_PASS      || null;
-  const fromName = row?.from_name || process.env.SMTP_FROM_NAME || 'Sistema Logístico';
-  return { host, port, user, pass, fromName, configured: !!(user && pass) };
-}
-
-function createTransporter() {
-  if (!nodemailer) return null;
-  const cfg = getSmtpConfig();
-  if (!cfg.configured) return null;
-  return nodemailer.createTransport({
-    host: cfg.host,
-    port: cfg.port,
-    secure: cfg.port === 465,
-    auth: { user: cfg.user, pass: cfg.pass },
-  });
+function getResendClient() {
+  if (!ResendSDK || !process.env.RESEND_API_KEY) return null;
+  return new ResendSDK.Resend(process.env.RESEND_API_KEY);
 }
 
 function buildEmailHtml({ tracking, errores, comentarios, remitente, mensaje_adicional, asunto }) {
@@ -2468,50 +2452,7 @@ app.post('/api/skus-nuevos/:id/fotos-evidencia-url', (req, res) => {
   res.json({ mensaje: 'Fotos guardadas' });
 });
 
-// ===================== CORREO / SMTP =====================
-
-app.get('/api/config/smtp', requireRol('ADMIN'), (req, res) => {
-  const cfg = getSmtpConfig();
-  res.json({ host: cfg.host, port: cfg.port, user: cfg.user, from_name: cfg.fromName, configured: cfg.configured });
-});
-
-app.post('/api/config/smtp', requireRol('ADMIN'), (req, res) => {
-  const { host, port, user, pass, from_name } = req.body;
-  const existing = dbGet('SELECT id FROM config_smtp WHERE id=1');
-  if (existing) {
-    const updates = [], vals = [];
-    if (host      !== undefined) { updates.push('host=?');      vals.push(host || null); }
-    if (port      !== undefined) { updates.push('port=?');      vals.push(parseInt(port) || 587); }
-    if (user      !== undefined) { updates.push('user=?');      vals.push(user || null); }
-    if (pass      !== undefined && pass !== '') { updates.push('pass=?'); vals.push(pass); }
-    if (from_name !== undefined) { updates.push('from_name=?'); vals.push(from_name || 'Sistema Logístico'); }
-    updates.push('updated_at=?'); vals.push(localNow());
-    vals.push(1);
-    dbRun(`UPDATE config_smtp SET ${updates.join(',')} WHERE id=?`, vals);
-  } else {
-    dbRun('INSERT INTO config_smtp (id,host,port,user,pass,from_name,updated_at) VALUES (1,?,?,?,?,?,?)',
-      [host || null, parseInt(port) || 587, user || null, pass || null, from_name || 'Sistema Logístico', localNow()]);
-  }
-  res.json({ ok: true });
-});
-
-app.post('/api/config/smtp/test', requireRol('ADMIN'), async (req, res) => {
-  const cfg = getSmtpConfig();
-  if (!cfg.configured) return res.status(400).json({ error: 'SMTP no configurado. Guarda la configuración primero.' });
-  const transporter = createTransporter();
-  if (!transporter) return res.status(500).json({ error: 'nodemailer no disponible' });
-  try {
-    await transporter.sendMail({
-      from: `"${cfg.fromName}" <${cfg.user}>`,
-      to: req.usuario.email,
-      subject: 'Prueba de correo — Sistema Logístico',
-      html: `<div style="font-family:sans-serif;padding:24px"><h2>✓ Configuración SMTP correcta</h2><p>Este es un correo de prueba del Sistema Logístico enviado a las <strong>${localNow()}</strong>.</p></div>`,
-    });
-    res.json({ ok: true, mensaje: `Correo de prueba enviado a ${req.usuario.email}` });
-  } catch(e) {
-    res.status(500).json({ error: `Error al enviar: ${e.message}` });
-  }
-});
+// ===================== CORREO =====================
 
 app.post('/api/trackings/:id/enviar-correo', async (req, res) => {
   const { destinatarios, asunto, mensaje_adicional, incluir_comentarios } = req.body;
@@ -2533,11 +2474,8 @@ app.post('/api/trackings/:id/enviar-correo', async (req, res) => {
   if ((recent?.cnt || 0) >= 10)
     return res.status(429).json({ error: 'Límite de 10 correos por hora para este tracking alcanzado' });
 
-  const cfg = getSmtpConfig();
-  if (!cfg.configured)
-    return res.status(503).json({ error: 'Configura el servidor de correo en el panel de administración' });
-  const transporter = createTransporter();
-  if (!transporter) return res.status(500).json({ error: 'Servicio de correo no disponible' });
+  const resend = getResendClient();
+  if (!resend) return res.status(503).json({ error: 'Configura la API Key de Resend en el panel de administración' });
 
   const tracking = dbGet(`
     SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza
@@ -2572,12 +2510,13 @@ app.post('/api/trackings/:id/enviar-correo', async (req, res) => {
   });
 
   try {
-    await transporter.sendMail({
-      from: `"${cfg.fromName}" <${cfg.user}>`,
-      to: destinatarios.map(e => String(e).trim()).join(', '),
+    const { error } = await resend.emails.send({
+      from: RESEND_FROM,
+      to: destinatarios.map(e => String(e).trim()),
       subject: asuntoFinal,
       html,
     });
+    if (error) return res.status(500).json({ error: `Error al enviar correo: ${error.message}` });
   } catch(e) {
     return res.status(500).json({ error: `Error al enviar correo: ${e.message}` });
   }
@@ -2938,21 +2877,8 @@ process.on('exit',    () => { try { db.close(); } catch(e) { /* ya cerrada */ } 
 // EMAIL — RESUMEN SEMANAL
 // ══════════════════════════════════════════════════════════════════════════════
 
-function crearTransporter() {
-  if (!nodemailer || !process.env.SMTP_HOST || !process.env.SMTP_USER || !process.env.SMTP_PASS) return null;
-  return nodemailer.createTransport({
-    host: process.env.SMTP_HOST,
-    port: parseInt(process.env.SMTP_PORT || '587'),
-    secure: parseInt(process.env.SMTP_PORT || '587') === 465,
-    auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-    connectionTimeout: 10000,
-    greetingTimeout: 10000,
-    socketTimeout: 15000,
-  });
-}
-
 function emailBase(titulo, contenido) {
-  const fromName = process.env.SMTP_FROM_NAME || 'RETORNOS';
+  const fromName = 'RETORNOS';
   return `<!DOCTYPE html>
 <html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${titulo}</title></head>
@@ -2991,9 +2917,9 @@ function obtenerDestinatariosAdminSupervisor() {
 }
 
 async function enviarResumenSemanal() {
-  const transporter = crearTransporter();
-  if (!transporter) {
-    console.log('Email: SMTP no configurado, omitiendo resumen semanal');
+  const resend = getResendClient();
+  if (!resend) {
+    console.log('Email: RESEND_API_KEY no configurada, omitiendo resumen semanal');
     return;
   }
   const destinatarios = obtenerDestinatariosAdminSupervisor();
@@ -3117,12 +3043,12 @@ async function enviarResumenSemanal() {
 
   const asunto = `Resumen semanal — ${labelDesde} al ${labelHasta} — Retornos`;
   const html = emailBase(`Resumen semanal: ${labelDesde} al ${labelHasta}`, contenido);
-  const from = `"${process.env.SMTP_FROM_NAME || 'RETORNOS'}" <${process.env.SMTP_USER}>`;
 
   for (const dest of destinatarios) {
     try {
-      await transporter.sendMail({ from, to: dest.email, subject: asunto, html });
-      console.log(`Email enviado a ${dest.email}`);
+      const { error } = await resend.emails.send({ from: RESEND_FROM, to: dest.email, subject: asunto, html });
+      if (error) console.error(`Error enviando email a ${dest.email}:`, error.message);
+      else console.log(`Email enviado a ${dest.email}`);
     } catch (err) {
       console.error(`Error enviando email a ${dest.email}:`, err.message);
     }
@@ -3156,24 +3082,14 @@ function escribirEnv(vars) {
 
 app.get('/api/email/config', (req, res) => {
   if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Solo ADMIN' });
-  res.json({
-    SMTP_HOST:      process.env.SMTP_HOST || '',
-    SMTP_PORT:      process.env.SMTP_PORT || '587',
-    SMTP_USER:      process.env.SMTP_USER || '',
-    SMTP_PASS_SET:  !!(process.env.SMTP_PASS),
-    SMTP_FROM_NAME: process.env.SMTP_FROM_NAME || 'RETORNOS',
-  });
+  res.json({ RESEND_API_KEY_SET: !!(process.env.RESEND_API_KEY) });
 });
 
 app.put('/api/email/config', (req, res) => {
   if (req.usuario?.rol !== 'ADMIN') return res.status(403).json({ error: 'Solo ADMIN' });
-  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM_NAME } = req.body;
+  const { RESEND_API_KEY } = req.body;
   const updates = {};
-  if (SMTP_HOST      !== undefined) updates.SMTP_HOST      = SMTP_HOST;
-  if (SMTP_PORT      !== undefined) updates.SMTP_PORT      = SMTP_PORT;
-  if (SMTP_USER      !== undefined) updates.SMTP_USER      = SMTP_USER;
-  if (SMTP_FROM_NAME !== undefined) updates.SMTP_FROM_NAME = SMTP_FROM_NAME;
-  if (SMTP_PASS)                    updates.SMTP_PASS      = SMTP_PASS; // solo si viene valor
+  if (RESEND_API_KEY) updates.RESEND_API_KEY = RESEND_API_KEY;
   try {
     escribirEnv(updates);
     res.json({ ok: true });
