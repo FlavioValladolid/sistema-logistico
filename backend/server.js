@@ -245,6 +245,9 @@ async function initDB() {
       expires_at TEXT NOT NULL
     )
   `);
+  try { db.exec("ALTER TABLE foto_sesiones ADD COLUMN total_fotos INTEGER DEFAULT 1"); } catch(e) {}
+  try { db.exec("ALTER TABLE foto_sesiones ADD COLUMN fotos_urls TEXT DEFAULT '[]'"); } catch(e) {}
+  try { db.exec("ALTER TABLE foto_sesiones ADD COLUMN fotos_contextos TEXT DEFAULT '[]'"); } catch(e) {}
   db.exec("DELETE FROM foto_sesiones WHERE expires_at < datetime('now')");
 
   db.exec(`
@@ -2009,8 +2012,8 @@ app.get('/api/dashboard/ranking', (req, res) => {
 
 // --- FOTO SESIONES (Hybrid Web-Mobile) ---
 
-function buildMobilePhotoPage(pageState, token) {
-  const stateContent = {
+function buildMobilePhotoPage(pageState, token, sesion) {
+  const staticStates = {
     invalid: `
       <div class="status status-error">❌ Enlace inválido</div>
       <p class="sub">Este enlace no es válido o ya expiró. Genera un nuevo QR desde la estación de trabajo.</p>
@@ -2020,157 +2023,19 @@ function buildMobilePhotoPage(pageState, token) {
       <p class="sub">Este enlace ha caducado. Genera un nuevo QR desde la estación de trabajo.</p>
     `,
     used: `
-      <div class="status status-success">✅ Foto ya enviada</div>
-      <p class="sub">La fotografía fue recibida correctamente en la estación de trabajo. Puedes cerrar esta pantalla.</p>
+      <div class="status status-success">✅ Fotos enviadas</div>
+      <p class="sub">Todas las fotografías fueron recibidas correctamente. Puedes cerrar esta pantalla.</p>
     `,
-    active: `
-      <h1>📸 Capturar Evidencia</h1>
-      <p class="sub">Toma la fotografía del defecto o discrepancia encontrada en el producto.</p>
-      <img id="preview" class="preview-img" alt="Vista previa">
-      <div id="status-msg"></div>
+  };
 
-      <!-- Hidden inputs: triggered programmatically to avoid label-wrapping bugs on iOS/Android -->
-      <input type="file" id="foto-input-camera"  accept="image/*" capture="environment" style="display:none">
-      <input type="file" id="foto-input-gallery" accept="image/*" style="display:none">
+  if (pageState !== 'active') {
+    const content = staticStates[pageState] || '';
+    return `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no"><title>Captura de Foto — Sistema Logístico</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0A0E1A;color:#E5E7EB;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:32px 20px}.logo{font-size:11px;letter-spacing:.15em;color:#6B7280;text-transform:uppercase;margin-bottom:32px}.card{background:#131827;border:1px solid #1E2A3A;border-radius:16px;padding:32px 24px;width:100%;max-width:420px;text-align:center}.sub{font-size:14px;color:#9CA3AF;margin-bottom:8px;line-height:1.5}.status{padding:14px 16px;border-radius:12px;font-size:14px;font-weight:600;margin-bottom:16px;text-align:left;line-height:1.4}.status-success{background:rgba(22,163,74,.15);color:#4ADE80;border:1px solid rgba(22,163,74,.3)}.status-error{background:rgba(220,38,38,.15);color:#F87171;border:1px solid rgba(220,38,38,.3)}.status-warning{background:rgba(202,138,4,.15);color:#FCD34D;border:1px solid rgba(202,138,4,.3)}</style></head><body><div class="logo">Sistema Logístico · Captura Móvil</div><div class="card">${content}</div></body></html>`;
+  }
 
-      <div id="btn-wrap">
-        <button class="btn btn-primary"   id="btn-camera"  onclick="triggerInput('camera')">📷 Abrir Cámara</button>
-        <button class="btn btn-secondary" id="btn-gallery" onclick="triggerInput('gallery')">🖼 Elegir de Galería</button>
-      </div>
-      <button class="btn btn-secondary hidden" id="btn-retomar" onclick="retomar()">↩ Retomar foto</button>
-      <button class="btn btn-primary hidden"   id="btn-enviar"  onclick="enviarFoto()">✓ Enviar foto</button>
-      <div class="spinner hidden" id="loading-spinner"></div>
-    `,
-  }[pageState] || '';
-
-  const script = pageState === 'active' ? `
-    <script>
-      const TOKEN = '${token}';
-      let selectedFile = null;
-
-      // Trigger the correct hidden file input — avoids label-wrapping bugs on iOS/Android WebViews
-      function triggerInput(type) {
-        document.getElementById('foto-input-' + type).click();
-      }
-
-      function onFileSelected(file) {
-        if (!file) return;
-        selectedFile = file;
-
-        // createObjectURL works with HEIC on iOS Safari and all Android types;
-        // avoids FileReader MIME-type errors on certain devices
-        var objUrl = URL.createObjectURL(file);
-        var img = document.getElementById('preview');
-        img.onload = function() { URL.revokeObjectURL(objUrl); };
-        img.onerror = function() {
-          URL.revokeObjectURL(objUrl);
-          img.style.display = 'none'; // preview failed but upload can still proceed
-        };
-        img.src = objUrl;
-        img.style.display = 'block';
-
-        document.getElementById('btn-wrap').classList.add('hidden');
-        document.getElementById('btn-retomar').classList.remove('hidden');
-        document.getElementById('btn-enviar').classList.remove('hidden');
-        clearStatus();
-      }
-
-      document.getElementById('foto-input-camera').addEventListener('change',  function() { onFileSelected(this.files[0]); });
-      document.getElementById('foto-input-gallery').addEventListener('change', function() { onFileSelected(this.files[0]); });
-
-      function retomar() {
-        selectedFile = null;
-        var img = document.getElementById('preview');
-        img.src = '';
-        img.style.display = 'none';
-        // Reset both inputs (assigning empty string can throw in some browsers — guard it)
-        try { document.getElementById('foto-input-camera').value  = ''; } catch(e) {}
-        try { document.getElementById('foto-input-gallery').value = ''; } catch(e) {}
-        document.getElementById('btn-wrap').classList.remove('hidden');
-        document.getElementById('btn-retomar').classList.add('hidden');
-        document.getElementById('btn-enviar').classList.add('hidden');
-        clearStatus();
-      }
-
-      // Compress to JPEG 80% / max 1920 px if file > 5 MB.
-      // Falls back to original file if canvas fails (e.g. HEIC on old iOS without canvas support).
-      function comprimirImagen(file) {
-        return new Promise(function(resolve) {
-          if (file.size <= 5 * 1024 * 1024) { resolve(file); return; }
-
-          var objUrl = URL.createObjectURL(file);
-          var img = new Image();
-
-          img.onload = function() {
-            URL.revokeObjectURL(objUrl);
-            var MAX = 1920;
-            var w = img.naturalWidth, h = img.naturalHeight;
-            if (w > MAX || h > MAX) {
-              if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
-              else        { w = Math.round(w * MAX / h); h = MAX; }
-            }
-            try {
-              var canvas = document.createElement('canvas');
-              canvas.width = w;
-              canvas.height = h;
-              canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-              canvas.toBlob(function(blob) {
-                if (!blob) { resolve(file); return; }
-                resolve(new File([blob], 'foto.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
-              }, 'image/jpeg', 0.80);
-            } catch(e) { resolve(file); }
-          };
-
-          img.onerror = function() { URL.revokeObjectURL(objUrl); resolve(file); };
-          img.src = objUrl;
-        });
-      }
-
-      async function enviarFoto() {
-        if (!selectedFile) return;
-        var btnEnviar = document.getElementById('btn-enviar');
-        var spinner   = document.getElementById('loading-spinner');
-        btnEnviar.disabled = true;
-        document.getElementById('btn-retomar').classList.add('hidden');
-        spinner.classList.remove('hidden');
-
-        try {
-          setStatus('Procesando imagen…', 'warning');
-          var fileToUpload = await comprimirImagen(selectedFile);
-
-          setStatus('Enviando…', 'warning');
-          var fd = new FormData();
-          fd.append('foto', fileToUpload, fileToUpload.name || 'foto.jpg');
-
-          var res  = await fetch('/api/foto-sesion/' + TOKEN + '/upload', { method: 'POST', body: fd });
-          var data = await res.json();
-          if (!res.ok) throw new Error(data.error || 'Error al enviar');
-
-          spinner.classList.add('hidden');
-          btnEnviar.classList.add('hidden');
-          document.getElementById('btn-retomar').classList.add('hidden');
-          setStatus('✅ ¡Foto enviada! Puedes cerrar esta pantalla.', 'success');
-        } catch(e) {
-          spinner.classList.add('hidden');
-          btnEnviar.disabled = false;
-          btnEnviar.textContent = '✓ Enviar foto';
-          document.getElementById('btn-retomar').classList.remove('hidden');
-          setStatus('❌ Error: ' + (e.message || 'Intenta de nuevo'), 'error');
-        }
-      }
-
-      function setStatus(msg, type) {
-        var el = document.getElementById('status-msg');
-        el.className = 'status status-' + type;
-        el.textContent = msg;
-      }
-      function clearStatus() {
-        var el = document.getElementById('status-msg');
-        el.className = '';
-        el.textContent = '';
-      }
-    <\/script>
-  ` : '';
+  const totalFotos = sesion?.total_fotos || 1;
+  const fotosUrlsInit = JSON.parse(sesion?.fotos_urls || '[]');
+  const fotosContextos = JSON.parse(sesion?.fotos_contextos || '[]');
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -2180,56 +2045,305 @@ function buildMobilePhotoPage(pageState, token) {
   <title>Captura de Foto — Sistema Logístico</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
-    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0A0E1A;color:#E5E7EB;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:32px 20px}
-    .logo{font-size:11px;letter-spacing:.15em;color:#6B7280;text-transform:uppercase;margin-bottom:32px}
-    .card{background:#131827;border:1px solid #1E2A3A;border-radius:16px;padding:32px 24px;width:100%;max-width:420px;text-align:center}
-    h1{font-size:20px;font-weight:700;margin-bottom:8px}
-    .sub{font-size:14px;color:#9CA3AF;margin-bottom:28px;line-height:1.5}
-    .btn{display:block;width:100%;padding:18px;border-radius:12px;border:none;font-size:17px;font-weight:700;cursor:pointer;transition:opacity .15s;margin-bottom:12px;text-align:center}
-    .btn:active{opacity:.75}
-    .btn.hidden{display:none}
-    .btn-primary{background:#1D4ED8;color:#fff}
-    .btn-secondary{background:#1E2A3A;color:#E5E7EB}
-    label.btn{display:block}
-    input[type=file]{display:none}
-    .preview-img{width:100%;border-radius:12px;margin:16px 0;display:none;object-fit:cover;max-height:320px}
-    .status{padding:14px 16px;border-radius:12px;font-size:14px;font-weight:600;margin-bottom:16px;text-align:left;line-height:1.4}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#0A0E1A;color:#E5E7EB;min-height:100vh;display:flex;flex-direction:column;align-items:center;padding:20px}
+    .logo{font-size:11px;letter-spacing:.15em;color:#6B7280;text-transform:uppercase;margin-bottom:20px}
+    .card{background:#131827;border:1px solid #1E2A3A;border-radius:16px;padding:24px 20px;width:100%;max-width:440px}
+    .progress-wrap{margin-bottom:18px}
+    .progress-bar{height:6px;background:#1E2A3A;border-radius:3px;overflow:hidden;margin-bottom:8px}
+    .progress-fill{height:100%;background:#1D4ED8;border-radius:3px;transition:width .4s ease}
+    .progress-text{font-size:13px;font-weight:700;color:#9CA3AF;text-align:center;letter-spacing:.05em}
+    .thumbs-row{display:flex;gap:8px;justify-content:center;margin-bottom:18px;flex-wrap:wrap}
+    .thumb{width:64px;height:64px;border-radius:10px;overflow:hidden;position:relative;flex-shrink:0;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:700;cursor:default;transition:transform .15s}
+    .thumb-done{border:2px solid #16A34A;background:#0d1f10}
+    .thumb-done img{width:100%;height:100%;object-fit:cover}
+    .thumb-done .thumb-check{position:absolute;bottom:2px;right:2px;background:#16A34A;color:#fff;border-radius:50%;width:18px;height:18px;font-size:11px;display:flex;align-items:center;justify-content:center;font-weight:900}
+    .thumb-current{border:2px solid #1D4ED8;background:#0d1626;animation:pulse-border 1.5s ease-in-out infinite}
+    .thumb-pending{border:2px solid #374151;background:#0f1523;color:#4B5563}
+    .thumb-num{font-size:18px}
+    @keyframes pulse-border{0%,100%{border-color:#1D4ED8}50%{border-color:#60A5FA}}
+    .foto-descripcion{text-align:center;margin-bottom:18px}
+    .foto-label{font-size:12px;color:#6B7280;text-transform:uppercase;letter-spacing:.1em;margin-bottom:4px}
+    .foto-contexto-text{font-size:18px;font-weight:700;color:#E5E7EB;line-height:1.3}
+    .preview-img{width:100%;border-radius:12px;margin:12px 0;object-fit:cover;max-height:300px;display:none}
+    .status-msg{padding:12px 14px;border-radius:10px;font-size:14px;font-weight:600;margin-bottom:12px;line-height:1.4}
     .status-success{background:rgba(22,163,74,.15);color:#4ADE80;border:1px solid rgba(22,163,74,.3)}
     .status-error{background:rgba(220,38,38,.15);color:#F87171;border:1px solid rgba(220,38,38,.3)}
     .status-warning{background:rgba(202,138,4,.15);color:#FCD34D;border:1px solid rgba(202,138,4,.3)}
-    .spinner{width:36px;height:36px;border:3px solid #1E2A3A;border-top-color:#1D4ED8;border-radius:50%;animation:spin .8s linear infinite;margin:16px auto}
+    .btn{display:block;width:100%;padding:18px;border-radius:12px;border:none;font-size:17px;font-weight:700;cursor:pointer;transition:opacity .15s;margin-bottom:10px;text-align:center}
+    .btn:active{opacity:.75}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .btn-primary{background:#1D4ED8;color:#fff}
+    .btn-secondary{background:#1E2A3A;color:#E5E7EB}
+    .btn-success{background:#16A34A;color:#fff}
     .hidden{display:none}
+    input[type=file]{display:none}
+    .spinner{width:32px;height:32px;border:3px solid #1E2A3A;border-top-color:#1D4ED8;border-radius:50%;animation:spin .8s linear infinite;margin:12px auto}
     @keyframes spin{to{transform:rotate(360deg)}}
+    .completado-card{text-align:center;padding:8px 0}
+    .completado-icon{font-size:56px;margin-bottom:12px}
+    .completado-title{font-size:22px;font-weight:800;color:#4ADE80;margin-bottom:8px}
+    .completado-sub{font-size:14px;color:#9CA3AF;line-height:1.5;margin-bottom:20px}
+    .completado-thumbs{display:flex;gap:10px;justify-content:center;flex-wrap:wrap}
+    .completado-thumb{text-align:center;flex:1;min-width:80px;max-width:120px}
+    .completado-thumb img{width:100%;border-radius:10px;aspect-ratio:1;object-fit:cover}
+    .completado-thumb-label{font-size:10px;color:#6B7280;margin-top:4px;word-break:break-word}
   </style>
 </head>
 <body>
   <div class="logo">Sistema Logístico · Captura Móvil</div>
   <div class="card">
-    ${stateContent}
+
+    <!-- VISTA CAPTURA -->
+    <div id="main-captura">
+      <div class="progress-wrap">
+        <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+        <div class="progress-text" id="progress-text"></div>
+      </div>
+
+      <div class="thumbs-row" id="thumbs-row"></div>
+
+      <div class="foto-descripcion">
+        <div class="foto-label">Fotografía requerida</div>
+        <div class="foto-contexto-text" id="foto-contexto-text"></div>
+      </div>
+
+      <img id="preview" class="preview-img" alt="Vista previa">
+      <div id="status-msg" class="status-msg hidden"></div>
+
+      <input type="file" id="foto-input-camera"  accept="image/*" capture="environment">
+      <input type="file" id="foto-input-gallery" accept="image/*">
+
+      <div id="btn-wrap">
+        <button class="btn btn-primary"   onclick="triggerInput('camera')">📷 Abrir Cámara</button>
+        <button class="btn btn-secondary" onclick="triggerInput('gallery')">🖼 Elegir de Galería</button>
+      </div>
+      <button class="btn btn-success hidden" id="btn-enviar" onclick="enviarFoto()">✓ Usar esta foto</button>
+      <button class="btn btn-secondary hidden" id="btn-retomar" onclick="retomar()">↩ Retomar foto</button>
+      <div class="spinner hidden" id="loading-spinner"></div>
+    </div>
+
+    <!-- VISTA COMPLETADO -->
+    <div id="main-completado" class="hidden completado-card">
+      <div class="completado-icon">✅</div>
+      <div class="completado-title">¡Listo!</div>
+      <div class="completado-sub">Todas las fotos fueron enviadas correctamente.<br>Puedes cerrar esta ventana.</div>
+      <div class="completado-thumbs" id="completado-thumbs"></div>
+    </div>
+
   </div>
-  ${script}
+
+  <script>
+    var TOKEN = ${JSON.stringify(token)};
+    var TOTAL_FOTOS = ${totalFotos};
+    var FOTOS_CONTEXTOS = ${JSON.stringify(fotosContextos)};
+    var fotosUrls = ${JSON.stringify(fotosUrlsInit)};
+    // ensure array has TOTAL_FOTOS slots
+    while (fotosUrls.length < TOTAL_FOTOS) fotosUrls.push(null);
+
+    var currentIdx = 0;
+    var selectedFile = null;
+
+    function init() {
+      currentIdx = fotosUrls.findIndex(function(u) { return !u; });
+      if (currentIdx === -1) { mostrarCompletado(); return; }
+      renderProgress();
+    }
+
+    function renderProgress() {
+      var done = fotosUrls.filter(Boolean).length;
+      document.getElementById('progress-fill').style.width = (done / TOTAL_FOTOS * 100) + '%';
+      document.getElementById('progress-text').textContent = 'Foto ' + (currentIdx + 1) + ' de ' + TOTAL_FOTOS;
+      document.getElementById('foto-contexto-text').textContent = FOTOS_CONTEXTOS[currentIdx] || ('Foto ' + (currentIdx + 1));
+      renderThumbs();
+    }
+
+    function renderThumbs() {
+      if (TOTAL_FOTOS <= 1) { document.getElementById('thumbs-row').innerHTML = ''; return; }
+      var html = '';
+      for (var i = 0; i < TOTAL_FOTOS; i++) {
+        var url = fotosUrls[i];
+        if (url) {
+          html += '<div class="thumb thumb-done" onclick="verThumb(' + i + ')">'
+            + '<img src="' + url + '" alt="">'
+            + '<div class="thumb-check">✓</div></div>';
+        } else if (i === currentIdx) {
+          html += '<div class="thumb thumb-current"><div class="thumb-num">📷</div></div>';
+        } else {
+          html += '<div class="thumb thumb-pending"><div class="thumb-num">' + (i + 1) + '</div></div>';
+        }
+      }
+      document.getElementById('thumbs-row').innerHTML = html;
+    }
+
+    function verThumb(i) {
+      var url = fotosUrls[i];
+      if (!url) return;
+      window.open(url, '_blank');
+    }
+
+    function triggerInput(type) {
+      document.getElementById('foto-input-' + type).click();
+    }
+
+    function onFileSelected(file) {
+      if (!file) return;
+      selectedFile = file;
+      var objUrl = URL.createObjectURL(file);
+      var img = document.getElementById('preview');
+      img.onload = function() { URL.revokeObjectURL(objUrl); };
+      img.onerror = function() { URL.revokeObjectURL(objUrl); img.style.display = 'none'; };
+      img.src = objUrl;
+      img.style.display = 'block';
+      document.getElementById('btn-wrap').classList.add('hidden');
+      document.getElementById('btn-enviar').classList.remove('hidden');
+      document.getElementById('btn-retomar').classList.remove('hidden');
+      clearStatus();
+    }
+
+    document.getElementById('foto-input-camera').addEventListener('change', function() { onFileSelected(this.files[0]); });
+    document.getElementById('foto-input-gallery').addEventListener('change', function() { onFileSelected(this.files[0]); });
+
+    function retomar() {
+      selectedFile = null;
+      var img = document.getElementById('preview');
+      img.src = ''; img.style.display = 'none';
+      try { document.getElementById('foto-input-camera').value  = ''; } catch(e) {}
+      try { document.getElementById('foto-input-gallery').value = ''; } catch(e) {}
+      document.getElementById('btn-wrap').classList.remove('hidden');
+      document.getElementById('btn-enviar').classList.add('hidden');
+      document.getElementById('btn-retomar').classList.add('hidden');
+      document.getElementById('btn-enviar').disabled = false;
+      clearStatus();
+    }
+
+    function comprimirImagen(file) {
+      return new Promise(function(resolve) {
+        if (file.size <= 5 * 1024 * 1024) { resolve(file); return; }
+        var objUrl = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function() {
+          URL.revokeObjectURL(objUrl);
+          var MAX = 1920, w = img.naturalWidth, h = img.naturalHeight;
+          if (w > MAX || h > MAX) {
+            if (w >= h) { h = Math.round(h * MAX / w); w = MAX; }
+            else        { w = Math.round(w * MAX / h); h = MAX; }
+          }
+          try {
+            var canvas = document.createElement('canvas');
+            canvas.width = w; canvas.height = h;
+            canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+            canvas.toBlob(function(blob) {
+              if (!blob) { resolve(file); return; }
+              resolve(new File([blob], 'foto.jpg', { type: 'image/jpeg', lastModified: Date.now() }));
+            }, 'image/jpeg', 0.80);
+          } catch(e) { resolve(file); }
+        };
+        img.onerror = function() { URL.revokeObjectURL(objUrl); resolve(file); };
+        img.src = objUrl;
+      });
+    }
+
+    async function enviarFoto() {
+      if (!selectedFile) return;
+      var btnEnviar = document.getElementById('btn-enviar');
+      btnEnviar.disabled = true;
+      document.getElementById('btn-retomar').classList.add('hidden');
+      document.getElementById('loading-spinner').classList.remove('hidden');
+
+      try {
+        setStatus('Procesando imagen…', 'warning');
+        var fileToUpload = await comprimirImagen(selectedFile);
+        setStatus('Enviando…', 'warning');
+
+        var fd = new FormData();
+        fd.append('foto', fileToUpload, fileToUpload.name || 'foto.jpg');
+        fd.append('foto_index', String(currentIdx));
+
+        var res  = await fetch('/api/foto-sesion/' + TOKEN + '/upload', { method: 'POST', body: fd });
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Error al enviar');
+
+        fotosUrls[currentIdx] = data.url;
+        document.getElementById('loading-spinner').classList.add('hidden');
+        clearStatus();
+
+        if (data.completada) {
+          setTimeout(function() { mostrarCompletado(); }, 400);
+        } else {
+          // Advance to next missing photo
+          currentIdx = fotosUrls.findIndex(function(u) { return !u; });
+          retomar();
+          renderProgress();
+          // Brief success flash
+          setStatus('✅ Foto ' + data.total_subidas + '/' + data.total_requeridas + ' recibida — siguiente foto', 'success');
+          setTimeout(function() { clearStatus(); }, 2000);
+        }
+      } catch(e) {
+        document.getElementById('loading-spinner').classList.add('hidden');
+        btnEnviar.disabled = false;
+        document.getElementById('btn-retomar').classList.remove('hidden');
+        setStatus('❌ Error: ' + (e.message || 'Intenta de nuevo'), 'error');
+      }
+    }
+
+    function mostrarCompletado() {
+      document.getElementById('main-captura').classList.add('hidden');
+      document.getElementById('main-completado').classList.remove('hidden');
+      var thumbsEl = document.getElementById('completado-thumbs');
+      if (TOTAL_FOTOS > 1) {
+        thumbsEl.innerHTML = fotosUrls.filter(Boolean).map(function(url, i) {
+          return '<div class="completado-thumb">'
+            + '<img src="' + url + '" alt="">'
+            + '<div class="completado-thumb-label">' + (FOTOS_CONTEXTOS[i] || ('Foto ' + (i + 1))) + '</div>'
+            + '</div>';
+        }).join('');
+      } else {
+        thumbsEl.innerHTML = '';
+      }
+    }
+
+    function setStatus(msg, type) {
+      var el = document.getElementById('status-msg');
+      el.className = 'status-msg status-' + type;
+      el.textContent = msg;
+    }
+    function clearStatus() {
+      var el = document.getElementById('status-msg');
+      el.className = 'status-msg hidden';
+      el.textContent = '';
+    }
+
+    init();
+  <\/script>
 </body>
 </html>`;
 }
 
 app.post('/api/foto-sesion', (req, res) => {
-  const { tracking_id, detalle_sku_id, contexto } = req.body;
+  const { tracking_id, detalle_sku_id, contexto, total_fotos, contextos } = req.body;
   const id = uuidv4();
   const token = uuidv4();
+  const n = Math.max(1, parseInt(total_fotos) || 1);
+  const ctxArray = Array.isArray(contextos) && contextos.length > 0
+    ? contextos.slice(0, n)
+    : Array.from({ length: n }, (_, i) => `Foto ${i + 1}`);
   dbRun(
-    `INSERT INTO foto_sesiones (id, token, tracking_id, detalle_sku_id, contexto, expires_at)
-     VALUES (?, ?, ?, ?, ?, datetime('now', '+10 minutes'))`,
-    [id, token, tracking_id || null, detalle_sku_id || null, contexto || null]
+    `INSERT INTO foto_sesiones (id, token, tracking_id, detalle_sku_id, contexto, total_fotos, fotos_urls, fotos_contextos, expires_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now', '+10 minutes'))`,
+    [id, token, tracking_id || null, detalle_sku_id || null, contexto || null, n, '[]', JSON.stringify(ctxArray)]
   );
   const proto = req.headers['x-forwarded-proto'] || 'http';
   const host = req.headers.host;
   const url = `${proto}://${host}/foto/${token}`;
-  res.json({ token, url });
+  res.json({ token, url, total_fotos: n });
 });
 
 app.get('/api/foto-sesion/:token', (req, res) => {
-  const sesion = dbGet('SELECT estatus, url_foto, expires_at FROM foto_sesiones WHERE token = ?', [req.params.token]);
+  const sesion = dbGet('SELECT estatus, url_foto, expires_at, total_fotos, fotos_urls, fotos_contextos FROM foto_sesiones WHERE token = ?', [req.params.token]);
   if (!sesion) return res.status(404).json({ error: 'Sesión no encontrada' });
+  sesion.total_fotos = sesion.total_fotos || 1;
+  sesion.fotos_urls = JSON.parse(sesion.fotos_urls || '[]');
+  sesion.fotos_contextos = JSON.parse(sesion.fotos_contextos || '[]');
   res.json(sesion);
 });
 
@@ -2244,23 +2358,39 @@ app.post('/api/foto-sesion/:token/upload', (req, res, next) => {
 }, (req, res) => {
   const sesion = dbGet('SELECT * FROM foto_sesiones WHERE token = ?', [req.params.token]);
   if (!sesion) return res.status(404).json({ error: 'Sesión inválida' });
-  if (sesion.estatus === 'completada') return res.status(400).json({ error: 'Esta sesión ya fue utilizada' });
+  if (sesion.estatus === 'completada') return res.status(400).json({ error: 'Esta sesión ya fue completada' });
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
   if (sesion.expires_at < now) return res.status(410).json({ error: 'Sesión expirada' });
   if (!req.file) return res.status(400).json({ error: 'No se recibió foto' });
+
   const url_foto = `/uploads/${req.file.filename}`;
-  dbRun("UPDATE foto_sesiones SET estatus = 'completada', url_foto = ? WHERE token = ?",
-    [url_foto, req.params.token]);
-  res.json({ mensaje: 'Foto recibida', url_foto });
+  const total = sesion.total_fotos || 1;
+  const foto_index = Math.max(0, Math.min(parseInt(req.body.foto_index) || 0, total - 1));
+
+  const fotos_urls = JSON.parse(sesion.fotos_urls || '[]');
+  fotos_urls[foto_index] = url_foto;
+
+  const total_subidas = fotos_urls.filter(u => u != null).length;
+  const completada = total_subidas >= total;
+
+  if (completada) {
+    dbRun("UPDATE foto_sesiones SET estatus = 'completada', url_foto = ?, fotos_urls = ?, expires_at = datetime('now', '+10 minutes') WHERE token = ?",
+      [fotos_urls[0], JSON.stringify(fotos_urls), req.params.token]);
+  } else {
+    dbRun("UPDATE foto_sesiones SET estatus = 'en_progreso', fotos_urls = ?, expires_at = datetime('now', '+10 minutes') WHERE token = ?",
+      [JSON.stringify(fotos_urls), req.params.token]);
+  }
+
+  res.json({ foto_index, url: url_foto, total_subidas, total_requeridas: total, completada });
 });
 
 app.get('/foto/:token', (req, res) => {
   const sesion = dbGet('SELECT * FROM foto_sesiones WHERE token = ?', [req.params.token]);
-  if (!sesion) return res.send(buildMobilePhotoPage('invalid', null));
-  if (sesion.estatus === 'completada') return res.send(buildMobilePhotoPage('used', null));
+  if (!sesion) return res.send(buildMobilePhotoPage('invalid', null, null));
+  if (sesion.estatus === 'completada') return res.send(buildMobilePhotoPage('used', null, null));
   const now = new Date().toISOString().replace('T', ' ').slice(0, 19);
-  if (sesion.expires_at < now) return res.send(buildMobilePhotoPage('expired', null));
-  res.send(buildMobilePhotoPage('active', req.params.token));
+  if (sesion.expires_at < now) return res.send(buildMobilePhotoPage('expired', null, null));
+  res.send(buildMobilePhotoPage('active', req.params.token, sesion));
 });
 
 app.post('/api/trackings/:id/errores-url', (req, res) => {

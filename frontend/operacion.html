@@ -1995,6 +1995,30 @@ function renderInspeccion() {
 
                 <div style="margin-bottom:8px">
                   <div class="section-title" style="margin-bottom:8px">Fotografías de evidencia (obligatorias)</div>
+
+                  <!-- Multi-foto QR: 1 QR para las 3 fotos -->
+                  <div id="mq-skuev-wrap" style="margin-bottom:10px">
+                    <div id="mq-skuev-idle">
+                      <button class="btn btn-secondary btn-sm w-full" style="justify-content:center;display:flex;align-items:center;gap:6px" onclick="iniciarMultiQRSKUEv()">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><rect x="3" y="3" width="5" height="5"/><rect x="16" y="3" width="5" height="5"/><rect x="3" y="16" width="5" height="5"/><path d="M21 16h-3v3"/><path d="M18 16v-3h3"/><path d="M11 3h2v2h-2z"/><path d="M11 8h2v2h-2z"/><path d="M16 11h2v2h-2z"/><path d="M11 13h2v2h-2z"/><path d="M11 18h2v2h-2z"/></svg>
+                        📱 Tomar las 3 fotos con un solo QR
+                      </button>
+                    </div>
+                    <div id="mq-skuev-activo" class="hidden" style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);padding:12px;text-align:center">
+                      <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px">Escanea con tu teléfono para tomar las 3 fotos</div>
+                      <div id="mq-skuev-qr-div" style="display:inline-block;background:#fff;padding:6px;border-radius:6px;margin-bottom:8px;line-height:0"></div>
+                      <div id="mq-skuev-progress" style="font-size:12px;font-weight:700;color:var(--text-secondary);margin-bottom:4px">Esperando fotos... (0/3)</div>
+                      <div id="mq-skuev-thumbs" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:6px"></div>
+                      <div class="spinner" id="mq-skuev-spinner" style="width:14px;height:14px;border-width:2px;margin:0 auto 4px"></div>
+                      <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:4px;max-width:140px;margin:0 auto" onclick="cancelarMultiQRSKUEv()">✕ Cancelar</button>
+                    </div>
+                    <div id="mq-skuev-done" class="hidden" style="background:rgba(22,163,74,.08);border:1px solid rgba(22,163,74,.3);border-radius:var(--radius-sm);padding:10px;text-align:center">
+                      <div style="color:var(--accent-green);font-weight:700;font-size:12px;margin-bottom:6px">✅ 3 fotos recibidas con un solo QR</div>
+                      <div id="mq-skuev-done-thumbs" style="display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:6px"></div>
+                      <button class="btn btn-secondary btn-sm" style="font-size:10px;padding:4px;max-width:140px;margin:0 auto" onclick="resetMultiQRSKUEv()">↩ Cambiar</button>
+                    </div>
+                  </div>
+
                   <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px">
 
                     <!-- ① Etiqueta del producto -->
@@ -2712,6 +2736,7 @@ async function pollQRFA(idx) {
       clearInterval(s.pollInterval);
       clearInterval(s.countdownInterval);
       s.url_foto = data.url_foto;
+      s.fotos_urls = data.fotos_urls || [data.url_foto];
       document.getElementById(`fa-qr-activo-${idx}`)?.classList.add('hidden');
       document.getElementById(`fa-qr-recibida-${idx}`)?.classList.remove('hidden');
       const img = document.getElementById(`fa-qr-preview-${idx}`);
@@ -2829,10 +2854,17 @@ async function pollQRFEV(slot) {
   if (!s?.token) return;
   try {
     const data = await API.get(`/foto-sesion/${s.token}`);
+    const totalReq = data.total_fotos || 1;
+    const recibidas = (data.fotos_urls || []).filter(Boolean).length;
+    if (totalReq > 1) {
+      const cdEl = document.getElementById(`fev-qr-cd-${slot}`);
+      if (cdEl) cdEl.textContent = `${recibidas}/${totalReq} fotos`;
+    }
     if (data.estatus === 'completada' && data.url_foto) {
       clearInterval(s.pollInterval);
       clearInterval(s.countdownInterval);
       s.url_foto = data.url_foto;
+      s.fotos_urls = data.fotos_urls || [data.url_foto];
       document.getElementById(`fev-qr-activo-${slot}`)?.classList.add('hidden');
       document.getElementById(`fev-qr-recibida-${slot}`)?.classList.remove('hidden');
       const img = document.getElementById(`fev-qr-preview-${slot}`);
@@ -3371,7 +3403,8 @@ function setFotoMode(mode) {
   if (mode === 'local') limpiarQR();
 }
 
-async function iniciarSesionQR() {
+// opts: { total_fotos, contextos } — para sesiones multi-foto
+async function iniciarSesionQR(opts = {}) {
   limpiarQR();
 
   document.getElementById('qr-idle').classList.add('hidden');
@@ -3388,16 +3421,16 @@ async function iniciarSesionQR() {
       tracking_id: state.tracking?.id || null,
       detalle_sku_id: document.getElementById('error-detalle-id')?.value || null,
       contexto: 'error-evidencia',
+      total_fotos: opts.total_fotos || 1,
+      contextos: opts.contextos || [],
     });
-    qrSesion = sesion;
+    qrSesion = { ...sesion, total_fotos: opts.total_fotos || 1, fotos_urls: [] };
 
     qrDiv.innerHTML = '';
     new QRCode(qrDiv, {
       text: sesion.url,
-      width: 220,
-      height: 220,
-      colorDark: '#000000',
-      colorLight: '#ffffff',
+      width: 220, height: 220,
+      colorDark: '#000000', colorLight: '#ffffff',
       correctLevel: QRCode.CorrectLevel.M,
     });
 
@@ -3433,10 +3466,24 @@ async function pollQR() {
   if (!qrSesion?.token) return;
   try {
     const data = await API.get(`/foto-sesion/${qrSesion.token}`);
-    if (data.estatus === 'completada' && data.url_foto) {
+    const totalReq = qrSesion.total_fotos || 1;
+    const recibidas = (data.fotos_urls || []).filter(Boolean).length;
+
+    // Show progress for multi-photo sessions
+    if (totalReq > 1) {
+      const progressEl = document.getElementById('qr-spinner');
+      if (progressEl && recibidas > 0) {
+        progressEl.insertAdjacentHTML('afterend',
+          `<div id="qr-progress-text" style="font-size:11px;color:var(--accent-cyan);font-weight:700;margin-bottom:4px">` +
+          `${recibidas}/${totalReq} fotos recibidas</div>`);
+      }
+    }
+
+    if (data.estatus === 'completada') {
       clearInterval(qrPollInterval);
       clearInterval(qrCountdownInterval);
       qrSesion.url_foto = data.url_foto;
+      qrSesion.fotos_urls = data.fotos_urls || [data.url_foto];
       document.getElementById('qr-activo').classList.add('hidden');
       document.getElementById('qr-recibida').classList.remove('hidden');
       document.getElementById('foto-qr-preview').src = data.url_foto;
@@ -3470,6 +3517,119 @@ function cerrarModalError() {
   }
 }
 // --- fin QR Foto Sesion ---
+
+// ── Multi-QR sesión (SKU nuevos: 3 fotos con 1 QR) ──────────────────────────
+let mqSesionSKUEv = null;
+let mqPollSKUEv = null;
+
+async function iniciarMultiQRSKUEv() {
+  if (mqPollSKUEv) clearInterval(mqPollSKUEv);
+  document.getElementById('mq-skuev-idle').classList.add('hidden');
+  document.getElementById('mq-skuev-activo').classList.remove('hidden');
+  document.getElementById('mq-skuev-done').classList.add('hidden');
+  document.getElementById('mq-skuev-progress').textContent = 'Esperando fotos... (0/3)';
+  document.getElementById('mq-skuev-thumbs').innerHTML = '';
+
+  const qrDiv = document.getElementById('mq-skuev-qr-div');
+  qrDiv.innerHTML = '<div class="spinner" style="width:20px;height:20px;border-width:2px;margin:8px auto"></div>';
+
+  try {
+    const sesion = await API.post('/foto-sesion', {
+      tracking_id: state.tracking?.id || null,
+      total_fotos: 3,
+      contextos: ['Foto de etiqueta', 'Foto de insumos/composición', 'Foto del producto completo'],
+      contexto: 'sku-nuevo-evidencia',
+    });
+    mqSesionSKUEv = sesion;
+
+    qrDiv.innerHTML = '';
+    const qr = new QRCode(qrDiv, {
+      text: sesion.url,
+      width: 180, height: 180,
+      colorDark: '#000000', colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M,
+    });
+    setTimeout(() => {
+      const c = qrDiv.querySelector('canvas');
+      if (c) { c.style.width = '100%'; c.style.height = 'auto'; }
+      const img = qrDiv.querySelector('img');
+      if (img) { img.style.width = '100%'; img.style.height = 'auto'; }
+    }, 50);
+
+    mqPollSKUEv = setInterval(pollMultiQRSKUEv, 2000);
+  } catch(e) {
+    qrDiv.innerHTML = '<div style="color:var(--accent-red);font-size:11px;padding:8px">Error al generar QR</div>';
+  }
+}
+
+async function pollMultiQRSKUEv() {
+  if (!mqSesionSKUEv?.token) return;
+  try {
+    const data = await API.get(`/foto-sesion/${mqSesionSKUEv.token}`);
+    const urls = (data.fotos_urls || []).filter(Boolean);
+    document.getElementById('mq-skuev-progress').textContent = `Esperando fotos... (${urls.length}/3)`;
+
+    // Show thumbnails as they arrive
+    const thumbsEl = document.getElementById('mq-skuev-thumbs');
+    if (urls.length > 0) {
+      thumbsEl.innerHTML = urls.map(u => `<img src="${u}" style="width:48px;height:48px;border-radius:6px;object-fit:cover;border:1px solid var(--border)">`).join('');
+    }
+
+    if (data.estatus === 'completada') {
+      clearInterval(mqPollSKUEv);
+      mqSesionSKUEv.fotos_urls = data.fotos_urls || [];
+      document.getElementById('mq-skuev-activo').classList.add('hidden');
+      document.getElementById('mq-skuev-done').classList.remove('hidden');
+
+      // Fill done thumbnails
+      const labels = ['① Etiqueta', '② Insumos', '③ Pieza'];
+      document.getElementById('mq-skuev-done-thumbs').innerHTML = (data.fotos_urls || []).map((u, i) =>
+        u ? `<div style="text-align:center"><img src="${u}" style="width:56px;height:56px;border-radius:6px;object-fit:cover;border:1px solid var(--accent-green)"><div style="font-size:9px;color:var(--text-muted);margin-top:2px">${labels[i] || ''}</div></div>` : ''
+      ).join('');
+
+      // Map photos to evidence slots
+      const [urlEtiqueta, urlInsumos, urlPieza] = data.fotos_urls || [];
+      if (urlEtiqueta) applyMultiQRToSlot('etiqueta', urlEtiqueta);
+      if (urlInsumos)  applyMultiQRToSlot('insumos',  urlInsumos);
+      if (urlPieza)    applyMultiQRToSlot('pieza',    urlPieza);
+    }
+  } catch(e) {}
+}
+
+function applyMultiQRToSlot(slot, url) {
+  if (!fotosEvidenciaQR[slot]) fotosEvidenciaQR[slot] = {};
+  fotosEvidenciaQR[slot].url_foto = url;
+  fotosEvidenciaQR[slot].mode = 'qr';
+  // Show as received in the per-slot QR UI if visible
+  const prevEl = document.getElementById(`fev-qr-preview-${slot}`);
+  const recibidaEl = document.getElementById(`fev-qr-recibida-${slot}`);
+  const activoEl = document.getElementById(`fev-qr-activo-${slot}`);
+  if (prevEl) prevEl.src = url;
+  if (recibidaEl) recibidaEl.classList.remove('hidden');
+  if (activoEl) activoEl.classList.add('hidden');
+  const idleEl = document.getElementById(`fev-qr-idle-${slot}`);
+  if (idleEl) idleEl.classList.add('hidden');
+  // Also update local file preview as fallback
+  const prevLocalEl = document.getElementById(`prev-${slot}`);
+  if (prevLocalEl) { prevLocalEl.src = url; prevLocalEl.classList.remove('hidden'); }
+}
+
+function cancelarMultiQRSKUEv() {
+  if (mqPollSKUEv) clearInterval(mqPollSKUEv);
+  mqSesionSKUEv = null;
+  document.getElementById('mq-skuev-activo').classList.add('hidden');
+  document.getElementById('mq-skuev-idle').classList.remove('hidden');
+}
+
+function resetMultiQRSKUEv() {
+  cancelarMultiQRSKUEv();
+  document.getElementById('mq-skuev-done').classList.add('hidden');
+  document.getElementById('mq-skuev-idle').classList.remove('hidden');
+  // Clear slot data
+  ['etiqueta', 'insumos', 'pieza'].forEach(slot => {
+    if (fotosEvidenciaQR[slot]) { fotosEvidenciaQR[slot].url_foto = null; fotosEvidenciaQR[slot].mode = 'local'; }
+  });
+}
 
 function previewFoto(input) {
   const file = input.files[0];
@@ -3737,6 +3897,7 @@ async function pollQRMA() {
       clearInterval(maPollInterval);
       clearInterval(maCountdownInterval);
       maSesionQR.url_foto = data.url_foto;
+      maSesionQR.fotos_urls = data.fotos_urls || [data.url_foto];
       document.getElementById('ma-qr-activo').classList.add('hidden');
       document.getElementById('ma-qr-recibida').classList.remove('hidden');
       document.getElementById('ma-foto-qr-preview').src = data.url_foto;
