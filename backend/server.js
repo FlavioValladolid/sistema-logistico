@@ -1219,7 +1219,7 @@ app.post('/api/trackings/:id/cerrar', (req, res) => {
     return res.status(400).json({ error: 'Hay errores sin fotografía de evidencia. No se puede cerrar.' });
   }
 
-  const { caja_pallet_id } = req.body;
+  const { caja_pallet_id, numero_orden, nombre_destinatario } = req.body;
   if (!caja_pallet_id) {
     return res.status(400).json({ error: 'Selecciona una caja/pallet para cerrar el tracking' });
   }
@@ -1228,12 +1228,22 @@ app.post('/api/trackings/:id/cerrar', (req, res) => {
   if (caja.cliente_id !== tracking.cliente_id) return res.status(400).json({ error: 'La caja no pertenece a este cliente' });
   if (caja.estatus !== 'Abierta') return res.status(400).json({ error: 'La caja está cerrada' });
 
+  // Validar campos requeridos por configuración del cliente
+  const cliente = dbGet('SELECT requiere_orden, requiere_nombre_destinatario FROM clientes WHERE id=?', [tracking.cliente_id]);
+  const ordenFinal = (numero_orden || '').trim() || tracking.numero_orden || null;
+  const destFinal  = (nombre_destinatario || '').trim() || tracking.nombre_destinatario || null;
+  if (cliente?.requiere_orden && !ordenFinal) {
+    return res.status(400).json({ error: 'El número de orden es requerido para este cliente' });
+  }
+  if (cliente?.requiere_nombre_destinatario && !destFinal) {
+    return res.status(400).json({ error: 'El nombre del destinatario es requerido para este cliente' });
+  }
+
   // Validar que el tipo de caja corresponda al contenido del tracking
   const erroresTracking = dbAll('SELECT tipo_error FROM errores WHERE tracking_id=?', [req.params.id]);
   const tieneDanado  = erroresTracking.some(e => e.tipo_error === 'Calidad' || e.tipo_error === 'Otro');
   const tieneNoMarca = erroresTracking.some(e => e.tipo_error === 'Mercancía ajena');
   const tieneRetrabajos = (dbGet('SELECT COUNT(*) as cnt FROM retrabajos WHERE tracking_id=?', [req.params.id])?.cnt || 0) > 0;
-  // Piezas dañadas con retrabajo asignado se corrigen → Good Condition
   const tipoRequerido = (tieneDanado && !tieneRetrabajos) ? 'Damage'
     : tieneNoMarca ? 'Non-brand merchandise'
     : 'Good Condition';
@@ -1243,8 +1253,10 @@ app.post('/api/trackings/:id/cerrar', (req, res) => {
     return res.status(400).json({ error: `Este tracking debe guardarse en una caja de tipo "${labels[tipoRequerido]}" según su contenido. La caja seleccionada es "${labels[caja.tipo]}".` });
   }
 
-  dbRun(`UPDATE trackings SET estatus='cerrado', closed_at=datetime('now', 'localtime'), caja_id=?, caja_pallet_id=? WHERE id=?`,
-    [caja.nombre, caja_pallet_id, req.params.id]);
+  dbRun(
+    `UPDATE trackings SET estatus='cerrado', closed_at=datetime('now', 'localtime'), caja_id=?, caja_pallet_id=?, numero_orden=?, nombre_destinatario=? WHERE id=?`,
+    [caja.nombre, caja_pallet_id, ordenFinal, destFinal, req.params.id]
+  );
   res.json({ mensaje: 'Tracking cerrado exitosamente' });
 });
 

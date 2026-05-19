@@ -4258,6 +4258,9 @@ async function cerrarTracking() {
     optionsHtml = '<option value="">— Error al cargar —</option>';
   }
 
+  const requiereOrden = parseInt(tk.requiere_orden) === 1;
+  const requiereDest  = parseInt(tk.requiere_nombre_destinatario) === 1;
+
   modalBody.innerHTML = `
     <p style="margin:0 0 12px;color:var(--text-secondary);font-size:14px">
       Selecciona la caja/pallet donde se guardará esta inspección. Una vez cerrado no se podrán agregar más SKUs.
@@ -4272,6 +4275,18 @@ async function cerrarTracking() {
         ${optionsHtml}
       </select>
       <div class="form-hint"><a href="cajas.html" target="_blank" style="color:var(--accent-cyan)">Administrar cajas →</a></div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Número de Orden${requiereOrden ? ' *' : ''}</label>
+      <input type="text" class="form-control form-control-mono" id="cierre-numero-orden"
+        placeholder="${requiereOrden ? 'Requerido' : 'Opcional'}"
+        value="${escHTML(tk.numero_orden || '')}">
+    </div>
+    <div class="form-group">
+      <label class="form-label">Nombre del Destinatario${requiereDest ? ' *' : ''}</label>
+      <input type="text" class="form-control" id="cierre-nombre-destinatario"
+        placeholder="${requiereDest ? 'Requerido' : 'Opcional'}"
+        value="${escHTML(tk.nombre_destinatario || '')}">
     </div>`;
 
   openModal('modal-cierre');
@@ -4279,10 +4294,17 @@ async function cerrarTracking() {
 
 async function confirmarCierre() {
   try {
-    const selectEl = document.getElementById('cierre-caja-select');
-    const cajaPalletId = selectEl?.value || '';
+    const cajaPalletId = document.getElementById('cierre-caja-select')?.value || '';
     if (!cajaPalletId) { toast('Selecciona una caja/pallet para cerrar', 'error'); return; }
-    await API.post(`/trackings/${state.tracking.id}/cerrar`, { caja_pallet_id: cajaPalletId });
+
+    const numeroOrden        = document.getElementById('cierre-numero-orden')?.value.trim() || '';
+    const nombreDestinatario = document.getElementById('cierre-nombre-destinatario')?.value.trim() || '';
+
+    await API.post(`/trackings/${state.tracking.id}/cerrar`, {
+      caja_pallet_id: cajaPalletId,
+      numero_orden: numeroOrden || null,
+      nombre_destinatario: nombreDestinatario || null,
+    });
     state.tracking = await API.get(`/trackings/${state.tracking.id}`);
     closeModal('modal-cierre');
     toast('Tracking cerrado exitosamente ✓');
