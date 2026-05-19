@@ -1260,6 +1260,17 @@ app.post('/api/trackings/:id/cerrar', (req, res) => {
   res.json({ mensaje: 'Tracking cerrado exitosamente' });
 });
 
+app.put('/api/trackings/:id/orden-destinatario', (req, res) => {
+  const tracking = dbGet('SELECT id FROM trackings WHERE id=?', [req.params.id]);
+  if (!tracking) return res.status(404).json({ error: 'Tracking no encontrado' });
+  const { numero_orden, nombre_destinatario } = req.body;
+  dbRun(
+    `UPDATE trackings SET numero_orden=?, nombre_destinatario=? WHERE id=?`,
+    [(numero_orden || '').trim() || null, (nombre_destinatario || '').trim() || null, req.params.id]
+  );
+  res.json({ mensaje: 'Actualizado correctamente' });
+});
+
 // Reasignar caja/pallet a un tracking ya cerrado (o pre-asignar a uno abierto)
 app.put('/api/trackings/:id/caja', (req, res) => {
   const tracking = dbGet('SELECT * FROM trackings WHERE id=?', [req.params.id]);

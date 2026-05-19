@@ -422,6 +422,33 @@ document.body.insertAdjacentHTML('beforeend', `
     </div>
   </div>
 
+  <!-- Modal: Editar Orden / Destinatario -->
+  <div id="modal-orden-dest" class="modal-overlay">
+    <div class="modal" style="max-width:380px">
+      <div class="modal-header">
+        <span class="modal-title">✏ Editar Orden / Destinatario</span>
+        <button class="modal-close" onclick="closeModal('modal-orden-dest')">×</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label class="form-label">Número de Orden</label>
+          <input type="text" class="form-control form-control-mono" id="edit-numero-orden" placeholder="Opcional">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Nombre del Destinatario</label>
+          <input type="text" class="form-control" id="edit-nombre-destinatario" placeholder="Opcional">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-orden-dest')">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarOrdenDestinatario()">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="20 6 9 17 4 12"/></svg>
+          Guardar
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Mercancía no pertenece a cliente -->
   <div id="modal-mercancia-ajena" class="modal-overlay">
     <div class="modal" style="max-width:480px">
@@ -1117,6 +1144,9 @@ function renderG0Inspeccion() {
           <span class="info-key">${t('clients.dest_name')}</span>
           <span class="info-val" style="color:var(--accent-cyan)">${escHTML(tk.nombre_destinatario)}</span>
         </div>` : ''}
+        <div class="info-row" style="justify-content:flex-end;padding:2px 0">
+          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="abrirEditOrdenDest()">✏ Orden / Destinatario</button>
+        </div>
         <div class="info-row">
           <span class="info-key">${t('op.lbl_box')}</span>
           <span class="info-val font-mono">${escHTML(tk.caja_id)}</span>
@@ -2298,6 +2328,9 @@ function renderInspeccion() {
           <span class="info-key">${t('clients.dest_name')}</span>
           <span class="info-val" style="color:var(--accent-cyan)">${escHTML(tk.nombre_destinatario)}</span>
         </div>` : ''}
+        <div class="info-row" style="justify-content:flex-end;padding:2px 0">
+          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="abrirEditOrdenDest()">✏ Orden / Destinatario</button>
+        </div>
         <div class="info-row">
           <span class="info-key">${t('op.lbl_box')}</span>
           <span class="info-val">
@@ -4312,6 +4345,33 @@ async function confirmarCierre() {
     window.scrollTo({ top: 0, behavior: 'smooth' });
   } catch(e) {
     toast(e.error || 'Error al cerrar', 'error');
+  }
+}
+
+// ========================
+// EDITAR ORDEN / DESTINATARIO (post-cierre)
+// ========================
+function abrirEditOrdenDest() {
+  document.getElementById('edit-numero-orden').value = state.tracking?.numero_orden || '';
+  document.getElementById('edit-nombre-destinatario').value = state.tracking?.nombre_destinatario || '';
+  openModal('modal-orden-dest');
+}
+
+async function guardarOrdenDestinatario() {
+  const numeroOrden        = document.getElementById('edit-numero-orden').value.trim();
+  const nombreDestinatario = document.getElementById('edit-nombre-destinatario').value.trim();
+  try {
+    await API.put(`/trackings/${state.tracking.id}/orden-destinatario`, {
+      numero_orden: numeroOrden || null,
+      nombre_destinatario: nombreDestinatario || null,
+    });
+    state.tracking.numero_orden = numeroOrden || null;
+    state.tracking.nombre_destinatario = nombreDestinatario || null;
+    closeModal('modal-orden-dest');
+    toast('Datos actualizados ✓');
+    renderInspeccion();
+  } catch(e) {
+    toast(e.error || 'Error al guardar', 'error');
   }
 }
 
