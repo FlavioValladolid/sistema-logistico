@@ -52,6 +52,7 @@
 <script src="js/shell.js"></script>
 <script>
 const _pageUser = checkAuth();
+const _esReadOnly = _pageUser?.rol === 'OPERADOR';
 buildShell('Reportes', 'REPORTES', `
   <button id="btn-csv" class="btn btn-primary btn-sm" onclick="descargarCSV()" disabled style="display:none">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
@@ -459,7 +460,7 @@ async function loadCajaDetalle(cajaId, clienteId) {
                 ${t.numero_orden ? `<span class="badge badge-green" style="font-size:10px"># ${t.numero_orden}</span>` : ''}
                 ${t.tipo_retorno ? `<span class="badge badge-amber" style="font-size:10px">${t.tipo_retorno}</span>` : ''}
                 <a href="?tracking=${t.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">Ver</a>
-                <a href="operacion.html?id=${t.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">✏ Editar</a>
+                ${_esReadOnly ? '' : `<a href="operacion.html?id=${t.id}" class="btn btn-ghost btn-sm" style="padding:2px 8px;font-size:11px">✏ Editar</a>`}
               </div>
               ${t.razon_retorno ? `<div style="font-size:11px;color:var(--text-muted);padding-left:2px">RTS: ${t.razon_retorno}</div>` : ''}
             </div>

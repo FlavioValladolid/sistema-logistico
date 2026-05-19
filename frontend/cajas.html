@@ -13,7 +13,8 @@
 <script src="js/shell.js"></script>
 <script>
 const _pageUser = checkAuth();
-buildShell('Cajas / Pallets', 'ADMINISTRACIÓN / CAJAS Y PALLETS', `
+const _esReadOnly = _pageUser?.rol === 'OPERADOR';
+buildShell('Cajas / Pallets', 'ADMINISTRACIÓN / CAJAS Y PALLETS', _esReadOnly ? '' : `
   <button class="btn btn-primary btn-sm" id="btn-nueva-caja">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
     Nueva Caja/Pallet
@@ -230,7 +231,7 @@ function renderTabla() {
                   <button class="btn btn-ghost btn-sm" onclick="verQR('${c.nombre}')">QR</button>
                   <button class="btn btn-secondary btn-sm" onclick='imprimirEtiqueta(${JSON.stringify(c)})'>🏷 Etiqueta</button>
                   ${c.estatus === 'Abierta'
-                    ? `<button class="btn btn-danger btn-sm" onclick="cerrarCaja('${c.id}','${c.nombre}')">Cerrar</button>`
+                    ? (_esReadOnly ? '' : `<button class="btn btn-danger btn-sm" onclick="cerrarCaja('${c.id}','${c.nombre}')">Cerrar</button>`)
                     : '<span style="font-size:11px;color:var(--text-muted)">Cerrada</span>'}
                 </div>
               </td>
@@ -394,12 +395,14 @@ function imprimirEtiqueta(caja) {
   win.document.close();
 }
 
-document.getElementById('btn-nueva-caja').onclick = function() {
-  document.getElementById('cj-cliente').value = '';
-  document.getElementById('cj-tipo').value = '';
-  document.getElementById('cj-preview').style.display = 'none';
-  openModal('modal-caja');
-};
+if (!_esReadOnly) {
+  document.getElementById('btn-nueva-caja').onclick = function() {
+    document.getElementById('cj-cliente').value = '';
+    document.getElementById('cj-tipo').value = '';
+    document.getElementById('cj-preview').style.display = 'none';
+    openModal('modal-caja');
+  };
+}
 
 loadAll();
 </script>
