@@ -423,25 +423,43 @@ document.body.insertAdjacentHTML('beforeend', `
   </div>
 
   <!-- Modal: Editar Orden / Destinatario -->
-  <div id="modal-orden-dest" class="modal-overlay">
-    <div class="modal" style="max-width:380px">
+  <div id="modal-edit-orden" class="modal-overlay">
+    <div class="modal" style="max-width:340px">
       <div class="modal-header">
-        <span class="modal-title">✏ Editar Orden / Destinatario</span>
-        <button class="modal-close" onclick="closeModal('modal-orden-dest')">×</button>
+        <span class="modal-title">✏ Número de Orden</span>
+        <button class="modal-close" onclick="closeModal('modal-edit-orden')">×</button>
       </div>
       <div class="modal-body">
         <div class="form-group">
           <label class="form-label">Número de Orden</label>
           <input type="text" class="form-control form-control-mono" id="edit-numero-orden" placeholder="Opcional">
         </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-edit-orden')">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarCampoOrdenDest('orden')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="20 6 9 17 4 12"/></svg>
+          Guardar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal-edit-dest" class="modal-overlay">
+    <div class="modal" style="max-width:340px">
+      <div class="modal-header">
+        <span class="modal-title">✏ Nombre del Destinatario</span>
+        <button class="modal-close" onclick="closeModal('modal-edit-dest')">×</button>
+      </div>
+      <div class="modal-body">
         <div class="form-group">
           <label class="form-label">Nombre del Destinatario</label>
           <input type="text" class="form-control" id="edit-nombre-destinatario" placeholder="Opcional">
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeModal('modal-orden-dest')">Cancelar</button>
-        <button class="btn btn-primary" onclick="guardarOrdenDestinatario()">
+        <button class="btn btn-secondary" onclick="closeModal('modal-edit-dest')">Cancelar</button>
+        <button class="btn btn-primary" onclick="guardarCampoOrdenDest('dest')">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="15" height="15"><polyline points="20 6 9 17 4 12"/></svg>
           Guardar
         </button>
@@ -1134,18 +1152,15 @@ function renderG0Inspeccion() {
           <span class="info-key">Tracking</span>
           <span class="info-val font-mono" style="font-size:11px">${escHTML(tk.tracking_number)}</span>
         </div>
-        ${tk.numero_orden ? `
         <div class="info-row">
           <span class="info-key">Orden #</span>
-          <span class="info-val font-mono" style="color:var(--accent-cyan)">${escHTML(tk.numero_orden)}</span>
-        </div>` : ''}
-        ${tk.nombre_destinatario ? `
+          <span class="info-val font-mono" style="color:var(--accent-cyan);flex:1">${tk.numero_orden ? escHTML(tk.numero_orden) : '<span style="color:var(--text-muted)">—</span>'}</span>
+          <button onclick="abrirEditOrdenDest('orden')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);padding:2px 4px;display:flex;align-items:center;flex-shrink:0" onmouseover="this.style.color='var(--accent-cyan)'" onmouseout="this.style.color='var(--text-muted)'" title="Editar Orden #"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        </div>
         <div class="info-row">
           <span class="info-key">${t('clients.dest_name')}</span>
-          <span class="info-val" style="color:var(--accent-cyan)">${escHTML(tk.nombre_destinatario)}</span>
-        </div>` : ''}
-        <div class="info-row" style="justify-content:flex-end;padding:2px 0">
-          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="abrirEditOrdenDest()">✏ Orden / Destinatario</button>
+          <span class="info-val" style="color:var(--accent-cyan);flex:1">${tk.nombre_destinatario ? escHTML(tk.nombre_destinatario) : '<span style="color:var(--text-muted)">—</span>'}</span>
+          <button onclick="abrirEditOrdenDest('dest')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);padding:2px 4px;display:flex;align-items:center;flex-shrink:0" onmouseover="this.style.color='var(--accent-cyan)'" onmouseout="this.style.color='var(--text-muted)'" title="Editar Destinatario"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         </div>
         <div class="info-row">
           <span class="info-key">${t('op.lbl_box')}</span>
@@ -2318,18 +2333,15 @@ function renderInspeccion() {
           <span class="info-key">Tracking #</span>
           <span class="info-val" style="color:var(--accent-cyan)">${tk.tracking_number}</span>
         </div>
-        ${tk.numero_orden ? `
         <div class="info-row">
           <span class="info-key">Orden #</span>
-          <span class="info-val font-mono" style="color:var(--accent-cyan)">${escHTML(tk.numero_orden)}</span>
-        </div>` : ''}
-        ${tk.nombre_destinatario ? `
+          <span class="info-val font-mono" style="color:var(--accent-cyan);flex:1">${tk.numero_orden ? escHTML(tk.numero_orden) : '<span style="color:var(--text-muted)">—</span>'}</span>
+          <button onclick="abrirEditOrdenDest('orden')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);padding:2px 4px;display:flex;align-items:center;flex-shrink:0" onmouseover="this.style.color='var(--accent-cyan)'" onmouseout="this.style.color='var(--text-muted)'" title="Editar Orden #"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
+        </div>
         <div class="info-row">
           <span class="info-key">${t('clients.dest_name')}</span>
-          <span class="info-val" style="color:var(--accent-cyan)">${escHTML(tk.nombre_destinatario)}</span>
-        </div>` : ''}
-        <div class="info-row" style="justify-content:flex-end;padding:2px 0">
-          <button class="btn btn-ghost btn-sm" style="font-size:10px;padding:2px 6px" onclick="abrirEditOrdenDest()">✏ Orden / Destinatario</button>
+          <span class="info-val" style="color:var(--accent-cyan);flex:1">${tk.nombre_destinatario ? escHTML(tk.nombre_destinatario) : '<span style="color:var(--text-muted)">—</span>'}</span>
+          <button onclick="abrirEditOrdenDest('dest')" style="background:none;border:none;cursor:pointer;color:var(--text-muted);padding:2px 4px;display:flex;align-items:center;flex-shrink:0" onmouseover="this.style.color='var(--accent-cyan)'" onmouseout="this.style.color='var(--text-muted)'" title="Editar Destinatario"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="12" height="12"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg></button>
         </div>
         <div class="info-row">
           <span class="info-key">${t('op.lbl_box')}</span>
@@ -4351,15 +4363,22 @@ async function confirmarCierre() {
 // ========================
 // EDITAR ORDEN / DESTINATARIO (post-cierre)
 // ========================
-function abrirEditOrdenDest() {
-  document.getElementById('edit-numero-orden').value = state.tracking?.numero_orden || '';
-  document.getElementById('edit-nombre-destinatario').value = state.tracking?.nombre_destinatario || '';
-  openModal('modal-orden-dest');
+function abrirEditOrdenDest(field) {
+  if (field === 'dest') {
+    document.getElementById('edit-nombre-destinatario').value = state.tracking?.nombre_destinatario || '';
+    openModal('modal-edit-dest');
+    setTimeout(() => document.getElementById('edit-nombre-destinatario')?.focus(), 50);
+  } else {
+    document.getElementById('edit-numero-orden').value = state.tracking?.numero_orden || '';
+    openModal('modal-edit-orden');
+    setTimeout(() => document.getElementById('edit-numero-orden')?.focus(), 50);
+  }
 }
 
-async function guardarOrdenDestinatario() {
-  const numeroOrden        = document.getElementById('edit-numero-orden').value.trim();
-  const nombreDestinatario = document.getElementById('edit-nombre-destinatario').value.trim();
+async function guardarCampoOrdenDest(field) {
+  const modalId = field === 'dest' ? 'modal-edit-dest' : 'modal-edit-orden';
+  const numeroOrden        = field === 'orden' ? document.getElementById('edit-numero-orden').value.trim() : (state.tracking?.numero_orden || null);
+  const nombreDestinatario = field === 'dest'  ? document.getElementById('edit-nombre-destinatario').value.trim() : (state.tracking?.nombre_destinatario || null);
   try {
     await API.put(`/trackings/${state.tracking.id}/orden-destinatario`, {
       numero_orden: numeroOrden || null,
@@ -4367,7 +4386,7 @@ async function guardarOrdenDestinatario() {
     });
     state.tracking.numero_orden = numeroOrden || null;
     state.tracking.nombre_destinatario = nombreDestinatario || null;
-    closeModal('modal-orden-dest');
+    closeModal(modalId);
     toast('Datos actualizados ✓');
     renderInspeccion();
   } catch(e) {
