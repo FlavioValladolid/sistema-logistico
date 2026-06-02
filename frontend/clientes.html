@@ -203,6 +203,20 @@ const modalHtml = `
           </div>
         </div>
 
+        <div id="seccion-fotos-sku-nuevo" style="margin-top:16px">
+          <div class="section-title" style="margin-top:0">SKU no registrado</div>
+          <div class="flex items-center justify-between" style="background:var(--bg-elevated);padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border)">
+            <div>
+              <div style="font-weight:600;font-size:13px">Requerir fotos al registrar SKU nuevo</div>
+              <div class="form-hint" style="margin:0">Solicita 3 fotografías (etiqueta, insumos, pieza) cuando el número de parte no está en catálogo</div>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" id="cliente-requiere-fotos-sku-nuevo">
+              <span class="toggle-slider"></span>
+            </label>
+          </div>
+        </div>
+
         <div id="seccion-g0" class="hidden" style="margin-top:16px">
           <div class="section-title" style="margin-top:0">${t('clients.g0_section')}</div>
           <div style="display:flex;flex-direction:column;gap:14px">
@@ -274,6 +288,7 @@ function onGradoChange() {
   document.getElementById('pct-group').style.display = g === 2 ? 'block' : 'none';
   document.getElementById('seccion-fotos-adicionales').classList.toggle('hidden', g !== 3);
   document.getElementById('seccion-g0').classList.toggle('hidden', g !== 0);
+  document.getElementById('seccion-fotos-sku-nuevo').classList.toggle('hidden', g === 0);
   if (g !== 3) document.getElementById('cliente-fotos-adicionales').value = '0';
 }
 
@@ -384,6 +399,8 @@ function abrirNuevo() {
   document.getElementById('seccion-g0').classList.add('hidden');
   document.getElementById('cliente-validacion-piezas').checked = false;
   document.getElementById('cliente-validacion-condicion').checked = false;
+  document.getElementById('cliente-requiere-fotos-sku-nuevo').checked = true;
+  document.getElementById('seccion-fotos-sku-nuevo').classList.remove('hidden');
   document.getElementById('modal-cliente-title').textContent = t('clients.modal_new');
   onGradoChange();
   onTipoAlmacenamientoChange();
@@ -413,9 +430,11 @@ function editarCliente(id) {
   document.getElementById('cliente-requiere-nombre-destinatario').checked = !!c.requiere_nombre_destinatario;
   document.getElementById('cliente-validacion-piezas').checked = !!c.validacion_piezas;
   document.getElementById('cliente-validacion-condicion').checked = !!c.validacion_condicion;
+  document.getElementById('cliente-requiere-fotos-sku-nuevo').checked = c.requiere_fotos_sku_nuevo !== 0 && c.requiere_fotos_sku_nuevo !== false;
   document.getElementById('seccion-tipo-mercancia').classList.toggle('hidden', !c.modulo_retrabajo);
   document.getElementById('seccion-fotos-adicionales').classList.toggle('hidden', parseInt(c.grado_confianza) !== 3);
   document.getElementById('seccion-g0').classList.toggle('hidden', parseInt(c.grado_confianza) !== 0);
+  document.getElementById('seccion-fotos-sku-nuevo').classList.toggle('hidden', parseInt(c.grado_confianza) === 0);
   document.getElementById('modal-cliente-title').textContent = t('clients.modal_edit');
   onGradoChange();
   onTipoAlmacenamientoChange();
@@ -443,6 +462,7 @@ async function guardarCliente() {
     requiere_nombre_destinatario: document.getElementById('cliente-requiere-nombre-destinatario').checked,
     validacion_piezas: document.getElementById('cliente-validacion-piezas').checked,
     validacion_condicion: document.getElementById('cliente-validacion-condicion').checked,
+    requiere_fotos_sku_nuevo: document.getElementById('cliente-requiere-fotos-sku-nuevo').checked,
   };
 
   try {

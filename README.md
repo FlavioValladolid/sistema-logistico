@@ -10,7 +10,13 @@ npm install
 node server.js
 ```
 
-Luego abrir: **http://localhost:3000**
+Puerto configurable vía variable de entorno:
+
+```bash
+PORT=3001 node server.js
+```
+
+Luego abrir: **http://localhost:3000** (o el puerto configurado)
 
 ---
 
@@ -19,7 +25,7 @@ Luego abrir: **http://localhost:3000**
 ### Administración
 
 **Clientes**
-- Configuración de Grado de Confianza (G1 / G2 / G3)
+- Configuración de Grado de Confianza (G0 / G1 / G2 / G3)
 - Tipo de almacenamiento: Por Caja o Por Pallet
 - Porcentaje de muestreo (solo G2)
 - Módulos opcionales: Calidad y Retrabajos
@@ -29,6 +35,9 @@ Luego abrir: **http://localhost:3000**
 - **Información de Paquete (configurable por cliente):**
   - Número de Orden: si está activo, se captura obligatoriamente al iniciar la operación
   - Tipo de Retorno (RMA / RTS): si está activo, se selecciona obligatoriamente al iniciar; si es RTS se requiere razón de retorno
+  - Nombre del Destinatario: campo requerido al inicio si está activado
+- **SKU no registrado:**
+  - `requiere_fotos_sku_nuevo` — si está activo (default), solicita 3 fotografías de evidencia (etiqueta, insumos, pieza) al registrar un número de parte que no existe en catálogo. Puede desactivarse por cliente para flujos más ágiles. No aplica en G0.
 
 **Catálogo de SKUs**
 - Registro de productos por cliente
@@ -40,19 +49,24 @@ Luego abrir: **http://localhost:3000**
 
 **Flujo de un Tracking:**
 
-1. **Inicio** — Se selecciona cliente, operador, número de tracking y cantidad declarada. Si el cliente tiene configurados campos de información de paquete, se solicitan también:
+1. **Inicio** — Se selecciona cliente, operador, número de tracking y cantidad declarada. El sistema recuerda el último cliente utilizado y lo pre-selecciona automáticamente. Si el cliente tiene configurados campos de información de paquete, se solicitan también:
    - **Número de Orden** (si está activado en el cliente)
    - **Tipo de Retorno**: RMA o RTS (si está activado). Para RTS se requiere ingresar la razón de retorno.
+   - **Nombre del Destinatario** (si está activado)
 2. **Escaneo de SKUs** — Validación por excepción según grado del cliente:
+   - G0: Flujo de recepción masiva — registro por pieza con condición (Buena / Dañada / Sin caja), sin inspección de SKU
    - G1: Solo datos logísticos, sin inspección de producto
    - G2: Inspección estadística (porcentaje configurable, default 30%)
-   - G3: Inspección al 100%, validación exhaustiva
+   - G3: Inspección al 100%, validación exhaustiva + fotos adicionales
 3. **Cierre** — Se selecciona la Caja o Pallet de destino y se cierra el tracking. El sistema valida que el tipo de caja corresponda al contenido (Good Condition / Damage / Non-brand merchandise)
+
+**Edición post-cierre:**
+- El Número de Orden y el Nombre del Destinatario pueden editarse incluso después de cerrar el tracking, desde la pantalla de operación.
 
 **SKUs no registrados en catálogo:**
 - El sistema detecta automáticamente si el SKU no existe para ese cliente
 - Se solicita: UPC (escaneado), SKU (manual), descripción, país de origen, composición
-- Se requieren 3 fotografías obligatorias: etiqueta del producto, insumos/país de origen, pieza completa
+- Si `requiere_fotos_sku_nuevo` está activo para el cliente: se requieren 3 fotografías obligatorias (etiqueta, insumos/origen, pieza completa); la sección se oculta si está desactivado
 - El SKU se guarda automáticamente en el catálogo del cliente
 
 **Validaciones activas:**
@@ -80,9 +94,15 @@ Selección directa desde el equipo (o cámara si se accede desde un dispositivo 
 7. Contador regresivo visible; en rojo cuando quedan menos de 2 minutos
 8. Botón "Generar nuevo QR" si la sesión expira antes de recibir la foto
 
+**Multi-foto con un solo QR (G3 y evidencia de SKU nuevo):**
+- Un único QR puede recibir múltiples fotos en secuencia (etiqueta → insumos → pieza)
+- Cada slot indica al teléfono qué foto tomar a continuación
+- Los modos pueden mezclarse entre slots (p. ej. foto 1 desde teléfono, foto 2 desde archivo)
+
 **Secciones que soportan captura QR:**
 - Fotografía de evidencia en el modal de registro de errores
-- Fotos adicionales requeridas por pieza (G3) — cada tarjeta tiene su propio QR independiente; los modos pueden mezclarse (p. ej. foto 1 y 3 desde teléfono, foto 2 desde archivo)
+- Fotos de evidencia al registrar SKU nuevo (cuando `requiere_fotos_sku_nuevo` está activo)
+- Fotos adicionales requeridas por pieza (G3) — cada tarjeta tiene su propio QR independiente
 
 ---
 
@@ -103,6 +123,18 @@ Al detectar discrepancias o calidad deficiente se abre el modal de error:
 | Calzado | Cambio de caja, Limpieza, Reparación de caja, Impresión de etiqueta |
 | Traje de baño | Cambio de etiqueta, Limpieza, Re-empaque, Revisión de elástico |
 | Sombreros | Cambio de etiqueta, Limpieza, Reparación de forma, Re-empaque |
+
+---
+
+### Chat de Tracking
+
+Cada tracking tiene un canal de comentarios en tiempo real:
+
+- Comentarios con usuario y timestamp
+- Indicador "En vivo" con polling automático
+- Botón "Marcar resuelto" / "Reactivar chat"
+- Envío de resumen por correo a destinatarios externos (con CC opcional)
+- Interfaz completamente internacionalizada (ES / EN)
 
 ---
 
@@ -172,6 +204,7 @@ Al detectar discrepancias o calidad deficiente se abre el modal de error:
 
 | Grado | Nombre | Inspección |
 |-------|--------|------------|
+| G0 | Recepción Masiva | Registro pieza por pieza con condición, sin validación de SKU |
 | G1 | Flujo Rápido | Solo datos logísticos, sin validación de producto |
 | G2 | Muestreo Estadístico | Porcentaje configurable (default 30%) |
 | G3 | Control Total | 100% de piezas, validación exhaustiva + fotos adicionales |
@@ -180,17 +213,24 @@ Para G1, si no se captura país de origen ni composición durante la inspección
 
 ---
 
+## Internacionalización (i18n)
+
+La interfaz soporta español e inglés. El idioma se selecciona desde el menú de usuario. Todas las etiquetas, placeholders, mensajes de error y textos de botones están externalizados en `frontend/js/i18n.js`.
+
+---
+
 ## Stack técnico
 
 | Capa | Tecnología |
 |------|-----------|
 | Backend | Node.js + Express |
-| Base de datos | SQLite via sql.js (persistido en `database.bin`) |
+| Base de datos | SQLite via better-sqlite3 (persistido en `database.bin`) |
 | Frontend | HTML / CSS / JavaScript vanilla |
 | Tipografía | Inter (UI) + IBM Plex Mono (datos) |
 | Gráficas | Chart.js 4 |
 | Fotos | Multer (almacenadas en `/uploads`) |
 | QR | QRCodeJS (CDN) |
+| i18n | Sistema propio en `js/i18n.js` (ES / EN) |
 
 ---
 
@@ -213,6 +253,7 @@ sistema-logistico/
 │   ├── css/main.css      # Estilos globales (dark/light mode)
 │   └── js/
 │       ├── app.js        # API client + utilidades compartidas
+│       ├── i18n.js       # Traducciones ES/EN
 │       └── shell.js      # Layout y navegación compartida
 └── uploads/              # Fotografías de evidencia
 ```
@@ -230,5 +271,10 @@ sistema-logistico/
 | POST | `/api/trackings/:id/cerrar` | Cierra tracking con validaciones |
 | POST | `/api/trackings/:id/errores` | Registra error con foto (multipart) |
 | POST | `/api/trackings/:id/errores-url` | Registra error con foto ya subida (QR) |
+| POST | `/api/detalles/:id/fotos-evidencia` | Sube fotos de evidencia SKU nuevo (multipart) |
+| POST | `/api/detalles/:id/fotos-evidencia-url` | Guarda fotos evidencia SKU nuevo por URL (QR) |
 | POST | `/api/detalles/:id/fotos-adicionales` | Sube fotos adicionales G3 (multipart) |
 | POST | `/api/detalles/:id/fotos-adicionales-url` | Guarda fotos adicionales G3 por URL (QR) |
+| GET | `/api/clientes` | Lista clientes con toda su configuración |
+| POST | `/api/clientes` | Crea cliente |
+| PUT | `/api/clientes/:id` | Actualiza cliente |

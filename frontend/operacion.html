@@ -426,7 +426,7 @@ document.body.insertAdjacentHTML('beforeend', `
   <div id="modal-edit-orden" class="modal-overlay">
     <div class="modal" style="max-width:340px">
       <div class="modal-header">
-        <span class="modal-title">✏ Número de Orden</span>
+        <span class="modal-title">${t('op.edit_orden_title')}</span>
         <button class="modal-close" onclick="closeModal('modal-edit-orden')">×</button>
       </div>
       <div class="modal-body">
@@ -448,7 +448,7 @@ document.body.insertAdjacentHTML('beforeend', `
   <div id="modal-edit-dest" class="modal-overlay">
     <div class="modal" style="max-width:340px">
       <div class="modal-header">
-        <span class="modal-title">✏ Nombre del Destinatario</span>
+        <span class="modal-title">${t('op.edit_dest_title')}</span>
         <button class="modal-close" onclick="closeModal('modal-edit-dest')">×</button>
       </div>
       <div class="modal-body">
@@ -559,7 +559,7 @@ document.body.insertAdjacentHTML('beforeend', `
   <div id="modal-enviar-correo" class="modal-overlay">
     <div class="modal" style="max-width:560px;width:92vw">
       <div class="modal-header">
-        <span class="modal-title">Enviar resumen por correo</span>
+        <span class="modal-title">${t('op.email_modal_title')}</span>
         <button class="modal-close" onclick="closeModal('modal-enviar-correo')">×</button>
       </div>
       <div class="modal-body" style="display:flex;flex-direction:column;gap:16px">
@@ -607,10 +607,10 @@ document.body.insertAdjacentHTML('beforeend', `
         <div id="correo-error" style="display:none;color:var(--accent-red);font-size:13px;background:rgba(220,38,38,.08);padding:10px 12px;border-radius:var(--radius-sm);border:1px solid rgba(220,38,38,.2)"></div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-secondary" onclick="closeModal('modal-enviar-correo')">Cancelar</button>
+        <button class="btn btn-secondary" onclick="closeModal('modal-enviar-correo')">${t('btn.cancel')}</button>
         <button class="btn btn-primary" id="btn-enviar-correo" onclick="enviarCorreo()">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-          Enviar correo
+          ${t('op.email_btn_send')}
         </button>
       </div>
     </div>
@@ -799,6 +799,16 @@ async function renderInicio() {
 
   document.getElementById('fase-inicio').classList.remove('hidden');
   document.getElementById('fase-inspeccion').classList.add('hidden');
+
+  // Pre-seleccionar el último cliente procesado
+  const lastClienteId = localStorage.getItem('lastClienteId');
+  if (lastClienteId) {
+    const sel = document.getElementById('ini-cliente');
+    if (sel) {
+      sel.value = lastClienteId;
+      if (sel.value === lastClienteId) onClienteChange(sel);
+    }
+  }
 }
 
 async function irUltimaOperacion() {
@@ -840,6 +850,8 @@ function onClienteChange(sel) {
     secDest?.classList.add('hidden');
     return;
   }
+
+  localStorage.setItem('lastClienteId', opt.value);
 
   const grado = parseInt(opt.dataset.grado);
   const gradeClasses = { 1: 'grado-1', 2: 'grado-2', 3: 'grado-3' };
@@ -1067,9 +1079,9 @@ function renderG0Inspeccion() {
   const el = document.getElementById('fase-inspeccion');
   el.innerHTML = `
     <div class="fase-indicator">
-      <div class="fase done"><span class="fase-num">FASE 01</span>${t('op.phase1')}</div>
-      <div class="fase active"><span class="fase-num">FASE 02</span>${t('op.g0_processing')}</div>
-      <div class="fase"><span class="fase-num">FASE 03</span>${t('op.phase3')}</div>
+      <div class="fase done"><span class="fase-num">${t('op.fase')} 01</span>${t('op.phase1')}</div>
+      <div class="fase active"><span class="fase-num">${t('op.fase')} 02</span>${t('op.g0_processing')}</div>
+      <div class="fase"><span class="fase-num">${t('op.fase')} 03</span>${t('op.phase3')}</div>
     </div>
 
     <div style="display:grid;grid-template-columns:1fr 280px;gap:20px;align-items:start">
@@ -1632,13 +1644,13 @@ function abrirRegistroManualG0(codigoEscaneado) {
       <div class="form-group">
         <label class="form-label">Condición</label>
         <div style="display:flex;gap:6px;margin-top:4px">
-          <button id="g0-cond-buena" class="btn btn-secondary btn-sm" onclick="setG0Condicion('Buena')" style="flex:1">Buena</button>
-          <button id="g0-cond-danada" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Dañada')" style="flex:1">Dañada</button>
-          <button id="g0-cond-sin-caja" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Sin caja')" style="flex:1">Sin caja</button>
+          <button id="g0-cond-buena" class="btn btn-secondary btn-sm" onclick="setG0Condicion('Buena')" style="flex:1">${t('op.g0_cond_lc_good')}</button>
+          <button id="g0-cond-danada" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Dañada')" style="flex:1">${t('op.g0_cond_lc_damaged')}</button>
+          <button id="g0-cond-sin-caja" class="btn btn-ghost btn-sm" onclick="setG0Condicion('Sin caja')" style="flex:1">${t('op.g0_cond_lc_no_box')}</button>
         </div>
       </div>
 
-      <button class="btn btn-amber w-full" onclick="registrarG0PiezaManual()" style="justify-content:center;margin-top:4px">Registrar pieza</button>
+      <button class="btn btn-amber w-full" onclick="registrarG0PiezaManual()" style="justify-content:center;margin-top:4px">${t('op.g0_register_piece')}</button>
     </div>`;
 }
 
@@ -1903,9 +1915,9 @@ function renderInspeccion() {
         </div>
 
         <div class="fase-indicator">
-          <div class="fase done"><span class="fase-num">FASE 01</span>INICIO ✓</div>
-          <div class="fase active"><span class="fase-num">FASE 02</span>INSPECCIÓN SKUs</div>
-          <div class="fase ${isClosed ? 'done' : ''}"><span class="fase-num">FASE 03</span>CIERRE ${isClosed ? '✓' : ''}</div>
+          <div class="fase done"><span class="fase-num">${t('op.fase')} 01</span>${t('op.phase1')}</div>
+          <div class="fase active"><span class="fase-num">${t('op.fase')} 02</span>${t('op.phase2')}</div>
+          <div class="fase ${isClosed ? 'done' : ''}"><span class="fase-num">${t('op.fase')} 03</span>${t('op.phase3')}${isClosed ? ' ✓' : ''}</div>
         </div>
 
         ${discrepancia ? `
@@ -1916,20 +1928,20 @@ function renderInspeccion() {
 
         ${grado === 1 ? `
           <div class="alert alert-info">
-            <strong>G1 — Flujo Rápido:</strong> Este cliente solo requiere registro logístico. No se requiere inspección detallada de SKUs.
+            <strong>${t('grade.1')}:</strong> ${t('op.g1_banner')}
           </div>
         ` : ''}
 
         ${!isClosed && !_soloLectura ? `
           <!-- ESCANEO SKU -->
-          <div class="section-title">Escanear / Ingresar Número de Parte</div>
+          <div class="section-title">${t('op.scan_title')}</div>
 
           <div class="card mb-16" style="padding:16px">
             <div class="scan-box" onclick="document.getElementById('scan-input').focus()">
               <div style="font-size:11px;color:var(--text-muted);font-family:'IBM Plex Mono',monospace;letter-spacing:.1em;margin-bottom:8px">
-                📷 ESCANEAR CÓDIGO DE BARRAS O INGRESAR MANUALMENTE
+                ${t('op.scan_hint')}
               </div>
-              <input type="text" id="scan-input" class="scan-input" placeholder="Escanear o escribir SKU y presionar Enter..."
+              <input type="text" id="scan-input" class="scan-input" placeholder="${t('op.scan_sku_ph')}"
                 onkeydown="if(event.key==='Enter') buscarSKU(this.value)">
             </div>
 
@@ -1993,8 +2005,8 @@ function renderInspeccion() {
                     <div class="form-group">
                       <label class="form-label">Control de Calidad</label>
                       <div class="quality-selector">
-                        <button class="quality-btn quality-good selected" id="btn-calidad-good" onclick="setCalidad('Buena')">✓ BUENA</button>
-                        <button class="quality-btn quality-bad" id="btn-calidad-bad" onclick="setCalidad('Mala')">✕ MALA</button>
+                        <button class="quality-btn quality-good selected" id="btn-calidad-good" onclick="setCalidad('Buena')">${t('op.quality_good')}</button>
+                        <button class="quality-btn quality-bad" id="btn-calidad-bad" onclick="setCalidad('Mala')">${t('op.quality_bad')}</button>
                       </div>
                     </div>
                   ` : ''}
@@ -2038,7 +2050,7 @@ function renderInspeccion() {
                   </div>
                 </div>
 
-                <div style="margin-bottom:8px">
+                <div id="seccion-fotos-evidencia-sku" style="margin-bottom:8px">
                   <div class="section-title" style="margin-bottom:8px">Fotografías de evidencia (obligatorias)</div>
 
                   <!-- Multi-foto QR: 1 QR para las 3 fotos -->
@@ -2269,7 +2281,7 @@ function renderInspeccion() {
         ` : ''}
 
         <!-- LISTA DE SKUs REGISTRADOS -->
-        <div class="section-title">SKUs Registrados (${state.detalles.length})</div>
+        <div class="section-title">${t('op.skus_section')} (${state.detalles.length})</div>
         <div id="lista-skus" style="display:flex;flex-direction:column;gap:8px">
           ${renderSKUList()}
         </div>
@@ -2280,39 +2292,39 @@ function renderInspeccion() {
           <div class="card-header">
             <span class="card-title" style="display:flex;align-items:center;gap:8px">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="16" height="16"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
-              Comentarios del Tracking
+              ${t('op.chat_title')}
             </span>
             <div style="display:flex;align-items:center;gap:8px;margin-left:auto">
               <span id="chat-live-indicator" style="font-size:10px;font-family:'IBM Plex Mono',monospace;color:var(--accent-green);display:none;align-items:center;gap:4px">
                 <span style="width:6px;height:6px;border-radius:50%;background:var(--accent-green);display:inline-block;animation:pulse 2s infinite"></span>
-                En vivo
+                ${t('op.chat_live')}
               </span>
               ${_pageUser?.rol !== 'LOGISTICA' ? `
               <button onclick="abrirEnviarCorreo()" class="btn btn-ghost btn-sm" style="font-size:11px;display:flex;align-items:center;gap:5px;border-color:rgba(0,230,118,.3);color:var(--accent-green)">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
-                Enviar por correo
+                ${t('op.chat_send_email')}
               </button>` : ''}
               <button id="chat-resolve-btn" onclick="toggleChatResuelto()" class="btn btn-ghost btn-sm" style="font-size:11px;display:flex;align-items:center;gap:5px">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg>
-                Marcar resuelto
+                ${t('op.chat_resolve')}
               </button>
             </div>
           </div>
           <div id="chat-resuelto-banner" style="display:none;padding:8px 16px;background:rgba(39,174,96,.1);border-bottom:1px solid rgba(39,174,96,.25);font-size:12px;color:var(--accent-green);font-family:'IBM Plex Mono',monospace"></div>
           <div id="chat-mensajes" style="height:300px;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:10px;background:var(--bg-elevated)">
-            <div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px">Cargando comentarios…</div>
+            <div style="text-align:center;color:var(--text-muted);font-size:12px;padding:20px">${t('op.chat_loading')}</div>
           </div>
           ${_pageUser?.rol !== 'LOGISTICA' ? `
           <div style="padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:8px;align-items:flex-end">
             <textarea id="chat-input" rows="1"
-              placeholder="Escribe un comentario… (Enter para enviar, Shift+Enter para nueva línea)"
+              placeholder="${t('op.chat_placeholder')}"
               style="flex:1;resize:none;background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px 10px;color:var(--text-primary);font-size:13px;font-family:inherit;line-height:1.4;max-height:72px;overflow-y:auto;outline:none;transition:border-color .15s"
               onfocus="this.style.borderColor='var(--accent-cyan)'" onblur="this.style.borderColor='var(--border)'"
               oninput="this.style.height='auto';this.style.height=Math.min(this.scrollHeight,72)+'px'"
               onkeydown="handleChatKey(event)"></textarea>
             <button class="btn btn-primary btn-sm" onclick="sendComentario()" style="flex-shrink:0;gap:6px">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
-              Enviar
+              ${t('op.chat_send')}
             </button>
           </div>
           ` : ''}
@@ -2517,7 +2529,7 @@ function renderSKUList() {
             ${d.foto_etiqueta ? `<span class="badge badge-blue">📷 Evidencia (3 fotos)</span>` : ''}
             ${d.foto_adicional_1 ? `<span class="badge badge-blue">📷 +${[1,2,3,4].filter(n=>d[`foto_adicional_${n}`]).length} adicional(es)</span>` : ''}
             ${d.pais_origen_real ? `<span class="badge ${paisDiff?'badge-amber':'badge-muted'}">🌍 ${d.pais_origen_real}${paisDiff?' ⚠':''}</span>` : ''}
-            ${d.calidad ? `<span class="badge ${isMalo?'badge-red':'badge-green'}">${isMalo?'✕ Mala':'✓ Buena'}</span>` : ''}
+            ${d.calidad ? `<span class="badge ${isMalo?'badge-red':'badge-green'}">${isMalo?t('op.quality_bad_lc'):t('op.quality_good_lc')}</span>` : ''}
             ${paisDiff ? `<span class="badge badge-amber">País no coincide</span>` : ''}
             ${insDiff ? `<span class="badge badge-amber">Insumos no coinciden</span>` : ''}
             ${hasError ? `<span class="badge badge-red">⚠ ${errD.length} error(es)</span>` : ''}
@@ -2616,6 +2628,10 @@ async function buscarSKU(code) {
         document.getElementById('nr-insumos').value = '';
         const manual = document.getElementById('nr-pais-manual');
         if (manual) { manual.value = ''; manual.style.display = 'none'; }
+        // Mostrar/ocultar fotos de evidencia según config del cliente
+        const secFotos = document.getElementById('seccion-fotos-evidencia-sku');
+        if (secFotos) secFotos.classList.toggle('hidden', parseInt(state.tracking.requiere_fotos_sku_nuevo) === 0);
+
         // Limpiar previews y estado QR de fotos de evidencia
         limpiarTodasFotosEvidenciaQR();
         ['prev-etiqueta','prev-insumos','prev-pieza'].forEach(id => {
@@ -3108,18 +3124,20 @@ async function registrarSKU() {
     if (!paisReal) { toast('El país de origen es requerido', 'error'); return; }
     if (!insReal)  { toast('Los insumos / composición son requeridos', 'error'); return; }
 
-    const slotInputIds = { etiqueta: 'foto-etiqueta-req', insumos: 'foto-insumos-req', pieza: 'foto-pieza-req' };
-    for (const [slot, inputId] of Object.entries(slotInputIds)) {
-      const mode = fotosEvidenciaQR[slot]?.mode || 'local';
-      if (mode === 'qr') {
-        if (!fotosEvidenciaQR[slot]?.url_foto) {
-          toast(`Espera a que el teléfono envíe la foto de evidencia (${slot})`, 'error');
-          return;
-        }
-      } else {
-        if (!document.getElementById(inputId)?.files[0]) {
-          toast('Se requieren las 3 fotografías de evidencia (etiqueta, insumos/origen, pieza completa)', 'error');
-          return;
+    if (parseInt(state.tracking.requiere_fotos_sku_nuevo) !== 0) {
+      const slotInputIds = { etiqueta: 'foto-etiqueta-req', insumos: 'foto-insumos-req', pieza: 'foto-pieza-req' };
+      for (const [slot, inputId] of Object.entries(slotInputIds)) {
+        const mode = fotosEvidenciaQR[slot]?.mode || 'local';
+        if (mode === 'qr') {
+          if (!fotosEvidenciaQR[slot]?.url_foto) {
+            toast(`Espera a que el teléfono envíe la foto de evidencia (${slot})`, 'error');
+            return;
+          }
+        } else {
+          if (!document.getElementById(inputId)?.files[0]) {
+            toast('Se requieren las 3 fotografías de evidencia (etiqueta, insumos/origen, pieza completa)', 'error');
+            return;
+          }
         }
       }
     }
@@ -3178,24 +3196,26 @@ async function registrarSKU() {
 
     // Subir fotos de evidencia si el SKU no estaba en catálogo (soporta local + QR mixto)
     if (_eraNuevo) {
-      const fdEv = new FormData();
-      const urlEv = {};
-      let hasLocalEv = false;
-      let hasQREv = false;
-      const slotInputIds2 = { etiqueta: 'foto-etiqueta-req', insumos: 'foto-insumos-req', pieza: 'foto-pieza-req' };
-      for (const [slot, inputId] of Object.entries(slotInputIds2)) {
-        const mode = fotosEvidenciaQR[slot]?.mode || 'local';
-        if (mode === 'qr') {
-          urlEv[`url_${slot}`] = fotosEvidenciaQR[slot].url_foto;
-          hasQREv = true;
-        } else {
-          fdEv.append(slot, document.getElementById(inputId).files[0]);
-          hasLocalEv = true;
+      if (parseInt(state.tracking.requiere_fotos_sku_nuevo) !== 0) {
+        const fdEv = new FormData();
+        const urlEv = {};
+        let hasLocalEv = false;
+        let hasQREv = false;
+        const slotInputIds2 = { etiqueta: 'foto-etiqueta-req', insumos: 'foto-insumos-req', pieza: 'foto-pieza-req' };
+        for (const [slot, inputId] of Object.entries(slotInputIds2)) {
+          const mode = fotosEvidenciaQR[slot]?.mode || 'local';
+          if (mode === 'qr') {
+            urlEv[`url_${slot}`] = fotosEvidenciaQR[slot].url_foto;
+            hasQREv = true;
+          } else {
+            fdEv.append(slot, document.getElementById(inputId).files[0]);
+            hasLocalEv = true;
+          }
         }
+        if (hasLocalEv) await API.postForm(`/detalles/${res.id}/fotos-evidencia`, fdEv);
+        if (hasQREv)   await API.post(`/detalles/${res.id}/fotos-evidencia-url`, urlEv);
+        limpiarTodasFotosEvidenciaQR();
       }
-      if (hasLocalEv) await API.postForm(`/detalles/${res.id}/fotos-evidencia`, fdEv);
-      if (hasQREv)   await API.post(`/detalles/${res.id}/fotos-evidencia-url`, urlEv);
-      limpiarTodasFotosEvidenciaQR();
 
       // Agregar al catálogo (idempotente — no crea duplicado si ya existe)
       await API.post('/skus', {
@@ -4458,17 +4478,17 @@ function updateChatResolvedUI() {
   const banner = document.getElementById('chat-resuelto-banner');
   if (!btn) return;
   if (chatResuelto) {
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> Reactivar chat`;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg> ${t('op.chat_reactivate')}`;
     btn.style.color = 'var(--accent-amber)';
     btn.style.borderColor = 'rgba(255,179,0,.4)';
     if (banner) {
       banner.style.display = 'block';
       const por = chatResueltoInfo?.por || '';
       const at = chatResueltoInfo?.at ? formatDate(chatResueltoInfo.at) : '';
-      banner.innerHTML = `✓ Chat resuelto por <strong>${escapeHtml(por)}</strong>${at ? ' — ' + at : ''}`;
+      banner.innerHTML = `${t('op.chat_resolved_by')} <strong>${escapeHtml(por)}</strong>${at ? ' — ' + at : ''}`;
     }
   } else {
-    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg> Marcar resuelto`;
+    btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="13" height="13"><polyline points="20 6 9 17 4 12"/></svg> ${t('op.chat_resolve')}`;
     btn.style.color = '';
     btn.style.borderColor = '';
     if (banner) banner.style.display = 'none';
@@ -4483,7 +4503,7 @@ async function toggleChatResuelto() {
     chatResuelto = result.resuelto;
     chatResueltoInfo = result.resuelto ? { por: result.nombre, at: result.at } : null;
     updateChatResolvedUI();
-    toast(result.resuelto ? 'Chat marcado como resuelto' : 'Chat reactivado', 'success');
+    toast(result.resuelto ? t('op.chat_resolved_ok') : t('op.chat_reactivated_ok'), 'success');
   } catch(e) {
     toast('Error al cambiar estado del chat', 'error');
   } finally {
@@ -4544,7 +4564,7 @@ async function loadComentarios(trackingId, inicial) {
 
     if (inicial) {
       box.innerHTML = comentarios.length === 0
-        ? `<div style="text-align:center;color:var(--text-muted);font-size:12px;padding:30px 0">Sin comentarios aún. ¡Sé el primero!</div>`
+        ? `<div class="chat-empty" style="text-align:center;color:var(--text-muted);font-size:12px;padding:30px 0">${t('op.chat_empty')}</div>`
         : comentarios.map(c => renderMensaje(c)).join('');
       box.scrollTop = box.scrollHeight;
       return;
@@ -4552,7 +4572,7 @@ async function loadComentarios(trackingId, inicial) {
 
     if (nuevos.length > 0) {
       const estaAbajo = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
-      const vacios = box.querySelector('[style*="Sin comentarios"]');
+      const vacios = box.querySelector('.chat-empty');
       if (vacios) box.innerHTML = '';
       nuevos.forEach(c => {
         box.insertAdjacentHTML('beforeend', renderMensaje(c));
@@ -4720,7 +4740,7 @@ function abrirEnviarCorreo() {
   const errCorreo = document.getElementById('correo-error');
   if (errCorreo) errCorreo.style.display = 'none';
   const btn = document.getElementById('btn-enviar-correo');
-  if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Enviar correo'; }
+  if (btn) { btn.disabled = false; btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> ${t('op.email_btn_send')}`; }
   updateCorreoPreview();
   openModal('modal-enviar-correo');
 }
@@ -4732,10 +4752,10 @@ async function enviarCorreo() {
   const errEl = document.getElementById('correo-error');
   errEl.style.display = 'none';
   if (emailChips.length === 0) {
-    errEl.textContent = 'Agrega al menos un destinatario';
+    errEl.textContent = t('op.email_no_recipient');
     errEl.style.display = 'block'; return;
   }
-  if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></span>Enviando…'; }
+  if (btn) { btn.disabled = true; btn.innerHTML = `<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px"></span>${t('op.email_sending')}`; }
   try {
     const sel = document.getElementById('correo-comentarios').value;
     const result = await API.post(`/trackings/${state.tracking.id}/enviar-correo`, {
@@ -4750,7 +4770,7 @@ async function enviarCorreo() {
   } catch(e) {
     errEl.textContent = e.error || 'Error al enviar el correo';
     errEl.style.display = 'block';
-    if (btn) { btn.disabled = false; btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> Enviar correo'; }
+    if (btn) { btn.disabled = false; btn.innerHTML = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="14" height="14"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg> ${t('op.email_btn_send')}`; }
   }
 }
 

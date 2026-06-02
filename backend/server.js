@@ -12,7 +12,7 @@ let ResendSDK; try { ResendSDK = require('resend'); } catch(e) { ResendSDK = nul
 let nodeCron; try { nodeCron = require('node-cron'); } catch(e) { nodeCron = null; }
 
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
 // Returns current local time as "YYYY-MM-DD HH:MM:SS" for SQLite TEXT columns
 function localNow() {
@@ -369,6 +369,10 @@ async function initDB() {
   try { db.exec('ALTER TABLE clientes ADD COLUMN validacion_condicion INTEGER DEFAULT 0'); } catch(e) {}
   db.exec("UPDATE clientes SET validacion_piezas = 0 WHERE validacion_piezas IS NULL");
   db.exec("UPDATE clientes SET validacion_condicion = 0 WHERE validacion_condicion IS NULL");
+
+  // Migration: foto de evidencia al registrar SKU nuevo (default 1 = requerida)
+  try { db.exec('ALTER TABLE clientes ADD COLUMN requiere_fotos_sku_nuevo INTEGER DEFAULT 1'); } catch(e) {}
+  db.exec("UPDATE clientes SET requiere_fotos_sku_nuevo = 1 WHERE requiere_fotos_sku_nuevo IS NULL");
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS ordenes (
@@ -829,21 +833,24 @@ app.post('/api/clientes', (req, res) => {
   const vp = grado === 0 ? (validacion_piezas ? 1 : 0) : 0;
   const vc = grado === 0 ? (validacion_condicion ? 1 : 0) : 0;
   console.log(`POST /clientes → nombre="${nombre}" grado=${grado}`);
-  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno,requiere_nota_credito,requiere_nombre_destinatario,validacion_piezas,validacion_condicion,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, requiere_nombre_destinatario ? 1 : 0, vp, vc, localNow()]);
+  const { requiere_fotos_sku_nuevo } = req.body;
+  const rfn = grado === 0 ? 0 : (requiere_fotos_sku_nuevo ? 1 : 0);
+  const ok = dbRun(`INSERT INTO clientes (id,nombre,grado_confianza,porcentaje_muestreo,modulo_calidad,modulo_retrabajo,tipo_almacenamiento,uph,tipo_mercancia,fotos_adicionales,requiere_orden,requiere_tipo_retorno,requiere_nota_credito,requiere_nombre_destinatario,validacion_piezas,validacion_condicion,requiere_fotos_sku_nuevo,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, requiere_nombre_destinatario ? 1 : 0, vp, vc, rfn, localNow()]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos' });
   res.json({ id, mensaje: 'Cliente creado' });
 });
 
 app.put('/api/clientes/:id', (req, res) => {
-  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito, requiere_nombre_destinatario, validacion_piezas, validacion_condicion } = req.body;
+  const { nombre, grado_confianza, porcentaje_muestreo, modulo_calidad, modulo_retrabajo, tipo_almacenamiento, uph, tipo_mercancia, fotos_adicionales, requiere_orden, requiere_tipo_retorno, requiere_nota_credito, requiere_nombre_destinatario, validacion_piezas, validacion_condicion, requiere_fotos_sku_nuevo } = req.body;
   const grado = grado_confianza !== undefined && grado_confianza !== null && grado_confianza !== '' ? parseInt(grado_confianza) : 2;
   const fa = grado === 3 ? Math.max(0, Math.min(4, parseInt(fotos_adicionales) || 0)) : 0;
   const vp = grado === 0 ? (validacion_piezas ? 1 : 0) : 0;
   const vc = grado === 0 ? (validacion_condicion ? 1 : 0) : 0;
+  const rfn = grado === 0 ? 0 : (requiere_fotos_sku_nuevo ? 1 : 0);
   console.log(`PUT /clientes/${req.params.id} → grado=${grado}`);
-  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=?,requiere_orden=?,requiere_tipo_retorno=?,requiere_nota_credito=?,requiere_nombre_destinatario=?,validacion_piezas=?,validacion_condicion=? WHERE id=?`,
-    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, requiere_nombre_destinatario ? 1 : 0, vp, vc, req.params.id]);
+  const ok = dbRun(`UPDATE clientes SET nombre=?,grado_confianza=?,porcentaje_muestreo=?,modulo_calidad=?,modulo_retrabajo=?,tipo_almacenamiento=?,uph=?,tipo_mercancia=?,fotos_adicionales=?,requiere_orden=?,requiere_tipo_retorno=?,requiere_nota_credito=?,requiere_nombre_destinatario=?,validacion_piezas=?,validacion_condicion=?,requiere_fotos_sku_nuevo=? WHERE id=?`,
+    [nombre, grado, porcentaje_muestreo || 30, modulo_calidad ? 1 : 0, modulo_retrabajo ? 1 : 0, tipo_almacenamiento || 'caja', uph || 0, tipo_mercancia || 'textil', fa, requiere_orden ? 1 : 0, requiere_tipo_retorno ? 1 : 0, requiere_nota_credito ? 1 : 0, requiere_nombre_destinatario ? 1 : 0, vp, vc, rfn, req.params.id]);
   if (!ok) return res.status(500).json({ error: 'Error al guardar en base de datos — revisa la consola del servidor' });
   res.json({ mensaje: 'Cliente actualizado' });
 });
@@ -1073,7 +1080,7 @@ app.get('/api/trackings', (req, res) => {
   const extraSql = extraWhere.length ? ' AND ' + extraWhere.join(' AND ') : '';
 
   const rows = dbAll(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion,
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion, c.requiere_fotos_sku_nuevo,
       COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) as total_comentarios,
       CASE WHEN COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) > 0 AND COALESCE(t.chat_resuelto, 0) = 0 THEN 1 ELSE 0 END as tiene_comentarios
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
@@ -1085,7 +1092,7 @@ app.get('/api/trackings', (req, res) => {
 
 app.get('/api/trackings/:id', (req, res) => {
   const row = dbGet(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion, c.requiere_fotos_sku_nuevo
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     WHERE t.id = ?
   `, [req.params.id]);
