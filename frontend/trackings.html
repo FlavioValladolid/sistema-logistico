@@ -188,7 +188,7 @@ function renderTabla() {
                   style="accent-color:var(--accent-cyan);cursor:pointer"
                   onchange="toggleSelectAll(this.checked)">
               </th>
-              <th id="bulk-action-header" colspan="15"
+              <th id="bulk-action-header" colspan="16"
                 style="display:none;padding:6px 12px;background:rgba(0,188,212,.08);border-left:2px solid var(--accent-cyan)">
                 <div style="display:flex;align-items:center;gap:12px">
                   <span id="bulk-count" style="font-size:12px;color:var(--accent-cyan);font-weight:700"></span>
@@ -207,6 +207,7 @@ function renderTabla() {
             <th>${t('label.grade')}</th>
             <th>Orden #</th>
             <th>Destinatario</th>
+            <th>Canal</th>
             <th>Retailer</th>
             <th>${t('trackings.col_declared')}</th>
             <th>${t('trackings.col_inspected')}</th>
@@ -251,6 +252,11 @@ function renderTabla() {
                 <td style="font-size:12px">
                   ${tr.nombre_destinatario
                     ? `<span style="color:var(--text-primary)">${escHTML(tr.nombre_destinatario)}</span>`
+                    : '<span style="color:var(--text-muted)">—</span>'}
+                </td>
+                <td style="font-size:12px;text-align:center">
+                  ${tr.canal
+                    ? `<span class="badge ${tr.canal === 'B2B' ? 'badge-amber' : 'badge-muted'}" style="font-size:10px">${tr.canal}</span>`
                     : '<span style="color:var(--text-muted)">—</span>'}
                 </td>
                 <td style="font-size:12px">
@@ -345,7 +351,8 @@ function applyFilters() {
       || (tr.operador||'').toLowerCase().includes(q)
       || (tr.numero_orden||'').toLowerCase().includes(q)
       || (tr.nombre_destinatario||'').toLowerCase().includes(q)
-      || (tr.retailer||'').toLowerCase().includes(q);
+      || (tr.retailer||'').toLowerCase().includes(q)
+      || (tr.canal||'').toLowerCase().includes(q);
     const matchE = !estatus || tr.estatus === estatus;
     const matchC = !clienteId || tr.cliente_id === clienteId;
     const matchG = !grado || String(tr.grado_confianza) === grado;
