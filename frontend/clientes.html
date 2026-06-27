@@ -242,6 +242,35 @@ const modalHtml = `
             </div>
           </div>
         </div>
+
+        <div style="margin-top:20px">
+          <div class="section-title" style="margin-top:0">Canal de Venta</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <label id="btn-canal-b2c" onclick="onCanalChange('B2C')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-elevated);cursor:pointer">
+              <input type="radio" name="tipo-canal" id="canal-b2c" value="B2C" style="accent-color:var(--accent-green)">
+              <div>
+                <div style="font-weight:600;font-size:13px">B2C</div>
+                <div class="form-hint" style="margin:0">Directo al consumidor</div>
+              </div>
+            </label>
+            <label id="btn-canal-b2b" onclick="onCanalChange('B2B')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-elevated);cursor:pointer">
+              <input type="radio" name="tipo-canal" id="canal-b2b" value="B2B" style="accent-color:var(--accent-green)">
+              <div>
+                <div style="font-weight:600;font-size:13px">B2B</div>
+                <div class="form-hint" style="margin:0">Clientes Retail</div>
+              </div>
+            </label>
+          </div>
+          <div id="seccion-retail" class="hidden" style="margin-top:14px;background:var(--bg-elevated);border-radius:var(--radius-sm);border:1px solid var(--border);padding:14px">
+            <div style="font-weight:600;font-size:13px;margin-bottom:10px">Clientes Retail</div>
+            <div id="retail-lista" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px;min-height:24px"></div>
+            <div style="display:flex;gap:8px">
+              <input type="text" class="form-control" id="retail-input" placeholder="Nombre del retailer..." style="flex:1"
+                onkeydown="if(event.key==='Enter'){event.preventDefault();agregarRetailer();}">
+              <button class="btn btn-secondary btn-sm" onclick="agregarRetailer()">Agregar</button>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="modal-footer">
         <button class="btn btn-secondary" onclick="closeModal('modal-cliente')">Cancelar</button>
@@ -363,7 +392,8 @@ function renderTabla(clientes) {
                 ${c.requiere_tipo_retorno ? `<span class="badge badge-amber" style="margin-bottom:3px;display:inline-block">${t('clients.badge_rma')}</span>` : ''}
                 ${c.requiere_nota_credito ? `<span class="badge badge-blue" style="margin-bottom:3px;display:inline-block">${t('clients.badge_credit')}</span>` : ''}
                 ${c.requiere_nombre_destinatario ? `<span class="badge badge-green" style="display:inline-block">${t('clients.badge_dest')}</span>` : ''}
-                ${!c.requiere_orden && !c.requiere_tipo_retorno && !c.requiere_nota_credito && !c.requiere_nombre_destinatario ? `<span style="color:var(--text-muted);font-size:12px">${t('label.none')}</span>` : ''}
+                ${c.tipo_canal ? `<span class="badge ${c.tipo_canal === 'B2B' ? 'badge-amber' : 'badge-muted'}" style="margin-bottom:3px;display:inline-block">${c.tipo_canal}</span>` : ''}
+                ${!c.requiere_orden && !c.requiere_tipo_retorno && !c.requiere_nota_credito && !c.requiere_nombre_destinatario && !c.tipo_canal ? `<span style="color:var(--text-muted);font-size:12px">${t('label.none')}</span>` : ''}
               </td>
               <td class="td-mono text-muted">${formatDate(c.created_at).split(',')[0]}</td>
               <td>
@@ -404,6 +434,11 @@ function abrirNuevo() {
   document.getElementById('modal-cliente-title').textContent = t('clients.modal_new');
   onGradoChange();
   onTipoAlmacenamientoChange();
+  document.getElementById('canal-b2c').checked = false;
+  document.getElementById('canal-b2b').checked = false;
+  document.getElementById('retail-lista').innerHTML = '';
+  document.getElementById('retail-input').value = '';
+  onCanalChange(null);
   openModal('modal-cliente');
 }
 
@@ -435,6 +470,25 @@ function editarCliente(id) {
   document.getElementById('seccion-fotos-adicionales').classList.toggle('hidden', parseInt(c.grado_confianza) !== 3);
   document.getElementById('seccion-g0').classList.toggle('hidden', parseInt(c.grado_confianza) !== 0);
   document.getElementById('seccion-fotos-sku-nuevo').classList.toggle('hidden', parseInt(c.grado_confianza) === 0);
+  // Canal de venta
+  document.getElementById('retail-lista').innerHTML = '';
+  document.getElementById('retail-input').value = '';
+  if (c.tipo_canal === 'B2C') {
+    document.getElementById('canal-b2c').checked = true;
+    onCanalChange('B2C');
+  } else if (c.tipo_canal === 'B2B') {
+    document.getElementById('canal-b2b').checked = true;
+    onCanalChange('B2B');
+    const retailers = JSON.parse(c.clientes_retail || '[]');
+    retailers.forEach(r => {
+      document.getElementById('retail-input').value = r;
+      agregarRetailer();
+    });
+  } else {
+    document.getElementById('canal-b2c').checked = false;
+    document.getElementById('canal-b2b').checked = false;
+    onCanalChange(null);
+  }
   document.getElementById('modal-cliente-title').textContent = t('clients.modal_edit');
   onGradoChange();
   onTipoAlmacenamientoChange();
@@ -463,6 +517,14 @@ async function guardarCliente() {
     validacion_piezas: document.getElementById('cliente-validacion-piezas').checked,
     validacion_condicion: document.getElementById('cliente-validacion-condicion').checked,
     requiere_fotos_sku_nuevo: document.getElementById('cliente-requiere-fotos-sku-nuevo').checked,
+    tipo_canal: document.querySelector('input[name="tipo-canal"]:checked')?.value || null,
+    clientes_retail: (() => {
+      const canal = document.querySelector('input[name="tipo-canal"]:checked')?.value;
+      if (canal !== 'B2B') return null;
+      const chips = [...document.getElementById('retail-lista').querySelectorAll('[data-retailer]')];
+      const retailers = chips.map(el => el.dataset.retailer);
+      return retailers.length ? JSON.stringify(retailers) : null;
+    })(),
   };
 
   try {
@@ -490,6 +552,32 @@ async function eliminarCliente(id, nombre) {
   } catch(e) {
     toast(e.error || 'Error al eliminar', 'error');
   }
+}
+
+function onCanalChange(canal) {
+  const esB2B = canal === 'B2B';
+  const esB2C = canal === 'B2C';
+  document.getElementById('btn-canal-b2c').style.cssText =
+    `display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:${esB2C ? '2px solid var(--accent-green);background:rgba(0,230,118,0.08)' : '1px solid var(--border);background:var(--bg-elevated)'}`;
+  document.getElementById('btn-canal-b2b').style.cssText =
+    `display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:${esB2B ? '2px solid var(--accent-green);background:rgba(0,230,118,0.08)' : '1px solid var(--border);background:var(--bg-elevated)'}`;
+  document.getElementById('seccion-retail').classList.toggle('hidden', !esB2B);
+}
+
+function agregarRetailer() {
+  const input = document.getElementById('retail-input');
+  const nombre = input.value.trim();
+  if (!nombre) return;
+  const lista = document.getElementById('retail-lista');
+  const existing = [...lista.querySelectorAll('[data-retailer]')].map(el => el.dataset.retailer.toLowerCase());
+  if (existing.includes(nombre.toLowerCase())) { input.value = ''; return; }
+  const chip = document.createElement('span');
+  chip.dataset.retailer = nombre;
+  chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:3px 10px;font-size:12px';
+  chip.innerHTML = `${escHTML(nombre)} <button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;line-height:1;padding:0;margin-left:2px">✕</button>`;
+  lista.appendChild(chip);
+  input.value = '';
+  input.focus();
 }
 
 // Search
