@@ -78,7 +78,25 @@ let currentPage = 1;
 let pageSize = 50;
 let selectedIds = new Set();
 
-function updateBulkUI() { /* implementado en Task 3 */ }
+function updateBulkUI() {
+  if (_pageUser?.rol !== 'CLIENTE') return;
+  const bulkHeader = document.getElementById('bulk-action-header');
+  const bulkCount = document.getElementById('bulk-count');
+  if (!bulkHeader || !bulkCount) return;
+
+  const n = selectedIds.size;
+  if (n > 0) {
+    bulkCount.textContent = `${n} tracking${n > 1 ? 's' : ''} seleccionado${n > 1 ? 's' : ''}`;
+    bulkHeader.style.display = '';
+    // Ocultar los th normales (todos excepto el de checkbox y el bulk-action-header)
+    const ths = bulkHeader.closest('tr').querySelectorAll('th:not(#bulk-action-header):not(:first-child)');
+    ths.forEach(th => th.style.display = 'none');
+  } else {
+    bulkHeader.style.display = 'none';
+    const ths = bulkHeader.closest('tr').querySelectorAll('th');
+    ths.forEach(th => th.style.display = '');
+  }
+}
 
 async function loadTrackings() {
   const [trackings, clientes] = await Promise.all([
@@ -169,6 +187,18 @@ function renderTabla() {
                 <input type="checkbox" id="chk-select-all" title="Seleccionar todos los cerrados"
                   style="accent-color:var(--accent-cyan);cursor:pointer"
                   onchange="toggleSelectAll(this.checked)">
+              </th>
+              <th id="bulk-action-header" colspan="13"
+                style="display:none;padding:6px 12px;background:rgba(0,188,212,.08);border-left:2px solid var(--accent-cyan)">
+                <div style="display:flex;align-items:center;gap:12px">
+                  <span id="bulk-count" style="font-size:12px;color:var(--accent-cyan);font-weight:700"></span>
+                  <button class="btn btn-primary btn-sm" onclick="openBulkRefundModal()">
+                    Marcar como Refunded
+                  </button>
+                  <button class="btn btn-ghost btn-sm" onclick="toggleSelectAll(false)">
+                    Limpiar selección
+                  </button>
+                </div>
               </th>` : ''}
             <th>${t('trackings.col_tracking')}</th>
             <th>${t('label.client')}</th>
