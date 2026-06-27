@@ -11,6 +11,27 @@ const Papa = require('papaparse');
 let ResendSDK; try { ResendSDK = require('resend'); } catch(e) { ResendSDK = null; }
 let nodeCron; try { nodeCron = require('node-cron'); } catch(e) { nodeCron = null; }
 
+// DigitalOcean Spaces (S3-compatible)
+const SPACES_CONFIGURED = !!(
+  process.env.SPACES_KEY && process.env.SPACES_SECRET &&
+  process.env.SPACES_BUCKET && process.env.SPACES_REGION &&
+  process.env.SPACES_ENDPOINT
+);
+let s3Client = null;
+let multerS3 = null;
+if (SPACES_CONFIGURED) {
+  const { S3Client } = require('@aws-sdk/client-s3');
+  multerS3 = require('multer-s3');
+  s3Client = new S3Client({
+    endpoint: process.env.SPACES_ENDPOINT,
+    region: process.env.SPACES_REGION,
+    credentials: {
+      accessKeyId: process.env.SPACES_KEY,
+      secretAccessKey: process.env.SPACES_SECRET,
+    },
+  });
+}
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -36,22 +57,48 @@ app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 app.use(express.static(path.join(__dirname, '../frontend')));
 
 // Multer config para fotos
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const dir = path.join(__dirname, '../uploads');
-    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
-    cb(null, dir);
-  },
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    // HEIC/HEIF → canvas converts to JPEG on frontend; normalize to .jpg
-    // Missing/unknown extension → derive from MIME type (covers Android octet-stream uploads)
-    const mimeExt = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/heic': '.jpg', 'image/heif': '.jpg' };
-    const safeExt = ['.heic', '.heif'].includes(ext) ? '.jpg' : (ext || mimeExt[file.mimetype] || '.jpg');
-    cb(null, `${uuidv4()}${safeExt}`);
-  }
-});
+const mimeExt = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/heic': '.jpg', 'image/heif': '.jpg' };
+
+function resolveExt(file) {
+  const ext = path.extname(file.originalname).toLowerCase();
+  return ['.heic', '.heif'].includes(ext) ? '.jpg' : (ext || mimeExt[file.mimetype] || '.jpg');
+}
+
+let storage;
+if (SPACES_CONFIGURED) {
+  storage = multerS3({
+    s3: s3Client,
+    bucket: process.env.SPACES_BUCKET,
+    acl: 'public-read',
+    contentType: multerS3.AUTO_CONTENT_TYPE,
+    key: (req, file, cb) => {
+      const safeExt = resolveExt(file);
+      cb(null, `uploads/${Date.now()}-${uuidv4()}${safeExt}`);
+    },
+  });
+} else {
+  console.warn('⚠ Spaces no configurado, usando almacenamiento local');
+  storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      const dir = path.join(__dirname, '../uploads');
+      if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+      cb(null, dir);
+    },
+    filename: (req, file, cb) => {
+      cb(null, `${uuidv4()}${resolveExt(file)}`);
+    },
+  });
+}
 const upload = multer({ storage, limits: { fileSize: 50 * 1024 * 1024 } });
+
+// Devuelve la URL pública de un archivo subido (Spaces CDN o local)
+function fileUrl(file) {
+  if (SPACES_CONFIGURED) {
+    const cdnBase = (process.env.SPACES_CDN_URL || '').replace(/\/$/, '');
+    return `${cdnBase}/${file.key}`;
+  }
+  return `/uploads/${file.filename}`;
+}
 
 // DB en memoria con persistencia en archivo
 const DB_PATH = path.join(__dirname, 'database.bin');
@@ -1393,9 +1440,9 @@ app.post('/api/detalles/:id/fotos-evidencia', upload.fields([
 
   const updates = [];
   const vals = [];
-  if (req.files?.etiqueta) { updates.push('foto_etiqueta=?'); vals.push('/uploads/' + req.files.etiqueta[0].filename); }
-  if (req.files?.insumos)  { updates.push('foto_insumos=?');  vals.push('/uploads/' + req.files.insumos[0].filename); }
-  if (req.files?.pieza)    { updates.push('foto_pieza=?');    vals.push('/uploads/' + req.files.pieza[0].filename); }
+  if (req.files?.etiqueta) { updates.push('foto_etiqueta=?'); vals.push(fileUrl(req.files.etiqueta[0])); }
+  if (req.files?.insumos)  { updates.push('foto_insumos=?');  vals.push(fileUrl(req.files.insumos[0])); }
+  if (req.files?.pieza)    { updates.push('foto_pieza=?');    vals.push(fileUrl(req.files.pieza[0])); }
 
   if (updates.length === 0) return res.status(400).json({ error: 'No se recibieron fotos' });
 
@@ -1452,7 +1499,7 @@ app.post('/api/detalles/:id/fotos-adicionales', upload.fields([
   const vals = [];
   for (let i = 1; i <= 4; i++) {
     const f = req.files?.[`foto${i}`];
-    if (f) { updates.push(`foto_adicional_${i}=?`); vals.push('/uploads/' + f[0].filename); }
+    if (f) { updates.push(`foto_adicional_${i}=?`); vals.push(fileUrl(f[0])); }
   }
 
   if (updates.length === 0) return res.status(400).json({ error: 'No se recibieron fotos' });
@@ -1470,7 +1517,7 @@ app.get('/api/trackings/:id/errores', (req, res) => {
 app.post('/api/trackings/:id/errores', upload.single('foto'), (req, res) => {
   const { detalle_sku_id, tipo_error, comentarios } = req.body;
   const id = uuidv4();
-  const path_foto = req.file ? `/uploads/${req.file.filename}` : null;
+  const path_foto = req.file ? fileUrl(req.file) : null;
 
   dbRun(`INSERT INTO errores (id,tracking_id,detalle_sku_id,tipo_error,path_fotografia,comentarios,created_at) VALUES (?,?,?,?,?,?,?)`,
     [id, req.params.id, detalle_sku_id || null, tipo_error, path_foto, comentarios, localNow()]);
@@ -2393,7 +2440,7 @@ app.post('/api/foto-sesion/:token/upload', (req, res, next) => {
   if (sesion.expires_at < now) return res.status(410).json({ error: 'Sesión expirada' });
   if (!req.file) return res.status(400).json({ error: 'No se recibió foto' });
 
-  const url_foto = `/uploads/${req.file.filename}`;
+  const url_foto = fileUrl(req.file);
   const total = sesion.total_fotos || 1;
   const foto_index = Math.max(0, Math.min(parseInt(req.body.foto_index) || 0, total - 1));
 
@@ -2587,9 +2634,9 @@ app.post('/api/skus-nuevos/:id/fotos-evidencia', upload.fields([
   if (!sn) return res.status(404).json({ error: 'SKU nuevo no encontrado' });
 
   const updates = [], vals = [];
-  if (req.files?.etiqueta) { updates.push('url_foto_etiqueta=?');         vals.push('/uploads/' + req.files.etiqueta[0].filename); }
-  if (req.files?.insumos)  { updates.push('url_foto_insumos_origen=?');   vals.push('/uploads/' + req.files.insumos[0].filename); }
-  if (req.files?.pieza)    { updates.push('url_foto_producto_completo=?');vals.push('/uploads/' + req.files.pieza[0].filename); }
+  if (req.files?.etiqueta) { updates.push('url_foto_etiqueta=?');         vals.push(fileUrl(req.files.etiqueta[0])); }
+  if (req.files?.insumos)  { updates.push('url_foto_insumos_origen=?');   vals.push(fileUrl(req.files.insumos[0])); }
+  if (req.files?.pieza)    { updates.push('url_foto_producto_completo=?');vals.push(fileUrl(req.files.pieza[0])); }
 
   if (updates.length === 0) return res.status(400).json({ error: 'No se recibieron fotos' });
   vals.push(req.params.id);
@@ -3267,6 +3314,38 @@ app.post('/api/email/test-semanal', async (req, res) => {
     res.json({ ok: true, mensaje: 'Resumen semanal enviado' });
   } catch (err) {
     res.status(500).json({ error: err.message || 'Error enviando email' });
+  }
+});
+
+// ── TEST DIGITALOCEAN SPACES ──────────────────────────────────────────────────
+
+app.get('/api/spaces/test', requireRol('ADMIN'), async (req, res) => {
+  if (!SPACES_CONFIGURED) {
+    return res.json({ ok: false, mensaje: 'Spaces no configurado (faltan variables de entorno)' });
+  }
+  try {
+    const { PutObjectCommand, GetObjectCommand } = require('@aws-sdk/client-s3');
+    const testKey = `uploads/test-${Date.now()}.txt`;
+    const testContent = Buffer.from('spaces-test-ok');
+
+    await s3Client.send(new PutObjectCommand({
+      Bucket: process.env.SPACES_BUCKET,
+      Key: testKey,
+      Body: testContent,
+      ACL: 'public-read',
+      ContentType: 'text/plain',
+    }));
+
+    const cdnBase = (process.env.SPACES_CDN_URL || '').replace(/\/$/, '');
+    const url = `${cdnBase}/${testKey}`;
+
+    // Verificar que el archivo es accesible públicamente
+    const checkRes = await fetch(url);
+    if (!checkRes.ok) throw new Error(`CDN respondió ${checkRes.status}`);
+
+    res.json({ ok: true, url, mensaje: 'Spaces configurado y funcionando correctamente' });
+  } catch (err) {
+    res.status(500).json({ ok: false, mensaje: err.message });
   }
 });
 
