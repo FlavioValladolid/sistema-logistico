@@ -194,11 +194,11 @@ function renderTabla() {
             return `
               <tr ondblclick="window.location='operacion.html?id=${tr.id}'" style="cursor:pointer" title="Doble clic para ver detalle">
                 ${_pageUser?.rol === 'CLIENTE' ? `
-                  <td style="width:32px;padding:6px 8px;text-align:center" onclick="event.stopPropagation()">
+                  <td style="width:32px;padding:6px 8px;text-align:center" onclick="event.stopPropagation()" ondblclick="event.stopPropagation()">
                     ${tr.estatus === 'cerrado' ? `
                       <input type="checkbox" class="chk-tracking" data-id="${tr.id}"
                         style="accent-color:var(--accent-cyan);cursor:pointer"
-                        ${selectedIds.has(tr.id) ? 'checked' : ''}
+                        ${selectedIds.has(String(tr.id)) ? 'checked' : ''}
                         onchange="toggleRow('${tr.id}', this.checked)">
                     ` : ''}
                   </td>` : ''}
