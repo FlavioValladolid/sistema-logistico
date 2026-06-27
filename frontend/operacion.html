@@ -755,6 +755,26 @@ async function renderInicio() {
           <div class="form-hint">${t('clients.dest_name_hint')}</div>
         </div>
 
+        <div id="seccion-canal" class="form-group hidden">
+          <label class="form-label">Canal *</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+            <label id="btn-op-canal-b2c" onclick="onCanalOperacionChange('B2C')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-elevated);cursor:pointer">
+              <input type="radio" name="op-canal" id="op-canal-b2c" value="B2C" style="accent-color:var(--accent-green)">
+              <div>
+                <div style="font-weight:600;font-size:13px">B2C</div>
+                <div class="form-hint" style="margin:0">Directo al consumidor</div>
+              </div>
+            </label>
+            <label id="btn-op-canal-b2b" onclick="onCanalOperacionChange('B2B')" style="display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-elevated);cursor:pointer">
+              <input type="radio" name="op-canal" id="op-canal-b2b" value="B2B" style="accent-color:var(--accent-green)">
+              <div>
+                <div style="font-weight:600;font-size:13px">B2B</div>
+                <div class="form-hint" style="margin:0">Clientes Retail</div>
+              </div>
+            </label>
+          </div>
+        </div>
+
         <div id="seccion-retailer" class="form-group hidden">
           <label class="form-label">Cliente Retail *</label>
           <select class="form-control" id="ini-retailer">
@@ -857,7 +877,8 @@ function onClienteChange(sel) {
     secRetorno?.classList.add('hidden');
     secRazon?.classList.add('hidden');
     secDest?.classList.add('hidden');
-    secRetailer?.classList.add('hidden');
+    document.getElementById('seccion-canal')?.classList.add('hidden');
+    document.getElementById('seccion-retailer')?.classList.add('hidden');
     return;
   }
 
@@ -891,15 +912,19 @@ function onClienteChange(sel) {
 
   if (secOrden) secOrden.classList.toggle('hidden', !requiereOrden);
   if (secDest) secDest.classList.toggle('hidden', !requiereNombreDest);
-  if (secRetailer) {
-    secRetailer.classList.toggle('hidden', !esB2B);
+  const secCanal = document.getElementById('seccion-canal');
+  if (secCanal) {
+    secCanal.classList.toggle('hidden', !esB2B);
     if (esB2B) {
-      const retailers = JSON.parse(opt.dataset.retail || '[]');
-      const sel = document.getElementById('ini-retailer');
-      sel.innerHTML = '<option value="">— Seleccionar retailer —</option>' +
-        retailers.map(r => `<option value="${escHTML(r)}">${escHTML(r)}</option>`).join('');
+      document.getElementById('op-canal-b2c').checked = false;
+      document.getElementById('op-canal-b2b').checked = false;
+      document.getElementById('btn-op-canal-b2c').style.cssText =
+        'display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border);background:var(--bg-elevated)';
+      document.getElementById('btn-op-canal-b2b').style.cssText =
+        'display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:1px solid var(--border);background:var(--bg-elevated)';
     }
   }
+  if (secRetailer) secRetailer.classList.add('hidden');
   if (secRetorno) {
     secRetorno.classList.toggle('hidden', !requiereTipoRetorno);
     if (!requiereTipoRetorno && secRazon) secRazon.classList.add('hidden');
@@ -926,6 +951,25 @@ function onTipoRetornoChange(tipo) {
   }
 }
 
+function onCanalOperacionChange(canal) {
+  const esB2B = canal === 'B2B';
+  document.getElementById('btn-op-canal-b2c').style.cssText =
+    `display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:${!esB2B ? '2px solid var(--accent-green);background:rgba(0,230,118,0.08)' : '1px solid var(--border);background:var(--bg-elevated)'}`;
+  document.getElementById('btn-op-canal-b2b').style.cssText =
+    `display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:${esB2B ? '2px solid var(--accent-green);background:rgba(0,230,118,0.08)' : '1px solid var(--border);background:var(--bg-elevated)'}`;
+  const secRetailer = document.getElementById('seccion-retailer');
+  if (secRetailer) {
+    secRetailer.classList.toggle('hidden', !esB2B);
+    if (esB2B) {
+      const opt = document.getElementById('ini-cliente').selectedOptions[0];
+      const retailers = JSON.parse(opt?.dataset.retail || '[]');
+      const retailerSel = document.getElementById('ini-retailer');
+      retailerSel.innerHTML = '<option value="">— Seleccionar retailer —</option>' +
+        retailers.map(r => `<option value="${escHTML(r)}">${escHTML(r)}</option>`).join('');
+    }
+  }
+}
+
 async function iniciarTracking() {
   const clienteId = document.getElementById('ini-cliente').value;
   const trackingNum = document.getElementById('ini-tracking').value.trim().toUpperCase();
@@ -942,7 +986,8 @@ async function iniciarTracking() {
   const requiereOrden = opt?.dataset.requiereOrden === '1';
   const requiereTipoRetorno = opt?.dataset.requiereTipoRetorno === '1';
   const requiereNombreDest = opt?.dataset.requiereNombreDest === '1';
-  const canal = opt?.dataset.canal || '';
+  const clienteEsB2B = opt?.dataset.canal === 'B2B';
+  const canal = clienteEsB2B ? (document.querySelector('input[name="op-canal"]:checked')?.value || null) : null;
   const retailer = canal === 'B2B' ? (document.getElementById('ini-retailer')?.value || null) : null;
 
   const numeroOrden = document.getElementById('ini-numero-orden')?.value.trim().toUpperCase() || null;
@@ -966,6 +1011,10 @@ async function iniciarTracking() {
     alertEl.innerHTML = '<div class="alert alert-error">La Razón de Retorno es requerida para RTS</div>';
     return;
   }
+  if (clienteEsB2B && !canal) {
+    alertEl.innerHTML = '<div class="alert alert-error">Debes seleccionar el canal (B2B o B2C) para este cliente</div>';
+    return;
+  }
   if (canal === 'B2B' && !retailer) {
     alertEl.innerHTML = '<div class="alert alert-error">Debes seleccionar el Cliente Retail para este envío</div>';
     return;
@@ -982,6 +1031,7 @@ async function iniciarTracking() {
       razon_retorno: requiereTipoRetorno && tipoRetorno === 'RTS' ? razonRetorno : null,
       nombre_destinatario: requiereNombreDest ? nombreDestinatario : null,
       retailer: retailer,
+      canal: canal,
     });
 
     state.tracking = await API.get(`/trackings/${res.id}`);
