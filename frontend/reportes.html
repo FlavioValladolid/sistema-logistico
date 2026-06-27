@@ -368,7 +368,7 @@ async function descargarCSV() {
 
 function generarDescargaCSV(rows, filename) {
   const esc = v => `"${(v || '').toString().replace(/"/g, '""')}"`;
-  const header = ['Tracking', 'Box/Pallet', 'Order Number', 'Return Type', 'Return Reason', 'SKU', 'QTY', 'Country of Origin', 'Barcode', 'Materials', 'Condition'];
+  const header = ['Tracking', 'Box/Pallet', 'Order Number', 'Return Type', 'Return Reason', 'Retailer', 'SKU', 'QTY', 'Country of Origin', 'Barcode', 'Materials', 'Condition'];
   const lines  = [header.join(',')];
   rows.forEach(r => lines.push([
     esc(r.tracking_number),
@@ -376,6 +376,7 @@ function generarDescargaCSV(rows, filename) {
     esc(r.order_number || r.numero_orden),
     esc(r.tipo_retorno),
     esc(r.razon_retorno),
+    esc(r.retailer),
     esc(r.sku || r.sku_code),
     r.qty ?? r.cantidad ?? 1,
     esc(r.country_of_origin || r.pais_origen_real),
@@ -649,6 +650,7 @@ async function loadManifiesto(trackingId) {
           <div class="mani-data-item"><div class="mani-data-label">Inspeccionadas</div><div class="mani-data-val">${formatNum(totalPiezas)}</div></div>
           ${t.numero_orden ? `<div class="mani-data-item" style="border-color:rgba(0,230,118,.3)"><div class="mani-data-label">Número de Orden</div><div class="mani-data-val" style="color:var(--accent-green)">${t.numero_orden}</div></div>` : ''}
           ${t.nombre_destinatario ? `<div class="mani-data-item" style="border-color:rgba(0,188,212,.3)"><div class="mani-data-label">Destinatario</div><div class="mani-data-val" style="color:var(--accent-cyan)">${escHTML(t.nombre_destinatario)}</div></div>` : ''}
+          ${t.retailer ? `<div class="mani-data-item" style="border-color:rgba(255,193,7,.3)"><div class="mani-data-label">Retailer</div><div class="mani-data-val" style="color:var(--accent-amber)">${escHTML(t.retailer)}</div></div>` : ''}
           ${t.tipo_retorno ? `<div class="mani-data-item" style="border-color:rgba(255,171,0,.3)"><div class="mani-data-label">Tipo de Retorno</div><div class="mani-data-val" style="color:#ffab00">${t.tipo_retorno}</div></div>` : ''}
           ${t.razon_retorno ? `<div class="mani-data-item" style="grid-column:span 3"><div class="mani-data-label">Razón de Retorno (RTS)</div><div class="mani-data-val" style="font-size:12px;white-space:normal;line-height:1.4">${t.razon_retorno}</div></div>` : ''}
         </div>
