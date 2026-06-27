@@ -92,9 +92,9 @@ function updateBulkUI() {
     const ths = bulkHeader.closest('tr').querySelectorAll('th:not(#bulk-action-header):not(:first-child)');
     ths.forEach(th => th.style.display = 'none');
   } else {
-    bulkHeader.style.display = 'none';
     const ths = bulkHeader.closest('tr').querySelectorAll('th');
     ths.forEach(th => th.style.display = '');
+    bulkHeader.style.display = 'none';
   }
 }
 
@@ -188,7 +188,7 @@ function renderTabla() {
                   style="accent-color:var(--accent-cyan);cursor:pointer"
                   onchange="toggleSelectAll(this.checked)">
               </th>
-              <th id="bulk-action-header" colspan="13"
+              <th id="bulk-action-header" colspan="14"
                 style="display:none;padding:6px 12px;background:rgba(0,188,212,.08);border-left:2px solid var(--accent-cyan)">
                 <div style="display:flex;align-items:center;gap:12px">
                   <span id="bulk-count" style="font-size:12px;color:var(--accent-cyan);font-weight:700"></span>
