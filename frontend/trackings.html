@@ -467,12 +467,12 @@ function openBulkRefundModal() {
 
   document.body.appendChild(modal);
 
-  modal.querySelector('#btn-confirmar-refund').addEventListener('click', () => {
+  modal.querySelector('#btn-confirmar-refund').addEventListener('click', async () => {
     const notaCredito = requiereNota
       ? (document.getElementById('bulk-nota-credito')?.value.trim() || null)
       : null;
-    executeBulkRefund(ids, notaCredito);
     modal.remove();
+    await executeBulkRefund(ids, notaCredito);
   });
 
   if (requiereNota) {
