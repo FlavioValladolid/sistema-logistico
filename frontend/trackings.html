@@ -480,6 +480,33 @@ function openBulkRefundModal() {
   }
 }
 
+async function executeBulkRefund(ids, notaCredito) {
+  let exitosos = 0;
+  let fallidos = 0;
+
+  await Promise.all(ids.map(async id => {
+    try {
+      if (notaCredito) {
+        await API.put(`/trackings/${id}/nota-credito`, { nota_credito: notaCredito });
+      }
+      await API.put(`/trackings/${id}/refunded`, {});
+      exitosos++;
+    } catch (e) {
+      fallidos++;
+    }
+  }));
+
+  selectedIds.clear();
+
+  if (fallidos === 0) {
+    toast(`${exitosos} tracking${exitosos > 1 ? 's' : ''} marcado${exitosos > 1 ? 's' : ''} como refunded`, 'success');
+  } else {
+    toast(`${exitosos} exitosos, ${fallidos} fallido${fallidos > 1 ? 's' : ''} (ya estaban en refunded o error)`, 'warning');
+  }
+
+  await loadTrackings();
+}
+
 document.getElementById('search-tracking').addEventListener('input', applyFilters);
 document.getElementById('filtro-estatus').addEventListener('change', applyFilters);
 document.getElementById('filtro-cliente').addEventListener('change', applyFilters);
