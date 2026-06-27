@@ -962,7 +962,8 @@ function onCanalOperacionChange(canal) {
     secRetailer.classList.toggle('hidden', !esB2B);
     if (esB2B) {
       const opt = document.getElementById('ini-cliente').selectedOptions[0];
-      const retailers = JSON.parse(opt?.dataset.retail || '[]');
+      let retailers = [];
+      try { retailers = JSON.parse(opt?.dataset.retail || '[]'); } catch(e) {}
       const retailerSel = document.getElementById('ini-retailer');
       retailerSel.innerHTML = '<option value="">— Seleccionar retailer —</option>' +
         retailers.map(r => `<option value="${escHTML(r)}">${escHTML(r)}</option>`).join('');

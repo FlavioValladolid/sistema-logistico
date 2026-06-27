@@ -1201,6 +1201,7 @@ app.post('/api/trackings/:id/chat-resuelto', (req, res) => {
 app.post('/api/trackings', (req, res) => {
   const { tracking_number, cliente_id, cantidad_declarada, tipo_retorno, razon_retorno, nombre_destinatario, retailer, canal } = req.body;
   let { numero_orden } = req.body;
+  const canalSafe = ['B2B', 'B2C'].includes(canal) ? canal : null;
   if (!tracking_number || !cliente_id) {
     return res.status(400).json({ error: 'tracking_number y cliente_id son requeridos' });
   }
@@ -1223,7 +1224,7 @@ app.post('/api/trackings', (req, res) => {
   const operador = req.usuario.email;
   const id = uuidv4();
   dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final,numero_orden,tipo_retorno,razon_retorno,nombre_destinatario,retailer,canal,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, tracking_number, cliente_id, '', null, operador, cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null, nombre_destinatario || null, retailer || null, canal || null, localNow()]);
+    [id, tracking_number, cliente_id, '', null, operador, cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null, nombre_destinatario || null, retailer || null, canalSafe, localNow()]);
   res.json({ id, mensaje: 'Tracking creado' });
 });
 
