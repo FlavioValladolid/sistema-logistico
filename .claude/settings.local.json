@@ -9,7 +9,9 @@
       "Bash(npm uninstall *)",
       "Bash(curl -s http://localhost:3000/api/auth/login -X POST -H \"Content-Type: application/json\" -d '{\"email\":\"admin@sistema.com\",\"password\":\"Admin123!\"}')",
       "Bash(node -e \"const d=require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\);const p=JSON.parse\\(d\\);console.log\\(p.token?'✅ Servidor OK, login exitoso':'❌ Error:',p.error||''\\)\")",
-      "Bash(node *)"
+      "Bash(node *)",
+      "Bash(npm install *)",
+      "Bash(/Users/flaviovalladolid/.claude/plugins/cache/claude-plugins-official/superpowers/6.0.3/skills/subagent-driven-development/scripts/review-package 51e99e202ef969f0c833db52dde7ae294b74ce30 *)"
     ]
   }
 }
