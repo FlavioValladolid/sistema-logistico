@@ -479,7 +479,8 @@ function editarCliente(id) {
   } else if (c.tipo_canal === 'B2B') {
     document.getElementById('canal-b2b').checked = true;
     onCanalChange('B2B');
-    const retailers = JSON.parse(c.clientes_retail || '[]');
+    let retailers = [];
+    try { retailers = JSON.parse(c.clientes_retail || '[]'); } catch(e) {}
     retailers.forEach(r => {
       document.getElementById('retail-input').value = r;
       agregarRetailer();

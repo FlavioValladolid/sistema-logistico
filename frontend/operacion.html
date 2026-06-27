@@ -724,7 +724,7 @@ async function renderInicio() {
           <label class="form-label">Cliente / Proveedor *</label>
           <select class="form-control" id="ini-cliente" onchange="onClienteChange(this)">
             <option value="">— Seleccionar cliente —</option>
-            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}" data-almacenamiento="${c.tipo_almacenamiento || 'caja'}" data-nombre="${c.nombre}" data-requiere-orden="${c.requiere_orden || 0}" data-requiere-tipo-retorno="${c.requiere_tipo_retorno || 0}" data-requiere-nombre-dest="${c.requiere_nombre_destinatario || 0}" data-canal="${c.tipo_canal || ''}" data-retail='${c.clientes_retail || "[]"}'>${c.nombre}</option>`).join('')}
+            ${clientes.map(c => `<option value="${c.id}" data-grado="${c.grado_confianza}" data-pct="${c.porcentaje_muestreo}" data-calidad="${c.modulo_calidad}" data-retrabajo="${c.modulo_retrabajo}" data-almacenamiento="${c.tipo_almacenamiento || 'caja'}" data-nombre="${c.nombre}" data-requiere-orden="${c.requiere_orden || 0}" data-requiere-tipo-retorno="${c.requiere_tipo_retorno || 0}" data-requiere-nombre-dest="${c.requiere_nombre_destinatario || 0}" data-canal="${c.tipo_canal || ''}" data-retail='${escHTML(c.clientes_retail || "[]")}'>${c.nombre}</option>`).join('')}
           </select>
           <div id="cliente-config-preview" class="mt-8 hidden">
             <div style="display:flex;gap:8px;flex-wrap:wrap" id="cliente-badges"></div>
