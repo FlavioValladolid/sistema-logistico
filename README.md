@@ -18,6 +18,25 @@ PORT=3001 node server.js
 
 Luego abrir: **http://localhost:3000** (o el puerto configurado)
 
+### Variables de entorno opcionales
+
+Crea un archivo `.env` en `backend/` para habilitar funcionalidades adicionales:
+
+```env
+# Puerto del servidor (default: 3000)
+PORT=3001
+
+# DigitalOcean Spaces — si no se configuran, las fotos se guardan en /uploads local
+SPACES_KEY=tu_access_key
+SPACES_SECRET=tu_secret_key
+SPACES_BUCKET=nombre-del-bucket
+SPACES_REGION=nyc3
+SPACES_ENDPOINT=https://nyc3.digitaloceanspaces.com
+SPACES_CDN_URL=https://nombre-del-bucket.nyc3.cdn.digitaloceanspaces.com
+```
+
+Si las variables de Spaces no están presentes, el servidor arranca normalmente con almacenamiento local y muestra `⚠ Spaces no configurado, usando almacenamiento local` en consola.
+
 ---
 
 ## Módulos
@@ -104,6 +123,11 @@ Selección directa desde el equipo (o cámara si se accede desde un dispositivo 
 - Fotos de evidencia al registrar SKU nuevo (cuando `requiere_fotos_sku_nuevo` está activo)
 - Fotos adicionales requeridas por pieza (G3) — cada tarjeta tiene su propio QR independiente
 
+**Almacenamiento de fotos:**
+- Con Spaces configurado: las fotos nuevas se suben directamente a DigitalOcean Spaces y se sirven vía CDN
+- Sin Spaces: las fotos se guardan localmente en `/uploads/` y se sirven como archivos estáticos
+- Las fotos ya existentes en `/uploads/` siempre se siguen sirviendo sin cambios
+
 ---
 
 ### Errores y Evidencia
@@ -123,6 +147,21 @@ Al detectar discrepancias o calidad deficiente se abre el modal de error:
 | Calzado | Cambio de caja, Limpieza, Reparación de caja, Impresión de etiqueta |
 | Traje de baño | Cambio de etiqueta, Limpieza, Re-empaque, Revisión de elástico |
 | Sombreros | Cambio de etiqueta, Limpieza, Reparación de forma, Re-empaque |
+
+---
+
+### Vista de Trackings — Rol CLIENTE
+
+El rol CLIENTE ve la tabla de trackings con funcionalidades específicas:
+
+**Bulk Refund (selección múltiple):**
+- Checkboxes en cada fila con estatus `cerrado` — los demás estatus no son seleccionables
+- Checkbox "Seleccionar todos" en el header selecciona todos los cerrados de la página actual
+- Al seleccionar ≥1 tracking, el header muestra un contador y el botón "Marcar como Refunded"
+- Al confirmar, se abre un modal con la lista de trackings seleccionados
+- Si el cliente tiene `requiere_nota_credito` activo: campo de número de crédito obligatorio (un solo número se aplica a todos los seleccionados)
+- Las llamadas al backend van en paralelo; un toast indica cuántos se procesaron exitosamente
+- La selección se limpia automáticamente al filtrar o cambiar de página
 
 ---
 
@@ -228,7 +267,7 @@ La interfaz soporta español e inglés. El idioma se selecciona desde el menú d
 | Frontend | HTML / CSS / JavaScript vanilla |
 | Tipografía | Inter (UI) + IBM Plex Mono (datos) |
 | Gráficas | Chart.js 4 |
-| Fotos | Multer (almacenadas en `/uploads`) |
+| Fotos | Multer → DigitalOcean Spaces (S3-compatible) con fallback a `/uploads` local |
 | QR | QRCodeJS (CDN) |
 | i18n | Sistema propio en `js/i18n.js` (ES / EN) |
 
@@ -275,6 +314,9 @@ sistema-logistico/
 | POST | `/api/detalles/:id/fotos-evidencia-url` | Guarda fotos evidencia SKU nuevo por URL (QR) |
 | POST | `/api/detalles/:id/fotos-adicionales` | Sube fotos adicionales G3 (multipart) |
 | POST | `/api/detalles/:id/fotos-adicionales-url` | Guarda fotos adicionales G3 por URL (QR) |
+| PUT | `/api/trackings/:id/refunded` | Marca tracking como refunded (requiere estatus `cerrado`) |
+| PUT | `/api/trackings/:id/nota-credito` | Guarda número de nota de crédito en un tracking |
 | GET | `/api/clientes` | Lista clientes con toda su configuración |
 | POST | `/api/clientes` | Crea cliente |
 | PUT | `/api/clientes/:id` | Actualiza cliente |
+| GET | `/api/spaces/test` | (Solo ADMIN) Verifica conectividad con DigitalOcean Spaces |
