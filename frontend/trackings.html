@@ -104,6 +104,29 @@ async function loadTrackings() {
   applyFilters();
 }
 
+function toggleRow(id, checked) {
+  if (checked) selectedIds.add(id);
+  else selectedIds.delete(id);
+  const chkAll = document.getElementById('chk-select-all');
+  if (chkAll) {
+    const total = document.querySelectorAll('.chk-tracking').length;
+    const checkedCount = document.querySelectorAll('.chk-tracking:checked').length;
+    chkAll.indeterminate = checkedCount > 0 && checkedCount < total;
+    chkAll.checked = checkedCount === total && total > 0;
+  }
+  updateBulkUI();
+}
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.chk-tracking').forEach(chk => {
+    chk.checked = checked;
+    const id = chk.dataset.id;
+    if (checked) selectedIds.add(id);
+    else selectedIds.delete(id);
+  });
+  updateBulkUI();
+}
+
 function renderTabla() {
   const el = document.getElementById('tabla-trackings');
   const total = filteredTrackings.length;
@@ -141,6 +164,12 @@ function renderTabla() {
       <table>
         <thead>
           <tr>
+            ${_pageUser?.rol === 'CLIENTE' ? `
+              <th style="width:32px;padding:6px 8px;text-align:center">
+                <input type="checkbox" id="chk-select-all" title="Seleccionar todos los cerrados"
+                  style="accent-color:var(--accent-cyan);cursor:pointer"
+                  onchange="toggleSelectAll(this.checked)">
+              </th>` : ''}
             <th>${t('trackings.col_tracking')}</th>
             <th>${t('label.client')}</th>
             <th>${t('trackings.col_box')}</th>
@@ -164,6 +193,15 @@ function renderTabla() {
             const numComent = tr.total_comentarios || 0;
             return `
               <tr ondblclick="window.location='operacion.html?id=${tr.id}'" style="cursor:pointer" title="Doble clic para ver detalle">
+                ${_pageUser?.rol === 'CLIENTE' ? `
+                  <td style="width:32px;padding:6px 8px;text-align:center" onclick="event.stopPropagation()">
+                    ${tr.estatus === 'cerrado' ? `
+                      <input type="checkbox" class="chk-tracking" data-id="${tr.id}"
+                        style="accent-color:var(--accent-cyan);cursor:pointer"
+                        ${selectedIds.has(tr.id) ? 'checked' : ''}
+                        onchange="toggleRow('${tr.id}', this.checked)">
+                    ` : ''}
+                  </td>` : ''}
                 <td class="td-mono" style="color:var(--accent-cyan);font-weight:700">${escHTML(tr.tracking_number)}</td>
                 <td>${escHTML(tr.cliente_nombre) || '—'}</td>
                 <td class="td-mono">
