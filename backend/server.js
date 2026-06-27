@@ -425,6 +425,7 @@ async function initDB() {
   try { db.exec("ALTER TABLE clientes ADD COLUMN tipo_canal TEXT DEFAULT NULL"); } catch(e) {}
   try { db.exec("ALTER TABLE clientes ADD COLUMN clientes_retail TEXT DEFAULT NULL"); } catch(e) {}
   try { db.exec("ALTER TABLE trackings ADD COLUMN retailer TEXT DEFAULT NULL"); } catch(e) {}
+  try { db.exec("ALTER TABLE trackings ADD COLUMN canal TEXT DEFAULT NULL"); } catch(e) {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS ordenes (
@@ -1198,7 +1199,7 @@ app.post('/api/trackings/:id/chat-resuelto', (req, res) => {
 });
 
 app.post('/api/trackings', (req, res) => {
-  const { tracking_number, cliente_id, cantidad_declarada, tipo_retorno, razon_retorno, nombre_destinatario, retailer } = req.body;
+  const { tracking_number, cliente_id, cantidad_declarada, tipo_retorno, razon_retorno, nombre_destinatario, retailer, canal } = req.body;
   let { numero_orden } = req.body;
   if (!tracking_number || !cliente_id) {
     return res.status(400).json({ error: 'tracking_number y cliente_id son requeridos' });
@@ -1221,8 +1222,8 @@ app.post('/api/trackings', (req, res) => {
 
   const operador = req.usuario.email;
   const id = uuidv4();
-  dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final,numero_orden,tipo_retorno,razon_retorno,nombre_destinatario,retailer,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-    [id, tracking_number, cliente_id, '', null, operador, cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null, nombre_destinatario || null, retailer || null, localNow()]);
+  dbRun(`INSERT INTO trackings (id,tracking_number,cliente_id,caja_id,caja_pallet_id,operador,cantidad_declarada,cantidad_final,numero_orden,tipo_retorno,razon_retorno,nombre_destinatario,retailer,canal,created_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+    [id, tracking_number, cliente_id, '', null, operador, cantidad_declarada || 0, cantidad_declarada || 0, numero_orden || null, tipo_retorno || null, razon_retorno || null, nombre_destinatario || null, retailer || null, canal || null, localNow()]);
   res.json({ id, mensaje: 'Tracking creado' });
 });
 
@@ -1794,7 +1795,7 @@ app.post('/api/reportes/csv-detalles', (req, res) => {
 
   // Standard trackings (detalle_skus)
   const rows = dbAll(`
-    SELECT t.tracking_number, t.caja_id, t.numero_orden as order_number, t.tipo_retorno, t.razon_retorno, t.retailer,
+    SELECT t.tracking_number, t.caja_id, t.numero_orden as order_number, t.tipo_retorno, t.razon_retorno, t.retailer, t.canal,
            d.sku_code as sku, d.cantidad as qty, d.pais_origen_real as country_of_origin, d.insumos_real as materials,
            NULL as barcode, NULL as condicion, 'standard' as tipo_pieza
     FROM detalle_skus d
@@ -1810,7 +1811,7 @@ app.post('/api/reportes/csv-detalles', (req, res) => {
            COALESCE(t.numero_orden,
              (SELECT oi2.order_number FROM orden_items oi2
               WHERE oi2.tracking_number = t.tracking_number LIMIT 1)) as order_number,
-           NULL as tipo_retorno, NULL as razon_retorno, t.retailer,
+           NULL as tipo_retorno, NULL as razon_retorno, t.retailer, t.canal,
            p.sku, 1 as qty,
            COALESCE(p.pais_real, oi.country_of_origin) as country_of_origin,
            COALESCE(p.insumos_real, oi.content) as materials,
