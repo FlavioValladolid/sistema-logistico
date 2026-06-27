@@ -415,6 +415,71 @@ async function verOrden(numeroOrden) {
   }
 }
 
+function openBulkRefundModal() {
+  const ids = [...selectedIds];
+  if (ids.length === 0) return;
+
+  const selTrackings = filteredTrackings.filter(tr => ids.includes(tr.id));
+  const requiereNota = selTrackings.some(tr => tr.requiere_nota_credito);
+
+  const modal = document.createElement('div');
+  modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px';
+  modal.onclick = e => { if (e.target === modal) modal.remove(); };
+
+  modal.innerHTML = `
+    <div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius);padding:24px;min-width:420px;max-width:90vw;max-height:80vh;overflow:auto">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <div style="font-size:16px;font-weight:700">Marcar como Refunded</div>
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('[style*=fixed]').remove()">✕</button>
+      </div>
+
+      <p style="font-size:13px;color:var(--text-secondary);margin-bottom:12px">
+        Vas a marcar <strong>${ids.length} tracking${ids.length > 1 ? 's' : ''}</strong> como refunded:
+      </p>
+
+      <div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:10px 14px;max-height:180px;overflow-y:auto;margin-bottom:16px">
+        ${selTrackings.map(tr => `
+          <div style="font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--accent-cyan);padding:2px 0">
+            ${escHTML(tr.tracking_number)}
+          </div>`).join('')}
+      </div>
+
+      ${requiereNota ? `
+        <div style="margin-bottom:16px">
+          <label style="display:block;font-size:12px;font-weight:600;color:var(--text-secondary);margin-bottom:6px">
+            Número de nota de crédito <span style="color:var(--accent-red)">*</span>
+          </label>
+          <input id="bulk-nota-credito" type="text" class="form-control"
+            placeholder="Ej: NC-2026-001"
+            style="width:100%"
+            oninput="document.getElementById('btn-confirmar-refund').disabled = !this.value.trim()">
+        </div>
+      ` : ''}
+
+      <div style="display:flex;justify-content:flex-end;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="this.closest('[style*=fixed]').remove()">Cancelar</button>
+        <button id="btn-confirmar-refund" class="btn btn-primary btn-sm" ${requiereNota ? 'disabled' : ''}>
+          Confirmar
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  modal.querySelector('#btn-confirmar-refund').addEventListener('click', () => {
+    const notaCredito = requiereNota
+      ? (document.getElementById('bulk-nota-credito')?.value.trim() || null)
+      : null;
+    executeBulkRefund(ids, notaCredito);
+    modal.remove();
+  });
+
+  if (requiereNota) {
+    setTimeout(() => document.getElementById('bulk-nota-credito')?.focus(), 50);
+  }
+}
+
 document.getElementById('search-tracking').addEventListener('input', applyFilters);
 document.getElementById('filtro-estatus').addEventListener('change', applyFilters);
 document.getElementById('filtro-cliente').addEventListener('change', applyFilters);
