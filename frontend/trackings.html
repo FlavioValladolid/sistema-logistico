@@ -76,6 +76,9 @@ let trackingsData = [];
 let filteredTrackings = [];
 let currentPage = 1;
 let pageSize = 50;
+let selectedIds = new Set();
+
+function updateBulkUI() { /* implementado en Task 3 */ }
 
 async function loadTrackings() {
   const [trackings, clientes] = await Promise.all([
@@ -239,6 +242,8 @@ function renderTabla() {
 }
 
 function goToPage(p) {
+  selectedIds.clear();
+  updateBulkUI();
   currentPage = p;
   renderTabla();
   document.getElementById('tabla-trackings').scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -251,6 +256,8 @@ function changePageSize(val) {
 }
 
 function applyFilters() {
+  selectedIds.clear();
+  updateBulkUI();
   const q = document.getElementById('search-tracking').value.toLowerCase();
   const estatus = document.getElementById('filtro-estatus').value;
   const clienteId = document.getElementById('filtro-cliente').value;
