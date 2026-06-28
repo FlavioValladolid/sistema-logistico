@@ -106,6 +106,9 @@ document.body.insertAdjacentHTML('beforeend', modalHtml);
 let ordenesData = [];
 let clientesG0 = [];
 let _parsedCsv = null;
+let _packingState = {}; // { [order_number]: {id, archivo_url, archivo_nombre, created_at} | null }
+let _detalleOrdenId = null;
+let _detalleClienteId = null;
 
 async function loadOrdenes() {
   try {
@@ -190,13 +193,24 @@ async function verDetalle(id) {
   card.classList.remove('hidden');
   content.innerHTML = '<div class="text-center" style="padding:24px"><div class="spinner"></div></div>';
   card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  _detalleOrdenId = id;
+  _detalleClienteId = orden?.cliente_id || null;
 
   try {
-    const items = await API.get(`/ordenes/${id}/items`);
+    const [items, packingLists] = await Promise.all([
+      API.get(`/ordenes/${id}/items`),
+      API.get(`/ordenes/${id}/packing-lists`).catch(() => [])
+    ]);
+
+    _packingState = {};
+    packingLists.forEach(pl => { _packingState[pl.order_number] = pl; });
+
     if (items.length === 0) {
       content.innerHTML = '<div class="text-center" style="padding:24px;color:var(--text-muted)">Sin ítems</div>';
       return;
     }
+
+    const uniqueOrders = [...new Set(items.map(i => i.order_number).filter(Boolean))];
 
     content.innerHTML = `
       <div class="table-wrapper table-scroll" style="border:none">
@@ -227,9 +241,66 @@ async function verDetalle(id) {
           </tbody>
         </table>
       </div>
+      ${uniqueOrders.length > 0 ? `
+        <div style="margin-top:20px;padding-top:16px;border-top:1px solid var(--border)">
+          <div style="font-weight:600;font-size:13px;margin-bottom:12px">Packing Lists</div>
+          <div id="packing-lista" style="display:flex;flex-direction:column;gap:10px">
+            ${uniqueOrders.map(on => renderPackingRow(on)).join('')}
+          </div>
+        </div>
+      ` : ''}
     `;
   } catch(e) {
     content.innerHTML = `<div class="alert alert-error">Error al cargar detalle</div>`;
+  }
+}
+
+function renderPackingRow(orderNumber) {
+  const pl = _packingState[orderNumber];
+  const rowId = `packing-row-${CSS.escape(orderNumber)}`;
+  if (pl) {
+    return `
+      <div id="${rowId}" style="display:flex;align-items:center;gap:12px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
+        <span class="badge badge-green" style="white-space:nowrap">✓ Subido</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            <a href="${escHTML(pl.archivo_url)}" target="_blank" style="color:var(--accent-cyan)">${escHTML(pl.archivo_nombre)}</a>
+          </div>
+          <div style="font-size:11px;color:var(--text-muted)">Orden: ${escHTML(orderNumber)} · ${formatDate(pl.created_at)}</div>
+        </div>
+        <label class="btn btn-ghost btn-sm" style="cursor:pointer">
+          Reemplazar
+          <input type="file" accept=".pdf,image/*" style="display:none" onchange="subirPacking('${escHTML(orderNumber)}',this)">
+        </label>
+      </div>`;
+  }
+  return `
+    <div id="${rowId}" style="display:flex;align-items:center;gap:12px;background:var(--bg-elevated);border:1px solid rgba(255,193,7,.3);border-radius:var(--radius-sm);padding:10px 14px">
+      <span class="badge badge-amber" style="white-space:nowrap">Pendiente</span>
+      <div style="flex:1;font-size:12px;color:var(--text-muted)">Orden: ${escHTML(orderNumber)}</div>
+      <label class="btn btn-secondary btn-sm" style="cursor:pointer">
+        Subir Packing List
+        <input type="file" accept=".pdf,image/*" style="display:none" onchange="subirPacking('${escHTML(orderNumber)}',this)">
+      </label>
+    </div>`;
+}
+
+async function subirPacking(orderNumber, inputEl) {
+  const file = inputEl.files[0];
+  if (!file || !_detalleClienteId || !_detalleOrdenId) return;
+  const fd = new FormData();
+  fd.append('cliente_id', _detalleClienteId);
+  fd.append('order_number', orderNumber);
+  fd.append('packing', file);
+  try {
+    const result = await API.postForm('/packing-lists', fd);
+    _packingState[orderNumber] = result;
+    const rowId = `packing-row-${CSS.escape(orderNumber)}`;
+    const row = document.getElementById(rowId);
+    if (row) row.outerHTML = renderPackingRow(orderNumber);
+    toast('Packing list subido');
+  } catch(e) {
+    toast(e.error || 'Error al subir packing list', 'error');
   }
 }
 
