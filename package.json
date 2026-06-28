@@ -8,6 +8,20 @@
     "dev": "node backend/server.js"
   },
   "dependencies": {
-    "nodemailer": "^8.0.7"
+    "bcrypt": "^5.1.1",
+    "better-sqlite3": "^11.9.1",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^8.0.7",
+    "papaparse": "^5.4.1",
+    "uuid": "^11.0.5"
+  },
+  "optionalDependencies": {
+    "@aws-sdk/client-s3": "^3.800.0",
+    "multer-s3": "^3.0.1",
+    "node-cron": "^3.0.3",
+    "resend": "^4.1.0"
   }
 }
