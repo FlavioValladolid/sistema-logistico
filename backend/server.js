@@ -3065,33 +3065,15 @@ app.get('/api/ordenes/items-por-numero', (req, res) => {
   if (allowedIds !== null && !allowedIds.includes(cliente_id)) {
     return res.status(403).json({ error: 'Sin acceso' });
   }
-  const cliente = dbGet('SELECT grado_confianza FROM clientes WHERE id = ?', [cliente_id]);
-  const esG0 = cliente && parseInt(cliente.grado_confianza) === 0;
-
-  let items;
-  if (esG0) {
-    // G0: items from orden_items manifest, linked via tracking numero_orden
-    items = dbAll(`
-      SELECT t.tracking_number, oi.sku, oi.product_title, oi.quantity,
-        t.numero_orden as order_number, c.nombre as cliente_nombre, t.retailer
-      FROM orden_items oi
-      JOIN trackings t ON t.tracking_number = oi.tracking_number AND t.cliente_id = oi.cliente_id AND t.numero_orden = ?
-      LEFT JOIN clientes c ON c.id = oi.cliente_id
-      WHERE oi.cliente_id = ?
-      ORDER BY t.tracking_number, oi.sku
-    `, [order_number, cliente_id]);
-  } else {
-    // G3+: items from detalle_skus (inspection records), linked via tracking_id
-    items = dbAll(`
-      SELECT t.tracking_number, d.sku_code as sku, d.descripcion as product_title, d.cantidad as quantity,
-        t.numero_orden as order_number, c.nombre as cliente_nombre, t.retailer
-      FROM detalle_skus d
-      JOIN trackings t ON t.id = d.tracking_id AND t.numero_orden = ?
-      LEFT JOIN clientes c ON c.id = t.cliente_id
-      WHERE t.cliente_id = ?
-      ORDER BY t.tracking_number, d.sku_code
-    `, [order_number, cliente_id]);
-  }
+  const items = dbAll(`
+    SELECT t.tracking_number, d.sku_code as sku, d.descripcion as product_title, d.cantidad as quantity,
+      t.numero_orden as order_number, c.nombre as cliente_nombre, t.retailer
+    FROM detalle_skus d
+    JOIN trackings t ON t.id = d.tracking_id AND t.numero_orden = ?
+    LEFT JOIN clientes c ON c.id = t.cliente_id
+    WHERE t.cliente_id = ?
+    ORDER BY t.tracking_number, d.sku_code
+  `, [order_number, cliente_id]);
   res.json(items);
 });
 
