@@ -257,7 +257,7 @@ async function verDetalle(id) {
 
 function renderPackingRow(orderNumber) {
   const pl = _packingState[orderNumber];
-  const rowId = `packing-row-${CSS.escape(orderNumber)}`;
+  const rowId = `packing-row-${encodeURIComponent(orderNumber)}`;
   if (pl) {
     return `
       <div id="${rowId}" style="display:flex;align-items:center;gap:12px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:var(--radius-sm);padding:10px 14px">
@@ -295,7 +295,7 @@ async function subirPacking(orderNumber, inputEl) {
   try {
     const result = await API.postForm('/packing-lists', fd);
     _packingState[orderNumber] = result;
-    const rowId = `packing-row-${CSS.escape(orderNumber)}`;
+    const rowId = `packing-row-${encodeURIComponent(orderNumber)}`;
     const row = document.getElementById(rowId);
     if (row) row.outerHTML = renderPackingRow(orderNumber);
     toast('Packing list subido');

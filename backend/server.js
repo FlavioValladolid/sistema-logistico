@@ -2879,7 +2879,7 @@ app.post('/api/packing-lists', upload.single('packing'), (req, res) => {
     return res.status(403).json({ error: 'No tienes acceso a este cliente' });
   }
   const id = uuidv4();
-  const archivo_url = getFileUrl(req.file);
+  const archivo_url = fileUrl(req.file);
   const archivo_nombre = req.file.originalname;
   dbRun(`INSERT OR REPLACE INTO packing_lists (id,cliente_id,order_number,archivo_url,archivo_nombre,usuario_id,created_at) VALUES (?,?,?,?,?,?,?)`,
     [id, cliente_id, order_number, archivo_url, archivo_nombre, req.usuario.id, localNow()]);
