@@ -481,7 +481,7 @@ async function _descargarOrdenCSV(numeroOrden, clienteId) {
       const safe = /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
       return '"' + safe.replace(/"/g, '""') + '"';
     };
-    const headers = ['Tracking', 'SKU', 'Producto', 'Cantidad', 'Numero Orden', 'Cliente', 'Retailer'];
+    const headers = ['Tracking', 'SKU', 'Product', 'Quantity', 'Order Number', 'Client', 'Retailer'];
     const rows = items.map(i => [i.tracking_number, i.sku, i.product_title, i.quantity, i.order_number, i.cliente_nombre, i.retailer].map(escCsv).join(','));
     const csv = [headers.map(escCsv).join(','), ...rows].join('\r\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });

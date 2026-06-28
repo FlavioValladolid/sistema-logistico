@@ -3065,13 +3065,14 @@ app.get('/api/ordenes/items-por-numero', (req, res) => {
   if (allowedIds !== null && !allowedIds.includes(cliente_id)) {
     return res.status(403).json({ error: 'Sin acceso' });
   }
+  // Join via trackings.numero_orden so items are found even when orden_items.order_number is NULL
   const items = dbAll(`
-    SELECT oi.tracking_number, oi.sku, oi.product_title, oi.quantity, oi.order_number,
-      c.nombre as cliente_nombre, t.retailer
+    SELECT oi.tracking_number, oi.sku, oi.product_title, oi.quantity,
+      t.numero_orden as order_number, c.nombre as cliente_nombre, t.retailer
     FROM orden_items oi
+    JOIN trackings t ON t.tracking_number = oi.tracking_number AND t.cliente_id = oi.cliente_id AND t.numero_orden = ?
     LEFT JOIN clientes c ON c.id = oi.cliente_id
-    LEFT JOIN trackings t ON t.tracking_number = oi.tracking_number AND t.cliente_id = oi.cliente_id
-    WHERE oi.order_number = ? AND oi.cliente_id = ?
+    WHERE oi.cliente_id = ?
     ORDER BY oi.tracking_number, oi.sku
   `, [order_number, cliente_id]);
   res.json(items);
