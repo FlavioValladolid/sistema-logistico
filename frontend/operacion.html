@@ -964,9 +964,10 @@ function onCanalOperacionChange(canal) {
       const opt = document.getElementById('ini-cliente').selectedOptions[0];
       let retailers = [];
       try { retailers = JSON.parse(opt?.dataset.retail || '[]'); } catch(e) {}
+      const normRetailers = retailers.map(r => typeof r === 'string' ? {nombre: r, packing: false} : r);
       const retailerSel = document.getElementById('ini-retailer');
       retailerSel.innerHTML = '<option value="">— Seleccionar retailer —</option>' +
-        retailers.map(r => `<option value="${escHTML(r)}">${escHTML(r)}</option>`).join('');
+        normRetailers.map(r => `<option value="${escHTML(r.nombre)}">${escHTML(r.nombre)}</option>`).join('');
     }
   }
 }
