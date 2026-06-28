@@ -2810,7 +2810,19 @@ app.post('/api/ordenes/upload', requireRol('ADMIN', 'SUPERVISOR', 'CLIENTE'), up
   }).filter(r => r.tracking_number && r.sku);
   if (rows.length === 0) return res.status(400).json({ error: 'El CSV no tiene filas válidas (tracking_number y sku son requeridos)' });
 
-  const trackingsUnicos = new Set(rows.map(r => r.tracking_number)).size;
+  const incomingTrackings = [...new Set(rows.map(r => r.tracking_number))];
+  const ph = incomingTrackings.map(() => '?').join(',');
+  const duplicados = dbAll(
+    `SELECT DISTINCT tracking_number FROM orden_items WHERE cliente_id = ? AND tracking_number IN (${ph})`,
+    [cliente_id, ...incomingTrackings]
+  );
+  if (duplicados.length > 0) {
+    return res.status(400).json({
+      error: `Los siguientes trackings ya están registrados en una orden G0 de este cliente: ${duplicados.map(d => d.tracking_number).join(', ')}`
+    });
+  }
+
+  const trackingsUnicos = incomingTrackings.length;
   const totalPiezas = rows.reduce((s, r) => s + (parseInt(r.quantity) || 1), 0);
 
   const ordenId = uuidv4();
