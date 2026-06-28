@@ -65,6 +65,16 @@ document.getElementById('page-content').innerHTML = `
           <option value="500">500 / pág</option>
         </select>
       </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:8px;border-top:1px solid var(--border)">
+        <input type="text" class="form-control" id="filtro-tracking-num" placeholder="Tracking #" style="width:160px" oninput="applyFilters()">
+        <input type="text" class="form-control" id="filtro-orden" placeholder="Orden #" style="width:140px" oninput="applyFilters()">
+        <input type="text" class="form-control" id="filtro-destinatario" placeholder="Destinatario" style="width:160px" oninput="applyFilters()">
+        <input type="text" class="form-control" id="filtro-retailer" placeholder="Retailer" style="width:140px" oninput="applyFilters()">
+        <input type="date" class="form-control" id="filtro-fecha-desde" title="Fecha desde" style="width:150px" onchange="applyFilters()">
+        <input type="date" class="form-control" id="filtro-fecha-hasta" title="Fecha hasta" style="width:150px" onchange="applyFilters()">
+        <button class="btn btn-ghost btn-sm" onclick="limpiarFiltros()">Limpiar filtros</button>
+        <button class="btn btn-secondary btn-sm" onclick="descargarCSVTrackings()">⬇ CSV</button>
+      </div>
     </div>
     <div id="tabla-trackings">
       <div class="text-center" style="padding:32px"><div class="spinner"></div></div>
@@ -344,6 +354,12 @@ function applyFilters() {
   const grado = document.getElementById('filtro-grado').value;
   const soloComentarios = document.getElementById('filtro-con-comentarios').checked;
   const soloPendienteRefund = document.getElementById('filtro-pendiente-refund').checked;
+  const fTrackingNum = document.getElementById('filtro-tracking-num').value.toLowerCase();
+  const fOrden = document.getElementById('filtro-orden').value.toLowerCase();
+  const fDestinatario = document.getElementById('filtro-destinatario').value.toLowerCase();
+  const fRetailer = document.getElementById('filtro-retailer').value.toLowerCase();
+  const fFechaDesde = document.getElementById('filtro-fecha-desde').value;
+  const fFechaHasta = document.getElementById('filtro-fecha-hasta').value;
   filteredTrackings = trackingsData.filter(tr => {
     const matchQ = !q
       || tr.tracking_number.toLowerCase().includes(q)
@@ -358,7 +374,16 @@ function applyFilters() {
     const matchG = !grado || String(tr.grado_confianza) === grado;
     const matchComent = !soloComentarios || tr.tiene_comentarios;
     const matchPendienteRefund = !soloPendienteRefund || tr.estatus === 'cerrado';
-    return matchQ && matchE && matchC && matchG && matchComent && matchPendienteRefund;
+    const matchTrackingNum = !fTrackingNum || tr.tracking_number.toLowerCase().includes(fTrackingNum);
+    const matchOrden = !fOrden || (tr.numero_orden||'').toLowerCase().includes(fOrden);
+    const matchDestinatario = !fDestinatario || (tr.nombre_destinatario||'').toLowerCase().includes(fDestinatario);
+    const matchRetailer = !fRetailer || (tr.retailer||'').toLowerCase().includes(fRetailer);
+    const fechaTr = (tr.created_at||'').slice(0, 10);
+    const matchFechaDesde = !fFechaDesde || fechaTr >= fFechaDesde;
+    const matchFechaHasta = !fFechaHasta || fechaTr <= fFechaHasta;
+    return matchQ && matchE && matchC && matchG && matchComent && matchPendienteRefund
+      && matchTrackingNum && matchOrden && matchDestinatario && matchRetailer
+      && matchFechaDesde && matchFechaHasta;
   });
   currentPage = 1;
   renderTabla();
@@ -519,6 +544,48 @@ async function executeBulkRefund(ids, notaCredito) {
   }
 
   await loadTrackings();
+}
+
+function limpiarFiltros() {
+  ['search-tracking','filtro-tracking-num','filtro-orden','filtro-destinatario','filtro-retailer','filtro-fecha-desde','filtro-fecha-hasta'].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.value = '';
+  });
+  document.getElementById('filtro-estatus').value = '';
+  document.getElementById('filtro-cliente').value = '';
+  document.getElementById('filtro-grado').value = '';
+  document.getElementById('filtro-con-comentarios').checked = false;
+  document.getElementById('filtro-pendiente-refund').checked = false;
+  applyFilters();
+}
+
+function descargarCSVTrackings() {
+  const esc = v => '"' + String(v ?? '').replace(/"/g, '""') + '"';
+  const headers = ['Tracking','Cliente','Caja/Pallet','Inspector','Grado','Orden #','Destinatario','Canal','Retailer','Piezas Declaradas','Piezas Inspeccionadas','Estatus','Nota Crédito','Fecha'];
+  const rows = filteredTrackings.map(tr => [
+    esc(tr.tracking_number),
+    esc(tr.cliente_nombre),
+    esc(tr.caja_id),
+    esc(tr.operador),
+    esc(tr.grado_confianza != null ? 'G' + tr.grado_confianza : ''),
+    esc(tr.numero_orden),
+    esc(tr.nombre_destinatario),
+    esc(tr.canal),
+    esc(tr.retailer),
+    esc(tr.cantidad_declarada),
+    esc(tr.cantidad_final),
+    esc(tr.estatus),
+    esc(tr.nota_credito),
+    esc((tr.created_at||'').slice(0,10))
+  ].join(','));
+  const csv = [headers.map(h => '"' + h + '"').join(','), ...rows].join('\r\n');
+  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `trackings-${new Date().toISOString().slice(0,10)}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
 }
 
 document.getElementById('search-tracking').addEventListener('input', applyFilters);
