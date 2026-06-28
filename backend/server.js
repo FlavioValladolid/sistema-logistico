@@ -710,6 +710,8 @@ function authMiddleware(req, res, next) {
     // Allow CLIENTE to mark refunded and capture nota de crédito
     if (req.method === 'PUT' && /^\/trackings\/[^/]+\/refunded$/.test(req.path) && sesion.rol === 'CLIENTE') return next();
     if (req.method === 'PUT' && /^\/trackings\/[^/]+\/nota-credito$/.test(req.path) && sesion.rol === 'CLIENTE') return next();
+    // Allow CLIENTE to upload G0 orders
+    if (req.method === 'POST' && req.path === '/ordenes/upload' && sesion.rol === 'CLIENTE') return next();
     return res.status(403).json({ error: 'Sin permiso para esta operación' });
   }
 
