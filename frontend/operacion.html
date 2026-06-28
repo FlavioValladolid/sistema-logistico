@@ -4495,14 +4495,14 @@ async function _checkMostrarPromptPacking() {
     const nombre = typeof r === 'string' ? r : r.nombre;
     return nombre === tk.retailer;
   });
-  if (!match || typeof match === 'string' || !match.packing) return;
+  if (!match || typeof match === 'string' || match.packing !== true) return;
   let tieneExistente = false;
   let nombreExistente = null;
   try {
     const check = await API.get(`/packing-lists/check?cliente_id=${encodeURIComponent(tk.cliente_id)}&order_number=${encodeURIComponent(tk.numero_orden)}`);
     tieneExistente = check.tiene_packing;
     nombreExistente = check.archivo_nombre;
-  } catch(e) {}
+  } catch(e) { return; }
   document.getElementById('packing-orden-numero').textContent = tk.numero_orden;
   document.getElementById('packing-existente-info').innerHTML = tieneExistente
     ? `<div style="padding:8px 12px;background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.2);border-radius:var(--radius-sm);font-size:12px;color:var(--text-secondary)">Ya existe: <strong style="color:var(--text-primary)">${escHTML(nombreExistente)}</strong>. Puedes reemplazarlo o hacer clic en Omitir.</div>`
