@@ -66,10 +66,10 @@ document.getElementById('page-content').innerHTML = `
         </select>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;padding-top:8px;border-top:1px solid var(--border)">
-        <input type="text" class="form-control" id="filtro-tracking-num" placeholder="Tracking #" style="width:160px" oninput="applyFilters()">
-        <input type="text" class="form-control" id="filtro-orden" placeholder="Orden #" style="width:140px" oninput="applyFilters()">
-        <input type="text" class="form-control" id="filtro-destinatario" placeholder="Destinatario" style="width:160px" oninput="applyFilters()">
-        <input type="text" class="form-control" id="filtro-retailer" placeholder="Retailer" style="width:140px" oninput="applyFilters()">
+        <input type="text" class="form-control" id="filtro-tracking-num" placeholder="Tracking #" style="width:160px" oninput="applyFiltersDebounced()">
+        <input type="text" class="form-control" id="filtro-orden" placeholder="Orden #" style="width:140px" oninput="applyFiltersDebounced()">
+        <input type="text" class="form-control" id="filtro-destinatario" placeholder="Destinatario" style="width:160px" oninput="applyFiltersDebounced()">
+        <input type="text" class="form-control" id="filtro-retailer" placeholder="Retailer" style="width:140px" oninput="applyFiltersDebounced()">
         <input type="date" class="form-control" id="filtro-fecha-desde" title="Fecha desde" style="width:150px" onchange="applyFilters()">
         <input type="date" class="form-control" id="filtro-fecha-hasta" title="Fecha hasta" style="width:150px" onchange="applyFilters()">
         <button class="btn btn-ghost btn-sm" onclick="limpiarFiltros()">Limpiar filtros</button>
@@ -86,6 +86,8 @@ let trackingsData = [];
 let filteredTrackings = [];
 let currentPage = 1;
 let pageSize = 50;
+let totalTrackings = 0;
+let _filterDebounceTimer = null;
 let selectedIds = new Set();
 
 function updateBulkUI() {
@@ -109,15 +111,10 @@ function updateBulkUI() {
 }
 
 async function loadTrackings() {
-  const [trackings, clientes] = await Promise.all([
-    API.get('/trackings'),
-    API.get('/clientes')
-  ]);
-  trackingsData = trackings;
-
+  const clientes = await API.get('/clientes');
   const sel = document.getElementById('filtro-cliente');
-  const clientesConTrackings = clientes.filter(c => trackings.some(t => t.cliente_id === c.id));
-  clientesConTrackings.forEach(c => {
+  while (sel.options.length > 1) sel.remove(1);
+  clientes.forEach(c => {
     const opt = document.createElement('option');
     opt.value = c.id;
     opt.textContent = c.nombre;
@@ -125,11 +122,61 @@ async function loadTrackings() {
   });
 
   // Pre-set filters from URL params (e.g. ?grado=0&estatus=abierto from dashboard link)
-  const params = new URLSearchParams(window.location.search);
-  if (params.get('grado')) document.getElementById('filtro-grado').value = params.get('grado');
-  if (params.get('estatus')) document.getElementById('filtro-estatus').value = params.get('estatus');
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('grado')) document.getElementById('filtro-grado').value = urlParams.get('grado');
+  if (urlParams.get('estatus')) document.getElementById('filtro-estatus').value = urlParams.get('estatus');
 
-  applyFilters();
+  await applyFilters();
+}
+
+function _buildFilterParams(overrides = {}) {
+  const q = document.getElementById('search-tracking').value.trim();
+  const estatus = document.getElementById('filtro-estatus').value;
+  const clienteId = document.getElementById('filtro-cliente').value;
+  const grado = document.getElementById('filtro-grado').value;
+  const soloComentarios = document.getElementById('filtro-con-comentarios').checked;
+  const soloPendienteRefund = document.getElementById('filtro-pendiente-refund').checked;
+  const fTrackingNum = document.getElementById('filtro-tracking-num').value.trim();
+  const fOrden = document.getElementById('filtro-orden').value.trim();
+  const fDestinatario = document.getElementById('filtro-destinatario').value.trim();
+  const fRetailer = document.getElementById('filtro-retailer').value.trim();
+  const fFechaDesde = document.getElementById('filtro-fecha-desde').value;
+  const fFechaHasta = document.getElementById('filtro-fecha-hasta').value;
+  const p = new URLSearchParams();
+  if (q) p.set('q', q);
+  if (estatus) p.set('estatus', estatus);
+  if (clienteId) p.set('cliente_id', clienteId);
+  if (grado) p.set('grado', grado);
+  if (soloComentarios) p.set('con_comentarios', '1');
+  if (soloPendienteRefund) p.set('pendiente_refund', '1');
+  if (fTrackingNum) p.set('tracking_num', fTrackingNum);
+  if (fOrden) p.set('orden', fOrden);
+  if (fDestinatario) p.set('destinatario', fDestinatario);
+  if (fRetailer) p.set('retailer_f', fRetailer);
+  if (fFechaDesde) p.set('fecha_desde', fFechaDesde);
+  if (fFechaHasta) p.set('fecha_hasta', fFechaHasta);
+  p.set('page', overrides.page ?? currentPage);
+  p.set('page_size', overrides.page_size ?? pageSize);
+  return p;
+}
+
+function applyFiltersDebounced() {
+  clearTimeout(_filterDebounceTimer);
+  _filterDebounceTimer = setTimeout(() => applyFilters(), 350);
+}
+
+async function _fetchAndRender() {
+  const el = document.getElementById('tabla-trackings');
+  el.innerHTML = '<div class="text-center" style="padding:32px"><div class="spinner"></div></div>';
+  try {
+    const result = await API.get(`/trackings?${_buildFilterParams()}`);
+    filteredTrackings = result.data;
+    trackingsData = result.data;
+    totalTrackings = result.total;
+    renderTabla();
+  } catch(e) {
+    el.innerHTML = `<div class="text-center" style="padding:32px;color:var(--text-muted)">Error cargando trackings</div>`;
+  }
 }
 
 function toggleRow(id, checked) {
@@ -157,7 +204,7 @@ function toggleSelectAll(checked) {
 
 function renderTabla() {
   const el = document.getElementById('tabla-trackings');
-  const total = filteredTrackings.length;
+  const total = totalTrackings;
   if (total === 0) {
     el.innerHTML = `
       <div class="empty-state">
@@ -168,11 +215,10 @@ function renderTabla() {
     return;
   }
 
-  const totalPages = Math.ceil(total / pageSize);
-  if (currentPage > totalPages) currentPage = totalPages;
+  const totalPages = Math.ceil(total / pageSize) || 1;
   const start = (currentPage - 1) * pageSize;
-  const end = Math.min(start + pageSize, total);
-  const pageData = filteredTrackings.slice(start, end);
+  const end = start + filteredTrackings.length;
+  const pageData = filteredTrackings;
 
   function paginationHtml() {
     if (totalPages <= 1) return '';
@@ -332,62 +378,25 @@ function renderTabla() {
   `;
 }
 
-function goToPage(p) {
+async function goToPage(p) {
   selectedIds.clear();
   updateBulkUI();
   currentPage = p;
-  renderTabla();
+  await _fetchAndRender();
   document.getElementById('tabla-trackings').scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-function changePageSize(val) {
+async function changePageSize(val) {
   pageSize = parseInt(val);
   currentPage = 1;
-  renderTabla();
+  await _fetchAndRender();
 }
 
-function applyFilters() {
+async function applyFilters() {
   selectedIds.clear();
   updateBulkUI();
-  const q = document.getElementById('search-tracking').value.toLowerCase();
-  const estatus = document.getElementById('filtro-estatus').value;
-  const clienteId = document.getElementById('filtro-cliente').value;
-  const grado = document.getElementById('filtro-grado').value;
-  const soloComentarios = document.getElementById('filtro-con-comentarios').checked;
-  const soloPendienteRefund = document.getElementById('filtro-pendiente-refund').checked;
-  const fTrackingNum = document.getElementById('filtro-tracking-num').value.toLowerCase();
-  const fOrden = document.getElementById('filtro-orden').value.toLowerCase();
-  const fDestinatario = document.getElementById('filtro-destinatario').value.toLowerCase();
-  const fRetailer = document.getElementById('filtro-retailer').value.toLowerCase();
-  const fFechaDesde = document.getElementById('filtro-fecha-desde').value;
-  const fFechaHasta = document.getElementById('filtro-fecha-hasta').value;
-  filteredTrackings = trackingsData.filter(tr => {
-    const matchQ = !q
-      || tr.tracking_number.toLowerCase().includes(q)
-      || (tr.cliente_nombre||'').toLowerCase().includes(q)
-      || (tr.operador||'').toLowerCase().includes(q)
-      || (tr.numero_orden||'').toLowerCase().includes(q)
-      || (tr.nombre_destinatario||'').toLowerCase().includes(q)
-      || (tr.retailer||'').toLowerCase().includes(q)
-      || (tr.canal||'').toLowerCase().includes(q);
-    const matchE = !estatus || tr.estatus === estatus;
-    const matchC = !clienteId || tr.cliente_id === clienteId;
-    const matchG = !grado || String(tr.grado_confianza) === grado;
-    const matchComent = !soloComentarios || tr.tiene_comentarios;
-    const matchPendienteRefund = !soloPendienteRefund || tr.estatus === 'cerrado';
-    const matchTrackingNum = !fTrackingNum || tr.tracking_number.toLowerCase().includes(fTrackingNum);
-    const matchOrden = !fOrden || (tr.numero_orden||'').toLowerCase().includes(fOrden);
-    const matchDestinatario = !fDestinatario || (tr.nombre_destinatario||'').toLowerCase().includes(fDestinatario);
-    const matchRetailer = !fRetailer || (tr.retailer||'').toLowerCase().includes(fRetailer);
-    const fechaTr = (tr.created_at||'').slice(0, 10);
-    const matchFechaDesde = !fFechaDesde || fechaTr >= fFechaDesde;
-    const matchFechaHasta = !fFechaHasta || fechaTr <= fFechaHasta;
-    return matchQ && matchE && matchC && matchG && matchComent && matchPendienteRefund
-      && matchTrackingNum && matchOrden && matchDestinatario && matchRetailer
-      && matchFechaDesde && matchFechaHasta;
-  });
   currentPage = 1;
-  renderTabla();
+  await _fetchAndRender();
 }
 
 function packingPendiente(tr) {
@@ -596,7 +605,7 @@ async function executeBulkRefund(ids, notaCredito) {
     toast(`${exitosos} exitosos, ${fallidos} fallido${fallidos > 1 ? 's' : ''} (ya estaban en refunded o error)`, 'warning');
   }
 
-  await loadTrackings();
+  await applyFilters();
 }
 
 function limpiarFiltros() {
@@ -612,46 +621,52 @@ function limpiarFiltros() {
   applyFilters();
 }
 
-function descargarCSVTrackings() {
+async function descargarCSVTrackings() {
   const esc = v => { const s = String(v ?? ''); return '"' + (/^[=+\-@\t\r]/.test(s) ? "'" + s : s).replace(/"/g, '""') + '"'; };
-  const exportDate = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
-  const filtroEstatus = document.getElementById('filtro-estatus')?.value || 'todos';
-  const filtroCliente = document.getElementById('filtro-cliente')?.selectedOptions[0]?.text || 'todos';
-  const meta = [
-    `# Exported: ${exportDate}`,
-    `# Records: ${filteredTrackings.length}`,
-    `# Filters: status=${filtroEstatus} | client=${filtroCliente}`,
-    '',
-  ].join('\r\n');
-  const headers = ['Tracking','Cliente','Caja/Pallet','Inspector','Grado','Orden #','Destinatario','Canal','Retailer','Piezas Declaradas','Piezas Inspeccionadas','Estatus','Nota Crédito','Fecha Inicio','Fecha Cierre'];
-  const rows = filteredTrackings.map(tr => [
-    esc(tr.tracking_number),
-    esc(tr.cliente_nombre),
-    esc(tr.caja_id),
-    esc(tr.operador),
-    esc(tr.grado_confianza != null ? 'G' + tr.grado_confianza : ''),
-    esc(tr.numero_orden),
-    esc(tr.nombre_destinatario),
-    esc(tr.canal),
-    esc(tr.retailer),
-    esc(tr.cantidad_declarada),
-    esc(tr.cantidad_final),
-    esc(tr.estatus),
-    esc(tr.nota_credito),
-    esc(tr.created_at || ''),
-    esc(tr.closed_at || ''),
-  ].join(','));
-  const csv = meta + [headers.map(h => '"' + h + '"').join(','), ...rows].join('\r\n');
-  const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `trackings-${new Date().toISOString().slice(0,10)}.csv`;
-  a.click();
-  URL.revokeObjectURL(url);
+  try {
+    const result = await API.get(`/trackings?${_buildFilterParams({ page: 1, page_size: 5000 })}`);
+    const allRows = result.data;
+    const exportDate = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+    const filtroEstatus = document.getElementById('filtro-estatus')?.value || 'todos';
+    const filtroCliente = document.getElementById('filtro-cliente')?.selectedOptions[0]?.text || 'todos';
+    const meta = [
+      `# Exported: ${exportDate}`,
+      `# Records: ${result.total}`,
+      `# Filters: status=${filtroEstatus} | client=${filtroCliente}`,
+      '',
+    ].join('\r\n');
+    const headers = ['Tracking','Cliente','Caja/Pallet','Inspector','Grado','Orden #','Destinatario','Canal','Retailer','Piezas Declaradas','Piezas Inspeccionadas','Estatus','Nota Crédito','Fecha Inicio','Fecha Cierre'];
+    const rows = allRows.map(tr => [
+      esc(tr.tracking_number),
+      esc(tr.cliente_nombre),
+      esc(tr.caja_id),
+      esc(tr.operador),
+      esc(tr.grado_confianza != null ? 'G' + tr.grado_confianza : ''),
+      esc(tr.numero_orden),
+      esc(tr.nombre_destinatario),
+      esc(tr.canal),
+      esc(tr.retailer),
+      esc(tr.cantidad_declarada),
+      esc(tr.cantidad_final),
+      esc(tr.estatus),
+      esc(tr.nota_credito),
+      esc(tr.created_at || ''),
+      esc(tr.closed_at || ''),
+    ].join(','));
+    const csv = meta + [headers.map(h => '"' + h + '"').join(','), ...rows].join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `trackings-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch(e) {
+    toast('Error al generar CSV', 'error');
+  }
 }
 
-document.getElementById('search-tracking').addEventListener('input', applyFilters);
+document.getElementById('search-tracking').addEventListener('input', applyFiltersDebounced);
 document.getElementById('filtro-estatus').addEventListener('change', applyFilters);
 document.getElementById('filtro-cliente').addEventListener('change', applyFilters);
 document.getElementById('filtro-pendiente-refund').addEventListener('change', applyFilters);

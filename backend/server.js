@@ -1165,11 +1165,35 @@ app.get('/api/trackings', (req, res) => {
   const { sql: cf, params: cp } = clienteFilter(req.usuario, 't');
   const extraWhere = [];
   const extraParams = [];
-  if (req.query.numero_orden) { extraWhere.push('t.numero_orden = ?'); extraParams.push(req.query.numero_orden); }
-  if (req.query.grado)        { extraWhere.push('c.grado_confianza = ?'); extraParams.push(req.query.grado); }
-  if (req.query.estatus)      { extraWhere.push("t.estatus = ?"); extraParams.push(req.query.estatus); }
-  const extraSql = extraWhere.length ? ' AND ' + extraWhere.join(' AND ') : '';
+  if (req.query.numero_orden)          { extraWhere.push('t.numero_orden = ?'); extraParams.push(req.query.numero_orden); }
+  if (req.query.grado)                 { extraWhere.push('c.grado_confianza = ?'); extraParams.push(req.query.grado); }
+  if (req.query.estatus)               { extraWhere.push('t.estatus = ?'); extraParams.push(req.query.estatus); }
+  if (req.query.cliente_id)            { extraWhere.push('t.cliente_id = ?'); extraParams.push(req.query.cliente_id); }
+  if (req.query.tracking_num)          { extraWhere.push('t.tracking_number LIKE ?'); extraParams.push('%' + req.query.tracking_num + '%'); }
+  if (req.query.orden)                 { extraWhere.push('t.numero_orden LIKE ?'); extraParams.push('%' + req.query.orden + '%'); }
+  if (req.query.destinatario)          { extraWhere.push('t.nombre_destinatario LIKE ?'); extraParams.push('%' + req.query.destinatario + '%'); }
+  if (req.query.retailer_f)            { extraWhere.push('t.retailer LIKE ?'); extraParams.push('%' + req.query.retailer_f + '%'); }
+  if (req.query.fecha_desde)           { extraWhere.push('date(t.created_at) >= ?'); extraParams.push(req.query.fecha_desde); }
+  if (req.query.fecha_hasta)           { extraWhere.push('date(t.created_at) <= ?'); extraParams.push(req.query.fecha_hasta); }
+  if (req.query.con_comentarios === '1') {
+    extraWhere.push('(SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id) > 0');
+  }
+  if (req.query.pendiente_refund === '1') { extraWhere.push("t.estatus = 'cerrado'"); }
+  if (req.query.q) {
+    const like = '%' + req.query.q + '%';
+    extraWhere.push('(t.tracking_number LIKE ? OR c.nombre LIKE ? OR t.operador LIKE ? OR t.numero_orden LIKE ? OR t.nombre_destinatario LIKE ? OR t.retailer LIKE ? OR t.canal LIKE ?)');
+    extraParams.push(like, like, like, like, like, like, like);
+  }
 
+  const extraSql = extraWhere.length ? ' AND ' + extraWhere.join(' AND ') : '';
+  const baseParams = [...cp, ...extraParams];
+  const fromSql = `FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id WHERE 1=1${cf}${extraSql}`;
+
+  const page = Math.max(1, parseInt(req.query.page) || 1);
+  const pageSize = Math.min(Math.max(1, parseInt(req.query.page_size) || 50), 5000);
+  const offset = (page - 1) * pageSize;
+
+  const total = dbGet(`SELECT COUNT(*) as cnt ${fromSql}`, baseParams).cnt;
   const rows = dbAll(`
     SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion, c.requiere_fotos_sku_nuevo, c.tipo_canal, c.clientes_retail,
       COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) as total_comentarios,
@@ -1177,11 +1201,12 @@ app.get('/api/trackings', (req, res) => {
       CASE WHEN t.canal = 'B2B' AND t.numero_orden IS NOT NULL AND EXISTS (
         SELECT 1 FROM packing_lists pl WHERE pl.cliente_id = t.cliente_id AND pl.order_number = t.numero_orden
       ) THEN 1 ELSE 0 END as tiene_packing
-    FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
-    WHERE 1=1${cf}${extraSql}
+    ${fromSql}
     ORDER BY t.created_at DESC
-  `, [...cp, ...extraParams]);
-  res.json(rows);
+    LIMIT ? OFFSET ?
+  `, [...baseParams, pageSize, offset]);
+
+  res.json({ data: rows, total, page, page_size: pageSize });
 });
 
 app.get('/api/trackings/:id', (req, res) => {
