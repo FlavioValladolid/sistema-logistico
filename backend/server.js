@@ -428,6 +428,20 @@ async function initDB() {
   try { db.exec("ALTER TABLE trackings ADD COLUMN canal TEXT DEFAULT NULL"); } catch(e) {}
 
   db.exec(`
+    CREATE TABLE IF NOT EXISTS packing_lists (
+      id TEXT PRIMARY KEY,
+      cliente_id TEXT NOT NULL,
+      order_number TEXT NOT NULL,
+      archivo_url TEXT NOT NULL,
+      archivo_nombre TEXT NOT NULL,
+      usuario_id TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      UNIQUE(cliente_id, order_number),
+      FOREIGN KEY (cliente_id) REFERENCES clientes(id)
+    )
+  `);
+
+  db.exec(`
     CREATE TABLE IF NOT EXISTS ordenes (
       id TEXT PRIMARY KEY,
       cliente_id TEXT NOT NULL,
@@ -712,6 +726,8 @@ function authMiddleware(req, res, next) {
     if (req.method === 'PUT' && /^\/trackings\/[^/]+\/nota-credito$/.test(req.path) && sesion.rol === 'CLIENTE') return next();
     // Allow CLIENTE to upload G0 orders
     if (req.method === 'POST' && req.path === '/ordenes/upload' && sesion.rol === 'CLIENTE') return next();
+    // Allow CLIENTE to upload packing lists
+    if (req.method === 'POST' && req.path === '/packing-lists' && sesion.rol === 'CLIENTE') return next();
     return res.status(403).json({ error: 'Sin permiso para esta operación' });
   }
 
@@ -1135,9 +1151,12 @@ app.get('/api/trackings', (req, res) => {
   const extraSql = extraWhere.length ? ' AND ' + extraWhere.join(' AND ') : '';
 
   const rows = dbAll(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion, c.requiere_fotos_sku_nuevo, c.tipo_canal,
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion, c.requiere_fotos_sku_nuevo, c.tipo_canal, c.clientes_retail,
       COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) as total_comentarios,
-      CASE WHEN COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) > 0 AND COALESCE(t.chat_resuelto, 0) = 0 THEN 1 ELSE 0 END as tiene_comentarios
+      CASE WHEN COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) > 0 AND COALESCE(t.chat_resuelto, 0) = 0 THEN 1 ELSE 0 END as tiene_comentarios,
+      CASE WHEN t.canal = 'B2B' AND t.numero_orden IS NOT NULL AND EXISTS (
+        SELECT 1 FROM packing_lists pl WHERE pl.cliente_id = t.cliente_id AND pl.order_number = t.numero_orden
+      ) THEN 1 ELSE 0 END as tiene_packing
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     WHERE 1=1${cf}${extraSql}
     ORDER BY t.created_at DESC
@@ -2846,6 +2865,52 @@ app.delete('/api/ordenes/:id', requireRol('ADMIN', 'SUPERVISOR'), (req, res) => 
   dbRun('DELETE FROM orden_items WHERE orden_id = ?', [req.params.id]);
   dbRun('DELETE FROM ordenes WHERE id = ?', [req.params.id]);
   res.json({ mensaje: 'Orden eliminada' });
+});
+
+app.post('/api/packing-lists', upload.single('packing'), (req, res) => {
+  const { cliente_id, order_number } = req.body;
+  if (!cliente_id || !order_number) return res.status(400).json({ error: 'cliente_id y order_number requeridos' });
+  if (!req.file) return res.status(400).json({ error: 'Archivo requerido' });
+  const cliente = dbGet('SELECT id, tipo_canal FROM clientes WHERE id = ?', [cliente_id]);
+  if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
+  if (cliente.tipo_canal !== 'B2B') return res.status(400).json({ error: 'Solo clientes B2B pueden usar packing lists' });
+  const allowedIds = getUserClienteIds(req.usuario.id, req.usuario.rol);
+  if (allowedIds !== null && !allowedIds.includes(cliente_id)) {
+    return res.status(403).json({ error: 'No tienes acceso a este cliente' });
+  }
+  const id = uuidv4();
+  const archivo_url = getFileUrl(req.file);
+  const archivo_nombre = req.file.originalname;
+  dbRun(`INSERT OR REPLACE INTO packing_lists (id,cliente_id,order_number,archivo_url,archivo_nombre,usuario_id,created_at) VALUES (?,?,?,?,?,?,?)`,
+    [id, cliente_id, order_number, archivo_url, archivo_nombre, req.usuario.id, localNow()]);
+  res.json({ id, cliente_id, order_number, archivo_url, archivo_nombre });
+});
+
+app.get('/api/ordenes/:id/packing-lists', (req, res) => {
+  const orden = dbGet('SELECT id, cliente_id FROM ordenes WHERE id = ?', [req.params.id]);
+  if (!orden) return res.status(404).json({ error: 'Orden no encontrada' });
+  const allowedIds = getUserClienteIds(req.usuario.id, req.usuario.rol);
+  if (allowedIds !== null && !allowedIds.includes(orden.cliente_id)) {
+    return res.status(403).json({ error: 'No tienes acceso a esta orden' });
+  }
+  const orderNumbers = dbAll(
+    'SELECT DISTINCT order_number FROM orden_items WHERE orden_id = ? AND order_number IS NOT NULL',
+    [req.params.id]
+  ).map(r => r.order_number);
+  if (orderNumbers.length === 0) return res.json([]);
+  const ph = orderNumbers.map(() => '?').join(',');
+  const rows = dbAll(
+    `SELECT id, order_number, archivo_url, archivo_nombre, created_at FROM packing_lists WHERE cliente_id = ? AND order_number IN (${ph})`,
+    [orden.cliente_id, ...orderNumbers]
+  );
+  res.json(rows);
+});
+
+app.delete('/api/packing-lists/:id', requireRol('ADMIN', 'SUPERVISOR'), (req, res) => {
+  const pl = dbGet('SELECT id FROM packing_lists WHERE id = ?', [req.params.id]);
+  if (!pl) return res.status(404).json({ error: 'Packing list no encontrado' });
+  dbRun('DELETE FROM packing_lists WHERE id = ?', [req.params.id]);
+  res.json({ mensaje: 'Eliminado' });
 });
 
 function enrichOrdenItem(item) {
