@@ -2778,6 +2778,10 @@ app.post('/api/ordenes/upload', requireRol('ADMIN', 'SUPERVISOR', 'CLIENTE'), up
   const cliente = dbGet('SELECT id, grado_confianza FROM clientes WHERE id = ?', [cliente_id]);
   if (!cliente) return res.status(404).json({ error: 'Cliente no encontrado' });
   if (parseInt(cliente.grado_confianza) !== 0) return res.status(400).json({ error: 'El cliente debe ser G0 para subir órdenes' });
+  const allowedIds = getUserClienteIds(req.usuario.id, req.usuario.rol);
+  if (allowedIds !== null && !allowedIds.includes(cliente_id)) {
+    return res.status(403).json({ error: 'No tienes acceso a este cliente' });
+  }
 
   const csvText = req.file.buffer.toString('utf8');
   const parsed = Papa.parse(csvText, {
