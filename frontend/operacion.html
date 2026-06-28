@@ -978,6 +978,9 @@ function onTipoRetornoChange(tipo) {
 
 function onCanalOperacionChange(canal) {
   const esB2B = canal === 'B2B';
+  const radioId = esB2B ? 'op-canal-b2b' : 'op-canal-b2c';
+  const radio = document.getElementById(radioId);
+  if (radio) radio.checked = true;
   document.getElementById('btn-op-canal-b2c').style.cssText =
     `display:flex;align-items:center;gap:10px;padding:12px 14px;border-radius:var(--radius-sm);cursor:pointer;border:${!esB2B ? '2px solid var(--accent-green);background:rgba(0,230,118,0.08)' : '1px solid var(--border);background:var(--bg-elevated)'}`;
   document.getElementById('btn-op-canal-b2b').style.cssText =
