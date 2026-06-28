@@ -769,8 +769,9 @@ async function renderInicio() {
 
         <div id="seccion-numero-orden" class="form-group hidden">
           <label class="form-label">Número de Orden *</label>
-          <input type="text" class="form-control form-control-mono" id="ini-numero-orden" placeholder="ORD-XXXXX" style="text-transform:uppercase">
+          <input type="text" class="form-control form-control-mono" id="ini-numero-orden" placeholder="ORD-XXXXX" style="text-transform:uppercase" oninput="_autocompletarOrdenInicio(this.value)">
           <div class="form-hint">Número de orden del cliente para este envío</div>
+          <div id="ini-orden-info" style="margin-top:4px;font-size:11px;color:var(--text-muted)"></div>
         </div>
 
         <div id="seccion-nombre-destinatario" class="form-group hidden">
@@ -4511,6 +4512,48 @@ async function _checkMostrarPromptPacking() {
     : '';
   document.getElementById('packing-file-input').value = '';
   openModal('modal-packing');
+}
+
+let _autoOrdenInicioTimer = null;
+async function _autocompletarOrdenInicio(valor) {
+  clearTimeout(_autoOrdenInicioTimer);
+  const infoEl = document.getElementById('ini-orden-info');
+  if (!infoEl) return;
+  if (!valor || valor.length < 2) { infoEl.textContent = ''; return; }
+  const clienteId = document.getElementById('ini-cliente')?.value;
+  if (!clienteId) { infoEl.textContent = ''; return; }
+  _autoOrdenInicioTimer = setTimeout(async () => {
+    try {
+      const data = await API.get(`/ordenes/resumen-por-numero?numero_orden=${encodeURIComponent(valor.toUpperCase())}`);
+      const previos = (data.trackings || []).filter(t => t.cliente_id === clienteId);
+      if (previos.length === 0) { infoEl.textContent = ''; return; }
+      const ref = previos[0];
+      // Auto-fill destinatario if currently empty
+      const destEl = document.getElementById('ini-nombre-destinatario');
+      if (destEl && !destEl.value.trim() && ref.nombre_destinatario) {
+        destEl.value = ref.nombre_destinatario;
+      }
+      // Auto-select canal
+      if (ref.canal === 'B2B' || ref.canal === 'B2C') {
+        onCanalOperacionChange(ref.canal);
+        // Auto-select retailer after canal sets up the dropdown
+        if (ref.canal === 'B2B' && ref.retailer) {
+          setTimeout(() => {
+            const sel = document.getElementById('ini-retailer');
+            if (sel) {
+              const opt = [...sel.options].find(o => o.value === ref.retailer);
+              if (opt) sel.value = ref.retailer;
+            }
+          }, 50);
+        }
+      }
+      // Show info hint
+      const partes = [];
+      if (ref.canal) partes.push(ref.canal);
+      if (ref.retailer) partes.push(ref.retailer);
+      infoEl.innerHTML = `<span style="color:var(--accent-cyan)">✓ Orden existente</span>${partes.length ? ' · ' + escHTML(partes.join(' / ')) : ''} · ${previos.length} tracking${previos.length > 1 ? 's' : ''} registrado${previos.length > 1 ? 's' : ''}`;
+    } catch(e) { infoEl.textContent = ''; }
+  }, 400);
 }
 
 let _autoOrdenTimer = null;
