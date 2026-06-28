@@ -510,6 +510,26 @@ async function initDB() {
     console.log('👤 Usuario admin creado: admin@sistema.com / Admin123!');
   }
 
+  // Índices secundarios para hot-paths de filtrado y JOINs
+  const indexes = [
+    'CREATE INDEX IF NOT EXISTS idx_trackings_cliente_id ON trackings(cliente_id)',
+    'CREATE INDEX IF NOT EXISTS idx_trackings_caja_id ON trackings(caja_id)',
+    'CREATE INDEX IF NOT EXISTS idx_trackings_numero_orden ON trackings(numero_orden)',
+    'CREATE INDEX IF NOT EXISTS idx_trackings_canal ON trackings(canal)',
+    'CREATE INDEX IF NOT EXISTS idx_trackings_estatus ON trackings(estatus)',
+    'CREATE INDEX IF NOT EXISTS idx_trackings_retailer ON trackings(retailer)',
+    'CREATE INDEX IF NOT EXISTS idx_detalle_skus_tracking_id ON detalle_skus(tracking_id)',
+    'CREATE INDEX IF NOT EXISTS idx_errores_tracking_id ON errores(tracking_id)',
+    'CREATE INDEX IF NOT EXISTS idx_tracking_comentarios_tracking_id ON tracking_comentarios(tracking_id)',
+    'CREATE INDEX IF NOT EXISTS idx_g0_piezas_tracking_id ON g0_piezas(tracking_id)',
+    'CREATE INDEX IF NOT EXISTS idx_orden_items_tracking_number ON orden_items(tracking_number)',
+    'CREATE INDEX IF NOT EXISTS idx_orden_items_cliente_id ON orden_items(cliente_id)',
+    'CREATE INDEX IF NOT EXISTS idx_orden_items_order_number ON orden_items(order_number)',
+    'CREATE INDEX IF NOT EXISTS idx_orden_items_barcode ON orden_items(barcode)',
+    'CREATE INDEX IF NOT EXISTS idx_packing_lists_cliente_order ON packing_lists(cliente_id, order_number)',
+  ];
+  for (const sql of indexes) { try { db.exec(sql); } catch(e) {} }
+
   console.log('✅ Base de datos inicializada');
 }
 
@@ -1226,6 +1246,12 @@ app.post('/api/trackings', (req, res) => {
   if (!tracking_number || !cliente_id) {
     return res.status(400).json({ error: 'tracking_number y cliente_id son requeridos' });
   }
+  if (canalSafe === 'B2B' && !retailer) {
+    return res.status(400).json({ error: 'El campo retailer es requerido para canal B2B' });
+  }
+  if (canalSafe === 'B2B' && !numero_orden) {
+    return res.status(400).json({ error: 'El número de orden es requerido para canal B2B' });
+  }
 
   const existing = dbGet('SELECT id FROM trackings WHERE tracking_number = ?', [tracking_number]);
   if (existing) return res.status(400).json({ error: 'Tracking number ya registrado' });
@@ -1796,8 +1822,6 @@ app.get('/api/reportes/caja-detalle', (req, res) => {
         orden_number: p.canonical_order || null,
         insumos_real: p.insumos_real || p.item_content || null,
         insumos_coincide: p.insumos_coincide !== 0 ? 1 : 0,
-        pais_coincide: 1,
-        insumos_coincide: 1,
         foto_etiqueta: null,
         tipo_pieza: 'g0',
       });
@@ -1903,8 +1927,6 @@ app.get('/api/reportes/manifiesto/:id', (req, res) => {
         orden_number: p.canonical_order || null,
         insumos_real: p.insumos_real || p.item_content || null,
         insumos_coincide: p.insumos_coincide !== 0 ? 1 : 0,
-        pais_coincide: 1,
-        insumos_coincide: 1,
         foto_etiqueta: null,
         tipo_pieza: 'g0',
       });
