@@ -422,6 +422,30 @@ document.body.insertAdjacentHTML('beforeend', `
     </div>
   </div>
 
+  <!-- modal packing list -->
+  <div id="modal-packing" class="modal-overlay">
+    <div class="modal" style="max-width:480px">
+      <div class="modal-header">
+        <span class="modal-title">Packing List</span>
+        <button class="modal-close" onclick="closeModal('modal-packing')">×</button>
+      </div>
+      <div class="modal-body">
+        <p style="margin:0 0 12px;color:var(--text-secondary);font-size:14px">
+          La orden <strong id="packing-orden-numero" style="color:var(--text-primary)"></strong> requiere un packing list.
+        </p>
+        <div id="packing-existente-info"></div>
+        <div class="form-group" style="margin-top:12px">
+          <label class="form-label">Archivo (PDF o imagen)</label>
+          <input type="file" class="form-control" id="packing-file-input" accept=".pdf,image/*">
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" onclick="closeModal('modal-packing')">Omitir</button>
+        <button class="btn btn-primary" onclick="subirPackingDesdeCierre()">Subir</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Editar Orden / Destinatario -->
   <div id="modal-edit-orden" class="modal-overlay">
     <div class="modal" style="max-width:340px">
@@ -4456,8 +4480,51 @@ async function confirmarCierre() {
     toast('Tracking cerrado exitosamente ✓');
     renderInspeccion();
     window.scrollTo({ top: 0, behavior: 'smooth' });
+    await _checkMostrarPromptPacking();
   } catch(e) {
     toast(e.error || 'Error al cerrar', 'error');
+  }
+}
+
+async function _checkMostrarPromptPacking() {
+  const tk = state.tracking;
+  if (tk.canal !== 'B2B' || !tk.numero_orden) return;
+  let retailers = [];
+  try { retailers = JSON.parse(tk.clientes_retail || '[]'); } catch(e) {}
+  const match = retailers.find(r => {
+    const nombre = typeof r === 'string' ? r : r.nombre;
+    return nombre === tk.retailer;
+  });
+  if (!match || typeof match === 'string' || !match.packing) return;
+  let tieneExistente = false;
+  let nombreExistente = null;
+  try {
+    const check = await API.get(`/packing-lists/check?cliente_id=${encodeURIComponent(tk.cliente_id)}&order_number=${encodeURIComponent(tk.numero_orden)}`);
+    tieneExistente = check.tiene_packing;
+    nombreExistente = check.archivo_nombre;
+  } catch(e) {}
+  document.getElementById('packing-orden-numero').textContent = tk.numero_orden;
+  document.getElementById('packing-existente-info').innerHTML = tieneExistente
+    ? `<div style="padding:8px 12px;background:rgba(0,230,118,.07);border:1px solid rgba(0,230,118,.2);border-radius:var(--radius-sm);font-size:12px;color:var(--text-secondary)">Ya existe: <strong style="color:var(--text-primary)">${escHTML(nombreExistente)}</strong>. Puedes reemplazarlo o hacer clic en Omitir.</div>`
+    : '';
+  document.getElementById('packing-file-input').value = '';
+  openModal('modal-packing');
+}
+
+async function subirPackingDesdeCierre() {
+  const file = document.getElementById('packing-file-input').files[0];
+  if (!file) { toast('Selecciona un archivo', 'error'); return; }
+  const tk = state.tracking;
+  const fd = new FormData();
+  fd.append('cliente_id', tk.cliente_id);
+  fd.append('order_number', tk.numero_orden);
+  fd.append('packing', file);
+  try {
+    await API.postForm('/packing-lists', fd);
+    closeModal('modal-packing');
+    toast('Packing list subido ✓');
+  } catch(e) {
+    toast(e.error || 'Error al subir packing list', 'error');
   }
 }
 

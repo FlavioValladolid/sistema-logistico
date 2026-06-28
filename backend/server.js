@@ -1166,7 +1166,7 @@ app.get('/api/trackings', (req, res) => {
 
 app.get('/api/trackings/:id', (req, res) => {
   const row = dbGet(`
-    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion, c.requiere_fotos_sku_nuevo
+    SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion, c.requiere_fotos_sku_nuevo, c.tipo_canal, c.clientes_retail
     FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id
     WHERE t.id = ?
   `, [req.params.id]);
@@ -2865,6 +2865,17 @@ app.delete('/api/ordenes/:id', requireRol('ADMIN', 'SUPERVISOR'), (req, res) => 
   dbRun('DELETE FROM orden_items WHERE orden_id = ?', [req.params.id]);
   dbRun('DELETE FROM ordenes WHERE id = ?', [req.params.id]);
   res.json({ mensaje: 'Orden eliminada' });
+});
+
+app.get('/api/packing-lists/check', (req, res) => {
+  const { cliente_id, order_number } = req.query;
+  if (!cliente_id || !order_number) return res.status(400).json({ error: 'Parámetros requeridos' });
+  const allowedIds = getUserClienteIds(req.usuario.id, req.usuario.rol);
+  if (allowedIds !== null && !allowedIds.includes(cliente_id)) {
+    return res.status(403).json({ error: 'Sin acceso' });
+  }
+  const pl = dbGet('SELECT id, archivo_nombre FROM packing_lists WHERE cliente_id = ? AND order_number = ?', [cliente_id, order_number]);
+  res.json({ tiene_packing: !!pl, archivo_nombre: pl?.archivo_nombre || null });
 });
 
 app.post('/api/packing-lists', upload.single('packing'), (req, res) => {
