@@ -258,6 +258,7 @@ function renderTabla() {
                         style="color:var(--accent-cyan);cursor:pointer;text-decoration:underline"
                         title="Ver todos los trackings de esta orden">${escHTML(tr.numero_orden)}</span>`
                     : '<span style="color:var(--text-muted)">—</span>'}
+                  ${packingPendiente(tr) ? `<div style="margin-top:3px"><span class="badge badge-amber" style="font-size:9px">⚠ Packing</span></div>` : ''}
                 </td>
                 <td style="font-size:12px">
                   ${tr.nombre_destinatario
@@ -387,6 +388,18 @@ function applyFilters() {
   });
   currentPage = 1;
   renderTabla();
+}
+
+function packingPendiente(tr) {
+  if (tr.canal !== 'B2B' || !tr.numero_orden || tr.tiene_packing) return false;
+  try {
+    const retailers = JSON.parse(tr.clientes_retail || '[]');
+    const match = retailers.find(r => {
+      const nombre = typeof r === 'string' ? r : r.nombre;
+      return nombre === tr.retailer;
+    });
+    return match && typeof match === 'object' && match.packing === true;
+  } catch(e) { return false; }
 }
 
 async function verOrden(numeroOrden) {
