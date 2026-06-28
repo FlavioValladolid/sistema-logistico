@@ -868,10 +868,10 @@ async function irUltimaOperacion() {
   const btn = document.getElementById('btn-ultima-op');
   if (btn) { btn.disabled = true; btn.textContent = 'Buscando...'; }
   try {
-    const trackings = await API.get('/trackings');
+    const result = await API.get('/trackings?estatus=abierto&page_size=100');
     const userEmail = _pageUser?.email || '';
-    const abiertos = trackings
-      .filter(t => t.estatus === 'abierto' && t.operador === userEmail)
+    const abiertos = result.data
+      .filter(t => t.operador === userEmail)
       .sort((a, b) => b.created_at?.localeCompare(a.created_at || '') || 0);
     if (abiertos.length === 0) {
       toast('No tienes operaciones abiertas', 'warning');

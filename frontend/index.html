@@ -29,14 +29,16 @@ let resumenClienteId = '';
 
 async function loadDashboard() {
   try {
-    const [resumen, trackings, clientes] = await Promise.all([
+    const [resumen, recentResult, abiertosResult, cerradosResult, clientes] = await Promise.all([
       API.get('/reportes/resumen'),
-      API.get('/trackings'),
+      API.get('/trackings?page_size=8'),
+      API.get('/trackings?estatus=abierto&page_size=1'),
+      API.get('/trackings?estatus=cerrado&page_size=1'),
       API.get('/clientes')
     ]);
-
-    const abiertos = trackings.filter(t => t.estatus === 'abierto').length;
-    const cerrados = trackings.filter(t => t.estatus === 'cerrado').length;
+    const trackings = recentResult.data;
+    const abiertos = abiertosResult.total;
+    const cerrados = cerradosResult.total;
 
     const clienteOpts = clientes.map(c => `<option value="${c.id}">${c.nombre}</option>`).join('');
 
