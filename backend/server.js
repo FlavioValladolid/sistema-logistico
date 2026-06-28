@@ -2988,14 +2988,21 @@ app.get('/api/ordenes/buscar-tracking', (req, res) => {
   const bySku = dbGet('SELECT * FROM orden_items WHERE UPPER(sku) = UPPER(?) LIMIT 1', [codigo]);
   if (bySku) return res.json({ type: 'single', item: enrichOrdenItem(bySku) });
 
-  // 3. Tracking number match (exact or substring) — return ALL items for that tracking
-  const byTracking = dbAll(`
+  // 3a. Exact tracking number match — uses index
+  const byTrackingExact = dbAll(`
     SELECT * FROM orden_items
-    WHERE length(tracking_number) > 0
-      AND (tracking_number = ? OR instr(?, tracking_number) > 0)
+    WHERE tracking_number = ? AND length(tracking_number) > 0
     ORDER BY order_number, sku
-  `, [codigo, codigo]);
-  if (byTracking.length > 0) return res.json({ type: 'tracking', items: byTracking.map(enrichOrdenItem) });
+  `, [codigo]);
+  if (byTrackingExact.length > 0) return res.json({ type: 'tracking', items: byTrackingExact.map(enrichOrdenItem) });
+
+  // 3b. Barcode contains tracking number (fallback for composite-barcode scanners)
+  const byTrackingSubstr = dbAll(`
+    SELECT * FROM orden_items
+    WHERE length(tracking_number) > 0 AND instr(?, tracking_number) > 0
+    ORDER BY order_number, sku
+  `, [codigo]);
+  if (byTrackingSubstr.length > 0) return res.json({ type: 'tracking', items: byTrackingSubstr.map(enrichOrdenItem) });
 
   // 4. Fallback: search skus catalog by upc_code (product is known but not in this order's CSV)
   if (cliente_id) {
@@ -3089,7 +3096,9 @@ app.get('/api/ordenes/items-por-numero', (req, res) => {
   }
   const items = dbAll(`
     SELECT t.tracking_number, d.sku_code as sku, d.descripcion as product_title, d.cantidad as quantity,
-      t.numero_orden as order_number, c.nombre as cliente_nombre, t.retailer
+      t.numero_orden as order_number, c.nombre as cliente_nombre, t.retailer,
+      t.nombre_destinatario, t.caja_id,
+      d.pais_origen_real as country_of_origin, d.insumos_real as materials, d.calidad as condition
     FROM detalle_skus d
     JOIN trackings t ON t.id = d.tracking_id AND t.numero_orden = ?
     LEFT JOIN clientes c ON c.id = t.cliente_id

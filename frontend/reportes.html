@@ -382,7 +382,7 @@ function generarDescargaCSV(rows, filename) {
     r.qty ?? r.cantidad ?? 1,
     esc(r.country_of_origin || r.pais_origen_real),
     esc(r.barcode),
-    esc(r.materials || r.insumos_real || r.barcode),
+    esc(r.materials || r.insumos_real || ''),
     esc(r.condicion),
   ].join(',')));
   const blob = new Blob(['\uFEFF' + lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });

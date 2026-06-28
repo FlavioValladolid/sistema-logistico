@@ -481,9 +481,21 @@ async function _descargarOrdenCSV(numeroOrden, clienteId) {
       const safe = /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
       return '"' + safe.replace(/"/g, '""') + '"';
     };
-    const headers = ['Tracking', 'SKU', 'Product', 'Quantity', 'Order Number', 'Client', 'Retailer'];
-    const rows = items.map(i => [i.tracking_number, i.sku, i.product_title, i.quantity, i.order_number, i.cliente_nombre, i.retailer].map(escCsv).join(','));
-    const csv = [headers.map(escCsv).join(','), ...rows].join('\r\n');
+    const exportDate = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+    const meta = [
+      `# Order: ${numeroOrden}`,
+      `# Exported: ${exportDate}`,
+      `# Records: ${items.length}`,
+      '',
+    ].join('\r\n');
+    const headers = ['Tracking', 'Box/Pallet', 'Recipient', 'SKU', 'Product', 'Quantity', 'Country of Origin', 'Materials', 'Condition', 'Order Number', 'Client', 'Retailer'];
+    const rows = items.map(i => [
+      i.tracking_number, i.caja_id, i.nombre_destinatario,
+      i.sku, i.product_title, i.quantity,
+      i.country_of_origin, i.materials, i.condition,
+      i.order_number, i.cliente_nombre, i.retailer,
+    ].map(escCsv).join(','));
+    const csv = meta + [headers.map(escCsv).join(','), ...rows].join('\r\n');
     const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
@@ -602,7 +614,16 @@ function limpiarFiltros() {
 
 function descargarCSVTrackings() {
   const esc = v => { const s = String(v ?? ''); return '"' + (/^[=+\-@\t\r]/.test(s) ? "'" + s : s).replace(/"/g, '""') + '"'; };
-  const headers = ['Tracking','Cliente','Caja/Pallet','Inspector','Grado','Orden #','Destinatario','Canal','Retailer','Piezas Declaradas','Piezas Inspeccionadas','Estatus','Nota Crédito','Fecha'];
+  const exportDate = new Date().toISOString().replace('T', ' ').slice(0, 19) + ' UTC';
+  const filtroEstatus = document.getElementById('filtro-estatus')?.value || 'todos';
+  const filtroCliente = document.getElementById('filtro-cliente')?.selectedOptions[0]?.text || 'todos';
+  const meta = [
+    `# Exported: ${exportDate}`,
+    `# Records: ${filteredTrackings.length}`,
+    `# Filters: status=${filtroEstatus} | client=${filtroCliente}`,
+    '',
+  ].join('\r\n');
+  const headers = ['Tracking','Cliente','Caja/Pallet','Inspector','Grado','Orden #','Destinatario','Canal','Retailer','Piezas Declaradas','Piezas Inspeccionadas','Estatus','Nota Crédito','Fecha Inicio','Fecha Cierre'];
   const rows = filteredTrackings.map(tr => [
     esc(tr.tracking_number),
     esc(tr.cliente_nombre),
@@ -617,9 +638,10 @@ function descargarCSVTrackings() {
     esc(tr.cantidad_final),
     esc(tr.estatus),
     esc(tr.nota_credito),
-    esc((tr.created_at||'').slice(0,10))
+    esc(tr.created_at || ''),
+    esc(tr.closed_at || ''),
   ].join(','));
-  const csv = [headers.map(h => '"' + h + '"').join(','), ...rows].join('\r\n');
+  const csv = meta + [headers.map(h => '"' + h + '"').join(','), ...rows].join('\r\n');
   const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
