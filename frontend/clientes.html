@@ -472,9 +472,10 @@ function editarCliente(id) {
   if (b2bEnabled) {
     let retailers = [];
     try { retailers = JSON.parse(c.clientes_retail || '[]'); } catch(e) {}
+    const lista = document.getElementById('retail-lista');
     retailers.forEach(r => {
-      document.getElementById('retail-input').value = r;
-      agregarRetailer();
+      const norm = typeof r === 'string' ? {nombre: r, packing: false} : r;
+      _appendRetailerChip(lista, norm.nombre, norm.packing);
     });
   }
   document.getElementById('modal-cliente-title').textContent = t('clients.modal_edit');
@@ -508,8 +509,8 @@ async function guardarCliente() {
     tipo_canal: document.getElementById('cliente-b2b').checked ? 'B2B' : null,
     clientes_retail: (() => {
       if (!document.getElementById('cliente-b2b').checked) return null;
-      const chips = [...document.getElementById('retail-lista').querySelectorAll('[data-retailer]')];
-      const retailers = chips.map(el => el.dataset.retailer);
+      const chips = [...document.getElementById('retail-lista').querySelectorAll('[data-retailer-nombre]')];
+      const retailers = chips.map(el => ({nombre: el.dataset.retailerNombre, packing: el.dataset.retailerPacking === 'true'}));
       return retailers.length ? JSON.stringify(retailers) : null;
     })(),
   };
@@ -550,15 +551,28 @@ function agregarRetailer() {
   const nombre = input.value.trim();
   if (!nombre) return;
   const lista = document.getElementById('retail-lista');
-  const existing = [...lista.querySelectorAll('[data-retailer]')].map(el => el.dataset.retailer.toLowerCase());
+  const existing = [...lista.querySelectorAll('[data-retailer-nombre]')].map(el => el.dataset.retailerNombre.toLowerCase());
   if (existing.includes(nombre.toLowerCase())) { input.value = ''; return; }
-  const chip = document.createElement('span');
-  chip.dataset.retailer = nombre;
-  chip.style.cssText = 'display:inline-flex;align-items:center;gap:4px;background:var(--bg-surface);border:1px solid var(--border);border-radius:12px;padding:3px 10px;font-size:12px';
-  chip.innerHTML = `${escHTML(nombre)} <button type="button" onclick="this.parentElement.remove()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;line-height:1;padding:0;margin-left:2px">✕</button>`;
-  lista.appendChild(chip);
+  _appendRetailerChip(lista, nombre, false);
   input.value = '';
   input.focus();
+}
+
+function _appendRetailerChip(lista, nombre, packing) {
+  const chip = document.createElement('div');
+  chip.dataset.retailerNombre = nombre;
+  chip.dataset.retailerPacking = packing ? 'true' : 'false';
+  chip.style.cssText = 'display:flex;align-items:center;gap:8px;background:var(--bg-surface);border:1px solid var(--border);border-radius:8px;padding:6px 10px;font-size:12px';
+  chip.innerHTML = `
+    <span style="flex:1;font-weight:500">${escHTML(nombre)}</span>
+    <label style="display:flex;align-items:center;gap:4px;cursor:pointer;font-size:11px;color:var(--text-muted);white-space:nowrap;user-select:none">
+      <input type="checkbox" data-packing-check onchange="this.closest('[data-retailer-nombre]').dataset.retailerPacking=this.checked?'true':'false'"
+        style="accent-color:var(--accent-amber)" ${packing ? 'checked' : ''}>
+      Packing
+    </label>
+    <button type="button" onclick="this.closest('[data-retailer-nombre]').remove()" style="background:none;border:none;cursor:pointer;color:var(--text-muted);font-size:14px;line-height:1;padding:0">✕</button>
+  `;
+  lista.appendChild(chip);
 }
 
 // Search
