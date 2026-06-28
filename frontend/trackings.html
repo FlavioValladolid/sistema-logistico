@@ -254,7 +254,7 @@ function renderTabla() {
                 <td>${gradoBadge(tr.grado_confianza)}</td>
                 <td class="td-mono" style="font-size:12px">
                   ${tr.numero_orden
-                    ? `<span onclick="event.stopPropagation();verOrden('${escHTML(tr.numero_orden)}')"
+                    ? `<span onclick="event.stopPropagation();verOrden('${escHTML(tr.numero_orden)}','${escHTML(tr.cliente_id)}')"
                         style="color:var(--accent-cyan);cursor:pointer;text-decoration:underline"
                         title="Ver todos los trackings de esta orden">${escHTML(tr.numero_orden)}</span>`
                     : '<span style="color:var(--text-muted)">—</span>'}
@@ -402,11 +402,13 @@ function packingPendiente(tr) {
   } catch(e) { return false; }
 }
 
-async function verOrden(numeroOrden) {
+async function verOrden(numeroOrden, clienteId) {
   if (!numeroOrden) return;
   try {
     const data = await API.get(`/ordenes/resumen-por-numero?numero_orden=${encodeURIComponent(numeroOrden)}`);
-    const { stats, trackings } = data;
+    const { stats, trackings, packing } = data;
+    const resolvedClienteId = clienteId || trackings[0]?.cliente_id || '';
+    const safePackingUrl = packing && /^(https?:\/\/|\/)/.test(packing.archivo_url) ? packing.archivo_url : null;
     const modal = document.createElement('div');
     modal.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;z-index:9999;padding:16px';
     modal.onclick = e => { if (e.target === modal) modal.remove(); };
@@ -417,7 +419,11 @@ async function verOrden(numeroOrden) {
             <div style="font-size:11px;color:var(--text-muted);font-weight:700;letter-spacing:.06em">ORDEN</div>
             <div style="font-size:18px;font-weight:700;font-family:'IBM Plex Mono',monospace;color:var(--accent-cyan)">${escHTML(numeroOrden)}</div>
           </div>
-          <button class="btn btn-ghost btn-sm" onclick="this.closest('[style*=fixed]').remove()">✕</button>
+          <div style="display:flex;gap:8px;align-items:center">
+            ${safePackingUrl ? `<a href="${escHTML(safePackingUrl)}" target="_blank" class="btn btn-secondary btn-sm" title="${escHTML(packing.archivo_nombre)}">⬇ Packing List</a>` : ''}
+            <button class="btn btn-secondary btn-sm" data-orden="${escHTML(numeroOrden)}" data-cliente="${escHTML(resolvedClienteId)}" onclick="_descargarOrdenCSV(this.dataset.orden,this.dataset.cliente)">⬇ CSV</button>
+            <button class="btn btn-ghost btn-sm" onclick="this.closest('[style*=fixed]').remove()">✕</button>
+          </div>
         </div>
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px">
           <div style="background:var(--bg-secondary);border-radius:var(--radius-sm);padding:12px;text-align:center">
@@ -464,6 +470,28 @@ async function verOrden(numeroOrden) {
     document.body.appendChild(modal);
   } catch(e) {
     toast('Error al cargar la orden', 'error');
+  }
+}
+
+async function _descargarOrdenCSV(numeroOrden, clienteId) {
+  try {
+    const items = await API.get(`/ordenes/items-por-numero?order_number=${encodeURIComponent(numeroOrden)}&cliente_id=${encodeURIComponent(clienteId)}`);
+    const escCsv = v => {
+      const s = v == null ? '' : String(v);
+      const safe = /^[=+\-@\t\r]/.test(s) ? "'" + s : s;
+      return '"' + safe.replace(/"/g, '""') + '"';
+    };
+    const headers = ['Tracking', 'SKU', 'Producto', 'Cantidad', 'Numero Orden', 'Cliente', 'Retailer'];
+    const rows = items.map(i => [i.tracking_number, i.sku, i.product_title, i.quantity, i.order_number, i.cliente_nombre, i.retailer].map(escCsv).join(','));
+    const csv = [headers.map(escCsv).join(','), ...rows].join('\r\n');
+    const blob = new Blob(['﻿' + csv], { type: 'text/csv;charset=utf-8;' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `orden-${numeroOrden}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  } catch(e) {
+    toast(e.error || 'Error al descargar CSV', 'error');
   }
 }
 

@@ -3035,9 +3035,19 @@ app.get('/api/ordenes/resumen-por-numero', (req, res) => {
   const cerrados = trackings.filter(t => t.estatus !== 'abierto').length;
   const piezasConfirmadas = trackings.reduce((s, t) => s + (t.cantidad_final || 0), 0);
 
+  let packing = null;
+  if (trackings.length > 0) {
+    const pl = dbGet(
+      'SELECT id, archivo_url, archivo_nombre FROM packing_lists WHERE cliente_id = ? AND order_number = ?',
+      [trackings[0].cliente_id, numero_orden]
+    );
+    packing = pl || null;
+  }
+
   res.json({
     numero_orden,
     trackings,
+    packing,
     stats: {
       total: trackings.length,
       abiertos,
@@ -3046,6 +3056,25 @@ app.get('/api/ordenes/resumen-por-numero', (req, res) => {
       piezas_confirmadas: piezasConfirmadas,
     },
   });
+});
+
+app.get('/api/ordenes/items-por-numero', (req, res) => {
+  const { order_number, cliente_id } = req.query;
+  if (!order_number || !cliente_id) return res.status(400).json({ error: 'order_number y cliente_id requeridos' });
+  const allowedIds = getUserClienteIds(req.usuario.id, req.usuario.rol);
+  if (allowedIds !== null && !allowedIds.includes(cliente_id)) {
+    return res.status(403).json({ error: 'Sin acceso' });
+  }
+  const items = dbAll(`
+    SELECT oi.tracking_number, oi.sku, oi.product_title, oi.quantity, oi.order_number,
+      c.nombre as cliente_nombre, t.retailer
+    FROM orden_items oi
+    LEFT JOIN clientes c ON c.id = oi.cliente_id
+    LEFT JOIN trackings t ON t.tracking_number = oi.tracking_number AND t.cliente_id = oi.cliente_id
+    WHERE oi.order_number = ? AND oi.cliente_id = ?
+    ORDER BY oi.tracking_number, oi.sku
+  `, [order_number, cliente_id]);
+  res.json(items);
 });
 
 // ── G0 CONFIRMAR RECEPCIÓN (validacion_piezas=false) ────────────────────────
