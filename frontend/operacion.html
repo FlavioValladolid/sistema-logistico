@@ -4450,7 +4450,9 @@ async function cerrarTracking() {
       <label class="form-label">Número de Orden${requiereOrden ? ' *' : ''}</label>
       <input type="text" class="form-control form-control-mono" id="cierre-numero-orden"
         placeholder="${requiereOrden ? 'Requerido' : 'Opcional'}"
-        value="${escHTML(tk.numero_orden || '')}">
+        value="${escHTML(tk.numero_orden || '')}"
+        oninput="_autocompletarOrden(this.value)">
+      <div id="cierre-orden-info" style="margin-top:4px;font-size:11px;color:var(--text-muted)"></div>
     </div>
     <div class="form-group">
       <label class="form-label">Nombre del Destinatario${requiereDest ? ' *' : ''}</label>
@@ -4509,6 +4511,33 @@ async function _checkMostrarPromptPacking() {
     : '';
   document.getElementById('packing-file-input').value = '';
   openModal('modal-packing');
+}
+
+let _autoOrdenTimer = null;
+async function _autocompletarOrden(valor) {
+  clearTimeout(_autoOrdenTimer);
+  const infoEl = document.getElementById('cierre-orden-info');
+  if (!infoEl) return;
+  if (!valor || valor.length < 2) { infoEl.textContent = ''; return; }
+  _autoOrdenTimer = setTimeout(async () => {
+    try {
+      const data = await API.get(`/ordenes/resumen-por-numero?numero_orden=${encodeURIComponent(valor)}`);
+      const previos = (data.trackings || []).filter(t => t.cliente_id === state.tracking.cliente_id && t.id !== state.tracking.id);
+      if (previos.length === 0) { infoEl.textContent = ''; return; }
+      // Auto-fill destinatario if currently empty
+      const destEl = document.getElementById('cierre-nombre-destinatario');
+      if (destEl && !destEl.value.trim()) {
+        const conDest = previos.find(t => t.nombre_destinatario);
+        if (conDest) destEl.value = conDest.nombre_destinatario;
+      }
+      // Show detected canal + retailer as info
+      const ref = previos[0];
+      const partes = [];
+      if (ref.canal) partes.push(ref.canal);
+      if (ref.retailer) partes.push(ref.retailer);
+      infoEl.innerHTML = `<span style="color:var(--accent-cyan)">✓ Orden existente</span>${partes.length ? ' · ' + escHTML(partes.join(' / ')) : ''} · ${previos.length} tracking${previos.length > 1 ? 's' : ''} registrado${previos.length > 1 ? 's' : ''}`;
+    } catch(e) { infoEl.textContent = ''; }
+  }, 400);
 }
 
 async function subirPackingDesdeCierre() {
