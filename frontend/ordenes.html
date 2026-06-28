@@ -264,13 +264,13 @@ function renderPackingRow(orderNumber) {
         <span class="badge badge-green" style="white-space:nowrap">✓ Subido</span>
         <div style="flex:1;min-width:0">
           <div style="font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-            <a href="${escHTML(pl.archivo_url)}" target="_blank" style="color:var(--accent-cyan)">${escHTML(pl.archivo_nombre)}</a>
+            <a href="${/^(https?:\/\/|\/)/.test(pl.archivo_url) ? escHTML(pl.archivo_url) : '#'}" target="_blank" style="color:var(--accent-cyan)">${escHTML(pl.archivo_nombre)}</a>
           </div>
           <div style="font-size:11px;color:var(--text-muted)">Orden: ${escHTML(orderNumber)} · ${formatDate(pl.created_at)}</div>
         </div>
         <label class="btn btn-ghost btn-sm" style="cursor:pointer">
           Reemplazar
-          <input type="file" accept=".pdf,image/*" style="display:none" onchange="subirPacking('${escHTML(orderNumber)}',this)">
+          <input type="file" accept=".pdf,image/*" style="display:none" data-order-number="${escHTML(orderNumber)}" onchange="subirPacking(this.dataset.orderNumber,this)">
         </label>
       </div>`;
   }
@@ -280,7 +280,7 @@ function renderPackingRow(orderNumber) {
       <div style="flex:1;font-size:12px;color:var(--text-muted)">Orden: ${escHTML(orderNumber)}</div>
       <label class="btn btn-secondary btn-sm" style="cursor:pointer">
         Subir Packing List
-        <input type="file" accept=".pdf,image/*" style="display:none" onchange="subirPacking('${escHTML(orderNumber)}',this)">
+        <input type="file" accept=".pdf,image/*" style="display:none" data-order-number="${escHTML(orderNumber)}" onchange="subirPacking(this.dataset.orderNumber,this)">
       </label>
     </div>`;
 }
