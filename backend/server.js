@@ -10,6 +10,7 @@ const bcrypt = require('bcrypt');
 const Papa = require('papaparse');
 let ResendSDK; try { ResendSDK = require('resend'); } catch(e) { ResendSDK = null; }
 let nodeCron; try { nodeCron = require('node-cron'); } catch(e) { nodeCron = null; }
+let compression; try { compression = require('compression'); } catch(e) { compression = null; }
 
 // DigitalOcean Spaces (S3-compatible)
 const SPACES_CONFIGURED = !!(
@@ -51,10 +52,19 @@ const CATALOGO_RETRABAJOS = {
 
 // Middleware
 app.use(cors());
+if (compression) app.use(compression());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-app.use(express.static(path.join(__dirname, '../frontend')));
+app.use('/uploads', express.static(path.join(__dirname, '../uploads'), { maxAge: '7d' }));
+app.use(express.static(path.join(__dirname, '../frontend'), {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'no-cache');
+    } else if (/\.(css|js|woff2?|ttf|svg|ico|png|jpg|webp)$/.test(filePath)) {
+      res.setHeader('Cache-Control', 'public, max-age=3600');
+    }
+  }
+}));
 
 // Multer config para fotos
 const mimeExt = { 'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp', 'image/gif': '.gif', 'image/heic': '.jpg', 'image/heif': '.jpg' };
@@ -1187,21 +1197,23 @@ app.get('/api/trackings', (req, res) => {
 
   const extraSql = extraWhere.length ? ' AND ' + extraWhere.join(' AND ') : '';
   const baseParams = [...cp, ...extraParams];
-  const fromSql = `FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id WHERE 1=1${cf}${extraSql}`;
+  const joinSql = `FROM trackings t LEFT JOIN clientes c ON t.cliente_id = c.id`;
+  const whereSql = `WHERE 1=1${cf}${extraSql}`;
 
   const page = Math.max(1, parseInt(req.query.page) || 1);
   const pageSize = Math.min(Math.max(1, parseInt(req.query.page_size) || 50), 5000);
   const offset = (page - 1) * pageSize;
 
-  const total = dbGet(`SELECT COUNT(*) as cnt ${fromSql}`, baseParams).cnt;
+  const total = dbGet(`SELECT COUNT(*) as cnt ${joinSql} ${whereSql}`, baseParams).cnt;
   const rows = dbAll(`
     SELECT t.*, c.nombre as cliente_nombre, c.grado_confianza, c.modulo_calidad, c.modulo_retrabajo, c.porcentaje_muestreo, c.tipo_almacenamiento, c.tipo_mercancia, c.fotos_adicionales, c.requiere_orden, c.requiere_tipo_retorno, c.requiere_nota_credito, c.requiere_nombre_destinatario, c.validacion_piezas, c.validacion_condicion, c.requiere_fotos_sku_nuevo, c.tipo_canal, c.clientes_retail,
-      COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) as total_comentarios,
-      CASE WHEN COALESCE((SELECT COUNT(*) FROM tracking_comentarios tc WHERE tc.tracking_id = t.id), 0) > 0 AND COALESCE(t.chat_resuelto, 0) = 0 THEN 1 ELSE 0 END as tiene_comentarios,
-      CASE WHEN t.canal = 'B2B' AND t.numero_orden IS NOT NULL AND EXISTS (
-        SELECT 1 FROM packing_lists pl WHERE pl.cliente_id = t.cliente_id AND pl.order_number = t.numero_orden
-      ) THEN 1 ELSE 0 END as tiene_packing
-    ${fromSql}
+      COALESCE(tc_agg.cnt, 0) as total_comentarios,
+      CASE WHEN COALESCE(tc_agg.cnt, 0) > 0 AND COALESCE(t.chat_resuelto, 0) = 0 THEN 1 ELSE 0 END as tiene_comentarios,
+      CASE WHEN t.canal = 'B2B' AND t.numero_orden IS NOT NULL AND pl_agg.order_number IS NOT NULL THEN 1 ELSE 0 END as tiene_packing
+    ${joinSql}
+    LEFT JOIN (SELECT tracking_id, COUNT(*) as cnt FROM tracking_comentarios GROUP BY tracking_id) tc_agg ON tc_agg.tracking_id = t.id
+    LEFT JOIN (SELECT DISTINCT cliente_id, order_number FROM packing_lists) pl_agg ON pl_agg.cliente_id = t.cliente_id AND pl_agg.order_number = t.numero_orden
+    ${whereSql}
     ORDER BY t.created_at DESC
     LIMIT ? OFFSET ?
   `, [...baseParams, pageSize, offset]);

@@ -111,7 +111,16 @@ function updateBulkUI() {
 }
 
 async function loadTrackings() {
-  const clientes = await API.get('/clientes');
+  // Apply URL params before parallel fetch so first request already includes them
+  const urlParams = new URLSearchParams(window.location.search);
+  if (urlParams.get('grado')) document.getElementById('filtro-grado').value = urlParams.get('grado');
+  if (urlParams.get('estatus')) document.getElementById('filtro-estatus').value = urlParams.get('estatus');
+
+  const [clientes, result] = await Promise.all([
+    API.get('/clientes'),
+    API.get(`/trackings?${_buildFilterParams()}`)
+  ]);
+
   const sel = document.getElementById('filtro-cliente');
   while (sel.options.length > 1) sel.remove(1);
   clientes.forEach(c => {
@@ -121,12 +130,10 @@ async function loadTrackings() {
     sel.appendChild(opt);
   });
 
-  // Pre-set filters from URL params (e.g. ?grado=0&estatus=abierto from dashboard link)
-  const urlParams = new URLSearchParams(window.location.search);
-  if (urlParams.get('grado')) document.getElementById('filtro-grado').value = urlParams.get('grado');
-  if (urlParams.get('estatus')) document.getElementById('filtro-estatus').value = urlParams.get('estatus');
-
-  await applyFilters();
+  filteredTrackings = result.data;
+  trackingsData = result.data;
+  totalTrackings = result.total;
+  renderTabla();
 }
 
 function _buildFilterParams(overrides = {}) {
